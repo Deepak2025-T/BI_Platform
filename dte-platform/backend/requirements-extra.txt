@@ -1,0 +1,5 @@
+# Drivers for the other relational targets (install the ones you need)
+pymysql>=1.1          # MySQL / MariaDB
+pyodbc>=5.1           # SQL Server (needs Microsoft ODBC Driver 18 on the host)
+oracledb>=2.2         # Oracle (thin mode, no Instant Client needed)
+ibm_db_sa>=0.4        # IBM Db2

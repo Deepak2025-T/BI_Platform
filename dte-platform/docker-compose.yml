@@ -1,0 +1,31 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment: { POSTGRES_PASSWORD: postgres }
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes: [ollama:/root/.ollama]
+    # GPU: uncomment on a host with the NVIDIA container toolkit
+    # deploy: { resources: { reservations: { devices: [{ capabilities: [gpu] }] } } }
+
+  backend:
+    build: ./backend
+    env_file: ./backend/.env.example
+    environment:
+      APP_DB_URL: postgresql+psycopg://postgres:postgres@db:5432/dte_app
+      OLLAMA_URL: http://ollama:11434
+    depends_on: [db, ollama]
+    ports: ["8000:8000"]
+
+  frontend:
+    build: ./frontend
+    depends_on: [backend]
+    ports: ["8080:80"]
+
+volumes: { pgdata: {}, ollama: {} }

@@ -1,0 +1,4 @@
+CREATE DATABASE dte_app;
+CREATE DATABASE finance_demo;
+\c dte_app
+CREATE EXTENSION IF NOT EXISTS vector;
