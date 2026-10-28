@@ -537,3 +537,118 @@ body.focus-mode .main { flex-basis: 100%; }
   :root { background: #FFFFFF; }
   .card { break-inside: avoid; }
 }
+
+/* ===== Home: hero, flow diagram and motion ===== */
+/* The glow is wider than its column and blurred on top of that, so the page
+   clips it sideways rather than growing a horizontal scrollbar. */
+.home { overflow-x: clip; }
+.home .hero { position: relative; isolation: isolate; }
+.hero-glow {
+  position: absolute; z-index: -1; top: -140px; left: 50%; width: min(900px, 100%); height: 420px;
+  transform: translateX(-50%);
+  background:
+    radial-gradient(42% 58% at 22% 42%, rgba(0, 180, 216, .20), transparent 70%),
+    radial-gradient(38% 52% at 74% 30%, rgba(13, 59, 102, .14), transparent 72%);
+  filter: blur(14px); pointer-events: none;
+  animation: glow-drift 18s ease-in-out infinite alternate;
+}
+@keyframes glow-drift {
+  from { transform: translateX(-50%) translateY(0) scale(1); }
+  to   { transform: translateX(-50%) translateY(18px) scale(1.07); }
+}
+
+/* --- The question -> model -> database -> result picture --- */
+.flow-wrap {
+  background: linear-gradient(180deg, var(--surface), #FAFCFE);
+  border: 1px solid var(--border); border-radius: 14px;
+  padding: 14px 10px 6px; overflow: hidden;
+}
+.flow { display: block; width: 100%; height: auto; max-height: 190px; }
+.flow-rail { stroke: var(--border-strong); stroke-width: 2; }
+.flow-pulse {
+  stroke: var(--teal); stroke-width: 2; stroke-linecap: round;
+  stroke-dasharray: 6 10; stroke-dashoffset: 0; opacity: .5;
+  animation: rail-flow 1.6s linear infinite; animation-delay: var(--d, 0s);
+}
+@keyframes rail-flow { to { stroke-dashoffset: -32; } }
+.flow-dot { fill: var(--accent); opacity: 0; animation: dot-run 2.6s ease-in-out infinite; animation-delay: var(--d, 0s); }
+@keyframes dot-run {
+  0%        { transform: translateX(0);          opacity: 0; }
+  12%, 78%  {                                    opacity: 1; }
+  100%      { transform: translateX(var(--run)); opacity: 0; }
+}
+.flow.on .flow-pulse { opacity: .95; animation-duration: .9s; }
+.flow.on .flow-dot { animation-duration: 1.5s; }
+.flow-link.dim .flow-pulse, .flow-link.dim .flow-dot { opacity: 0; animation: none; }
+
+.flow-badge { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.5; transition: stroke .2s, fill .2s; }
+.flow-icon { color: var(--accent); transition: color .2s; }
+.flow-label { fill: var(--fg); font-size: 12.5px; font-weight: 650; }
+.flow-sub { fill: var(--fg2); font-size: 11px; }
+.flow-halo { fill: none; stroke: var(--teal); stroke-width: 2; opacity: 0; transform-origin: center; transform-box: fill-box; }
+.flow.on .flow-halo { animation: halo 2.6s ease-out infinite; animation-delay: var(--d, 0s); }
+@keyframes halo {
+  0%   { opacity: .45; transform: scale(1); }
+  70%  { opacity: 0;   transform: scale(1.5); }
+  100% { opacity: 0;   transform: scale(1.5); }
+}
+.flow.on .flow-badge { stroke: var(--teal); }
+.flow-node.dim .flow-badge { fill: #F4F7FA; stroke: var(--border); }
+.flow-node.dim .flow-icon { color: #9FB2C4; }
+.flow-node.dim .flow-label { fill: var(--fg2); }
+.flow-node.dim .flow-halo { animation: none; }
+
+/* --- Live counts under the diagram --- */
+.stat-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+.stat {
+  display: inline-flex; align-items: baseline; gap: 7px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  padding: 6px 14px 6px 10px; transition: border-color .15s, transform .15s;
+}
+.stat:hover { border-color: var(--accent); transform: translateY(-1px); }
+.stat-icon { align-self: center; display: inline-grid; place-items: center; color: var(--accent); }
+.stat-value { font-size: 16px; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.stat-label { font-size: 12.5px; color: var(--fg2); }
+
+/* --- Ask box, warmed up once the question can actually run --- */
+.ask-box { transition: border-color .2s, box-shadow .2s; }
+.ask-box.ready { border-color: var(--teal); box-shadow: 0 6px 22px rgba(0, 119, 158, .12); }
+.btn-go .go-arrow { transition: transform .18s ease; }
+.btn-go:hover:not(:disabled) .go-arrow { transform: translateX(3px); }
+.chip-btn { transition: border-color .15s, transform .15s, background .15s; }
+.chip-btn:hover { transform: translateY(-1px); background: var(--accent-soft); }
+.head-icon { display: inline-flex; align-items: center; gap: 8px; }
+.head-icon svg { color: var(--accent); }
+.list-row.lift { border-radius: 8px; padding-inline: 8px; margin-inline: -8px; transition: background .15s; }
+.list-row.lift:hover { background: #F7FAFC; }
+
+/* --- Entrances --- */
+@keyframes rise-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise-in .5s cubic-bezier(.22, 1, .36, 1) both; }
+.rise-1 { animation-delay: .06s; } .rise-2 { animation-delay: .12s; } .rise-3 { animation-delay: .18s; }
+.rise-4 { animation-delay: .24s; } .rise-5 { animation-delay: .30s; }
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity .5s ease, transform .5s cubic-bezier(.22, 1, .36, 1); }
+.reveal.in { opacity: 1; transform: none; }
+.stagger > * { animation: rise-in .45s cubic-bezier(.22, 1, .36, 1) both; }
+.stagger > *:nth-child(1) { animation-delay: .02s; } .stagger > *:nth-child(2) { animation-delay: .06s; }
+.stagger > *:nth-child(3) { animation-delay: .10s; } .stagger > *:nth-child(4) { animation-delay: .14s; }
+.stagger > *:nth-child(5) { animation-delay: .18s; } .stagger > *:nth-child(6) { animation-delay: .22s; }
+.stagger > *:nth-child(7) { animation-delay: .26s; } .stagger > *:nth-child(8) { animation-delay: .30s; }
+.tpl:hover { transform: translateY(-2px); }
+
+/* Narrow screens scale the whole diagram down, so the type has to scale back up. */
+@media (max-width: 680px) {
+  .flow-sub { display: none; }
+  .flow-label { font-size: 24px; }
+  .hero-glow { opacity: .55; height: 320px; }
+  .stat { padding: 5px 12px 5px 9px; }
+}
+
+/* Everything above is decoration: switch it all off when asked. */
+@media (prefers-reduced-motion: reduce) {
+  .hero-glow, .flow-pulse, .flow-dot, .flow-halo, .rise, .stagger > * { animation: none !important; }
+  .flow-dot { opacity: .9; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .stat:hover, .chip-btn:hover, .tpl:hover { transform: none; }
+  .btn-go:hover:not(:disabled) .go-arrow { transform: none; }
+}
