@@ -20,6 +20,7 @@ export default function AppShell() {
 
         <NavLink to="/" end className={navClass}><Icon name="home" />Ask a question</NavLink>
         <NavLink to="/chat" className={navClass}><Icon name="chat" />Chat with data</NavLink>
+        <NavLink to="/build-chart" className={navClass}><Icon name="grid" />Build a chart</NavLink>
         <NavLink to="/reports" className={navClass}><Icon name="reports" />Reports</NavLink>
         <NavLink to="/templates" className={navClass}><Icon name="template" />Templates</NavLink>
 

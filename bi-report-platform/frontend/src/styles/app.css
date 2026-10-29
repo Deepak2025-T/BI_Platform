@@ -652,3 +652,70 @@ body.focus-mode .main { flex-basis: 100%; }
   .stat:hover, .chip-btn:hover, .tpl:hover { transform: none; }
   .btn-go:hover:not(:disabled) .go-arrow { transform: none; }
 }
+
+/* ===== Visual builder ===== */
+.page.builder { padding: 24px 20px 40px; display: flex; flex-direction: column; gap: 16px; }
+.builder-top { align-items: flex-end; }
+.builder-title input { min-width: 240px; }
+
+/* Fields on the left, the chart in the middle, the visual and its wells on the right. */
+.builder-grid { display: grid; grid-template-columns: 240px minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+@media (max-width: 1180px) { .builder-grid { grid-template-columns: 220px minmax(0, 1fr); } }
+@media (max-width: 860px) { .builder-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.builder-pane { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+                padding: 14px; position: sticky; top: 16px; max-height: calc(100vh - 110px); overflow: auto; }
+@media (max-width: 860px) { .builder-pane { position: static; max-height: none; } }
+.builder-canvas { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.builder-chart { display: flex; flex-direction: column; gap: 10px; }
+.builder-blank { background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius);
+                 padding: 56px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.tile-title { margin: 0; font-size: 15px; font-weight: 700; }
+.sql-box { font-family: var(--mono); font-size: 12px; background: var(--row); border-radius: 8px;
+           padding: 10px 12px; overflow: auto; margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; }
+
+/* The field list */
+.field-group-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+                     color: var(--fg2); margin: 6px 0 4px; }
+.field-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.field-chip { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; cursor: grab;
+              background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 5px 7px; font-size: 13px; }
+.field-chip:hover { background: var(--accent-soft); border-color: var(--border-strong); }
+.field-chip:active { cursor: grabbing; }
+.field-chip.used { font-weight: 650; color: var(--navy); }
+.field-chip.used::after { content: "on chart"; margin-left: auto; font-size: 10px; font-weight: 600;
+                          text-transform: uppercase; letter-spacing: .03em; color: var(--accent); }
+.field-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The visual gallery */
+.visual-gallery { display: flex; flex-direction: column; gap: 10px; }
+.visual-group-label { font-size: 11px; font-weight: 600; color: var(--fg2); margin-bottom: 4px; }
+.visual-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 5px; }
+.visual-tile { display: grid; place-items: center; aspect-ratio: 1; padding: 5px; cursor: pointer;
+               background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.visual-tile svg { width: 100%; height: 100%; }
+.visual-tile:hover { border-color: var(--accent); background: var(--accent-soft); }
+.visual-tile.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* The wells a field is dropped on */
+.well { border: 1px solid var(--border); border-radius: 9px; padding: 8px 9px; background: var(--surface); }
+.well.over { border-color: var(--accent); background: var(--accent-soft); border-style: dashed; }
+.well-label { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 650; color: var(--fg2); }
+.well-required { font-size: 10px; font-weight: 600; color: var(--bad); background: var(--bad-bg);
+                 border-radius: 999px; padding: 1px 6px; }
+.well-empty { font-size: 12px; color: var(--fg2); opacity: .75; padding: 6px 2px; }
+.well-items { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.well-item { display: flex; align-items: center; gap: 5px; background: var(--row); border-radius: 7px; padding: 3px 4px 3px 7px; }
+.well-item select { height: 28px; font-size: 12px; padding: 0 4px; border-radius: 6px; max-width: 110px; }
+.well-item-name { flex: 1; min-width: 0; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Per-chart filters */
+.filter-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.filter-row { border: 1px solid var(--border); border-radius: 9px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.filter-head { display: flex; align-items: center; gap: 5px; }
+.filter-column { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 650;
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-head select { height: 30px; font-size: 12px; padding: 0 4px; border-radius: 6px; max-width: 120px; }
+.filter-values { display: flex; gap: 6px; }
+.filter-values input { height: 32px; font-size: 12.5px; min-width: 0; flex: 1; }
+.filter-options { display: flex; flex-wrap: wrap; gap: 5px; max-height: 148px; overflow: auto; }

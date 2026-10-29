@@ -76,6 +76,10 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     );
   }
 
+  // Shapes the visual builder can save but this renderer doesn't draw yet. They fall back to the
+  // rows rather than being drawn as something else, which is what the "else" below would do.
+  const notDrawnYet = chart.type === "combo" || chart.type === "scatter" || chart.type === "gauge";
+
   // Sort by the first value column when asked (bars, pies and tables read better ranked).
   const sortIndex = ys.length ? columns.indexOf(ys[0]) : -1;
   const sorted = style.sort && style.sort !== "none" && sortIndex >= 0
@@ -83,7 +87,8 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     : rows;
 
   // A chart needs a category column and at least one number; otherwise show the rows.
-  if (chart.type === "table" || xi < 0 || ys.length === 0) {
+  // A matrix is a table until pivoting is built.
+  if (chart.type === "table" || chart.type === "matrix" || notDrawnYet || xi < 0 || ys.length === 0) {
     const table = <ResultTable columns={columns} rows={sorted} truncated={truncated} limit={50} />;
     return tableHeight ? <div className="table-scroll" style={{ maxHeight: tableHeight }}>{table}</div> : table;
   }
@@ -100,12 +105,13 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     if (cx < 0 || cy < 0) return null;
     return new Map(compare!.rows.map((r) => [String(r[cx] ?? ""), typeof r[cy] === "number" ? r[cy] as number : Number(r[cy])]));
   };
-  const label = (position: string) => ({ show: !!style.showValues, position, fontSize: 11, color: strong,
-                                         formatter: (p: { value: number }) => fmt(p.value) });
+  const label = (position: string, as: (v: number) => string = fmt) =>
+    ({ show: !!style.showValues, position, fontSize: 11, color: strong,
+       formatter: (p: { value: number }) => as(p.value) });
 
   let option;
   let changes: string[] = [];
-  if (chart.type === "pie") {
+  if (chart.type === "pie" || chart.type === "donut") {
     const before = thenOf(ys[0]);
     if (before) {
       const now = values(ys[0]);
@@ -119,7 +125,9 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
       tooltip: { trigger: "item", valueFormatter: fmt },
       legend: legend ? { bottom: 0, left: "center", type: "scroll", textStyle: { color: ink } } : undefined,
       series: [{
-        type: "pie", radius: ["38%", "62%"], top: -10, bottom: legend ? 24 : 0, itemStyle: { borderColor: "#fff", borderWidth: 2 },
+        // A donut has a wider hole than the default pie.
+        type: "pie", radius: chart.type === "donut" ? ["55%", "76%"] : ["38%", "62%"],
+        top: -10, bottom: legend ? 24 : 0, itemStyle: { borderColor: "#fff", borderWidth: 2 },
         // Whole percents and short lines keep labels inside narrow tiles.
         label: { formatter: style.showValues ? (p: { value: number; percent: number }) => `${fmt(p.value)} (${Math.round(p.percent)}%)`
                                              : (p: { percent: number }) => `${Math.round(p.percent)}%`, fontSize: 11, color: ink },
@@ -137,14 +145,26 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
       : few ? { ...AXIS.axisLabel, interval: 0, width: 80, overflow: "break", lineHeight: 13 }
       : { ...AXIS.axisLabel, hideOverlap: true };
     const category = { type: "category", data: labels, ...AXIS, axisLabel, inverse: horizontal }; // horizontal: first row on top
-    const value = { type: "value", scale: !!fitAxis, axisLabel: { color: ink, formatter: fmt, hideOverlap: true },
+    // The builder saves stackMode; charts from before it only have `stacked`.
+    const stackMode = style.stackMode ?? (style.stacked ? "stacked" : "none");
+    const stacked = stackMode !== "none" && ys.length > 1;
+    // 100% stacked: ECharts stacks the numbers it is given, so each bar is turned into a share of
+    // its own total first. The axis, tooltips and labels then read as percentages.
+    const full = stacked && stackMode === "full";
+    const totals = full ? labels.map((_, i) => ys.reduce((sum, y) => sum + Math.abs(values(y)[i] || 0), 0)) : null;
+    const seriesData = (y: string) =>
+      totals ? values(y).map((v, i) => (totals[i] ? v / totals[i] : 0)) : values(y);
+    const valueFmt = full ? (v: number) => `${Math.round(v * 100)}%` : fmt;
+    const value = { type: "value", scale: !full && !!fitAxis, max: full ? 1 : undefined,
+                    axisLabel: { color: ink, formatter: valueFmt, hideOverlap: true },
                     splitLine: { lineStyle: { color: gridLine } } };
-    const compared = ys.map((y) => [y, thenOf(y)] as const).filter(([, m]) => m);
+    // An earlier refresh can't be shown beside shares: its numbers are on a different scale.
+    const compared = full ? [] : ys.map((y) => [y, thenOf(y)] as const).filter(([, m]) => m);
     const showLegend = legend && (ys.length > 1 || compared.length > 0);
     option = {
       color: colors,
       textStyle: { fontFamily: "Inter, system-ui, sans-serif" },
-      tooltip: { trigger: "axis", valueFormatter: fmt },
+      tooltip: { trigger: "axis", valueFormatter: valueFmt },
       legend: showLegend ? { top: 0, left: 0, right: 0, icon: "roundRect", type: "scroll", textStyle: { color: ink } } : undefined,  // one row, scrolls
       grid: { left: 8, right: style.showValues && horizontal ? 48 : 12, top: showLegend ? 36 : style.showValues ? 22 : 12,
               bottom: 8, containLabel: true },
@@ -153,13 +173,13 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
       series: ys.map((y) => ({
         name: columnLabel(y),
         type: chart.type === "bar" ? "bar" : "line",
-        data: values(y),
+        data: seriesData(y),
         smooth: chart.type !== "bar",
-        stack: style.stacked && ys.length > 1 ? "total" : undefined,
-        areaStyle: chart.type === "area" ? { opacity: style.stacked ? 0.5 : 0.18 } : undefined,
+        stack: stacked ? "total" : undefined,
+        areaStyle: chart.type === "area" ? { opacity: stacked ? 0.5 : 0.18 } : undefined,
         barMaxWidth: 32,
-        itemStyle: chart.type === "bar" ? { borderRadius: style.stacked ? 0 : horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0] } : undefined,
-        label: label(horizontal ? "right" : style.stacked ? "inside" : "top"),
+        itemStyle: chart.type === "bar" ? { borderRadius: stacked ? 0 : horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0] } : undefined,
+        label: label(horizontal ? "right" : stacked ? "inside" : "top", valueFmt),
       })).concat(compared.map(([y, then]) => ({
         // Same colour as the value it shadows, faded.
         color: colors[ys.indexOf(y) % colors.length],
@@ -182,7 +202,7 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
       <div role="img" aria-label={alt}>
         <ReactEChartsCore echarts={echarts} option={option} notMerge style={{ height, width: "100%" }} />
       </div>
-      {compare && chart.type === "pie" && (
+      {compare && (chart.type === "pie" || chart.type === "donut") && (
         <p className="chart-changes small muted">Since {compare.label}: {changes.length ? changes.join(" · ") : "no change"}</p>
       )}
     </>

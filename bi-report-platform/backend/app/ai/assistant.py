@@ -296,9 +296,12 @@ def _parameters_text(parameters: dict) -> str:
     return "Apply these parameters to every chart where the table allows it: " + "; ".join(parts) + "."
 
 
-def new_widget(title: str, question: str, sql: str, chart: dict) -> dict:
-    return {"id": uuid.uuid4().hex[:8], "title": title.strip()[:120], "question": question.strip()[:500],
-            "sql": sql, "chart": chart}
+def new_widget(title: str, question: str, sql: str, chart: dict, extra: dict | None = None) -> dict:
+    """A chart for a report config. extra carries anything the caller already decided, such as the
+    look of a chart from the visual builder and the fields it was built from."""
+    widget = {"id": uuid.uuid4().hex[:8], "title": title.strip()[:120], "question": question.strip()[:500],
+              "sql": sql, "chart": chart}
+    return {**widget, **{k: v for k, v in (extra or {}).items() if v is not None}}
 
 
 # ---------- Charts ----------

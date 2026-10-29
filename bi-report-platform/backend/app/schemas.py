@@ -407,6 +407,11 @@ class Widget(BaseModel):
     question: str = Field(default="", max_length=500)
     sql: str = Field(min_length=1, max_length=8000)
     chart: dict
+    # How the chart looks, and how wide it sits on the dashboard.
+    style: dict | None = None
+    size: str | None = Field(default=None, max_length=20)
+    # Charts from the visual builder: the fields they were built from, so they can be reopened there.
+    visual: dict | None = None
 
 
 class SaveDashboardIn(BaseModel):

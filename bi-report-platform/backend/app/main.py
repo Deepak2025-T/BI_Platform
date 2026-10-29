@@ -8,7 +8,7 @@ from .config import settings
 from .database import SessionLocal, schema_missing_message
 from .refresh import scheduler
 from .routers import (admin, ai_models, assistant, auth, categories, chats, connections, query, report_tools, reports,
-                      schedules, templates, users)
+                      schedules, templates, users, visuals)
 
 for warning in settings.setup_warnings():
     logging.getLogger("uvicorn.error").warning("Setup: %s", warning)
@@ -52,6 +52,7 @@ app.include_router(assistant.router)
 app.include_router(chats.router)
 app.include_router(schedules.router)
 app.include_router(report_tools.router)
+app.include_router(visuals.router)
 app.include_router(admin.router)
 
 

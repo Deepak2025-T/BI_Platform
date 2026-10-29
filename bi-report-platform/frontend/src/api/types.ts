@@ -295,7 +295,14 @@ export interface DataSourceInfo {
   builtin: boolean;
 }
 
-export type ChartType = "kpi" | "bar" | "line" | "area" | "pie" | "table";
+/**
+ * How a chart is drawn. The first six are the original set and are still what older reports save;
+ * the rest came with the visual builder. Clustered, stacked and 100% bars are all "bar" with
+ * different `WidgetStyle` flags, the way the renderer has always handled them.
+ */
+export type ChartType =
+  | "kpi" | "bar" | "line" | "area" | "pie" | "table"
+  | "combo" | "scatter" | "donut" | "gauge" | "matrix";
 
 export interface ChartSpec {
   type: ChartType;
@@ -303,6 +310,12 @@ export interface ChartSpec {
   x: string;
   /** Numeric columns to plot. */
   y: string[];
+  /** Combo charts: the columns drawn as a line instead of bars. Scatter: y[0] is X, y2[0] is Y. */
+  y2?: string[];
+  /** Scatter: the column that sets each point's size. Gauge: the column holding the target. */
+  extra?: string;
+  /** Matrix and multi-series charts: the column whose values become one series or column each. */
+  legend?: string;
 }
 
 export type Cell = string | number | boolean | null;
@@ -327,12 +340,94 @@ export type ChatResult =
   | { kind: "reply"; reply: string; attempts: ChatAttempt[]; elapsed_ms: number; model: string; source: string }
   | ({ kind: "result"; reply: string; title: string; chart: ChartSpec; attempts: ChatAttempt[]; model: string; source: string } & QueryData);
 
+/** How a number column is summarised. Matches AGGS in backend/app/visual_query.py. */
+export type Agg = "sum" | "avg" | "min" | "max" | "count" | "count_distinct";
+
+/** How a date column is grouped. The query returns sortable text: "2024", "2024-Q1", "2024-03". */
+export type DateBucket = "year" | "quarter" | "month" | "week" | "day";
+
+export type FilterOp =
+  | "=" | "!=" | ">" | ">=" | "<" | "<="
+  | "contains" | "starts_with" | "ends_with"
+  | "between" | "in" | "not_in" | "is_null" | "is_not_null";
+
+/** A column people drag onto an axis or a legend. */
+export interface VisualDimension {
+  column: string;
+  /** Date columns only: group by year, quarter, month, week or day. */
+  bucket?: DateBucket;
+  /** The name the chart shows. Missing uses the column name. */
+  alias?: string;
+}
+
+/** A column people drag onto Values, with the way it is summarised. */
+export interface VisualMeasure {
+  /** Empty with agg "count" counts rows. */
+  column: string;
+  agg: Agg;
+  alias?: string;
+}
+
+export interface VisualFilter {
+  column: string;
+  op: FilterOp;
+  /** "is_null" and "is_not_null" take none, "between" takes two, "in" takes any number. */
+  values?: (string | number)[];
+}
+
+/**
+ * One chart as the builder describes it, before it becomes SQL. The backend compiles this with
+ * visual_query.compile_spec; the browser never writes SQL.
+ */
+export interface VisualSpec {
+  table: string;
+  dimensions: VisualDimension[];
+  measures: VisualMeasure[];
+  filters: VisualFilter[];
+  order: { ref: string; dir: "asc" | "desc" }[];
+  limit?: number | null;
+}
+
+/** A column of a shared table, as the fields pane lists it. */
+export interface VisualField {
+  name: string;
+  type: string;
+  /** What it is good for by default: a number to add up, or something to group by. */
+  role: "dimension" | "measure";
+  is_date: boolean;
+  is_number: boolean;
+}
+
+export interface VisualFields {
+  table: string;
+  fields: VisualField[];
+}
+
+export interface VisualTable {
+  /** "schema.table", the name specs use. */
+  table: string;
+  schema: string;
+  name: string;
+}
+
+export interface VisualBuildRequest {
+  source_id: number | null;
+  spec: VisualSpec;
+  refresh?: boolean;
+}
+
 export interface Widget {
   id: string;
   title: string;
   question: string;
   sql: string;
   chart: ChartSpec;
+  /**
+   * Set when the chart was built by dragging fields instead of being written or asked for.
+   * `sql` still holds the compiled query, so the viewer, dashboard filters, refresh and export
+   * treat it like any other chart; this is kept only so the builder can reopen it.
+   */
+  visual?: VisualSpec;
   /** Width on the dashboard; "auto" (or missing) picks from the chart type. */
   size?: WidgetSize;
   /** "text" tiles are headings and notes between charts: no SQL, just title and text. */
@@ -358,6 +453,11 @@ export interface WidgetStyle {
   sort?: "none" | "desc" | "asc";
   horizontal?: boolean;
   stacked?: boolean;
+  /** How several series sit together. "full" is 100% stacked. Falls back to `stacked` when missing. */
+  stackMode?: "none" | "stacked" | "full";
+  /** Gauge: the ends of the dial. Missing means 0 and the value's own scale. */
+  gaugeMin?: number;
+  gaugeMax?: number;
   /** Number tiles: which way is good, for colouring the change since an earlier refresh. */
   goodWhen?: "up" | "down";
   /** The tile's header band and card background. Text switches to white on dark colours. */

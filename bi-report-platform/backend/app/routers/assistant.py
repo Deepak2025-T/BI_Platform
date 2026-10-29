@@ -96,7 +96,8 @@ def save_dashboard(body: SaveDashboardIn, db: Session = Depends(get_db), user: U
             check_query(source, w.sql)
         except UnsafeSQL as err:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f'"{w.title}" can\'t be saved: {err}')
-        widgets.append(new_widget(w.title, w.question, w.sql, w.chart))
+        widgets.append(new_widget(w.title, w.question, w.sql, w.chart,
+                                  {"style": w.style, "size": w.size, "visual": w.visual}))
     return _save(db, user, title=body.title, prompt=body.prompt, source=source, widgets=widgets, extra={})
 
 

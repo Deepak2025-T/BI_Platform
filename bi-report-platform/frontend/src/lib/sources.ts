@@ -17,16 +17,23 @@ export function rememberSource(value: string) {
 
 export const CHART_LABELS: Record<ChartType, string> = {
   kpi: "Number", bar: "Bars", line: "Line", area: "Area", pie: "Pie", table: "Table",
+  combo: "Line and column", scatter: "Scatter", donut: "Donut", gauge: "Gauge", matrix: "Matrix",
 };
+
+/** The types the chart editor's type switcher offers: the ones `retype` can move between safely. */
+export const SWITCHABLE: ChartType[] = ["kpi", "bar", "line", "area", "pie", "donut", "table"];
 
 /** Switches a chart to another type, choosing columns that fit the data. */
 export function retype(chart: ChartSpec, type: ChartType, columns: string[], rows: Cell[][]): ChartSpec {
   const numeric = columns.filter((_, i) => rows.length > 0 && rows.every((r) => r[i] === null || typeof r[i] === "number"));
   const others = columns.filter((c) => !numeric.includes(c));
-  if (type === "table") return { type, x: "", y: [] };
+  if (type === "table" || type === "matrix") return { type, x: "", y: [] };
   const y = chart.y.filter((c) => numeric.includes(c));
-  if (type === "kpi") return { type, x: "", y: (y.length ? y : numeric).slice(0, 1) };
+  // Number tiles and gauges show one value and have no axis.
+  if (type === "kpi" || type === "gauge") return { type, x: "", y: (y.length ? y : numeric).slice(0, 1) };
   const x = others.includes(chart.x) ? chart.x : others[0] ?? "";
-  const ys = y.length ? y : numeric.slice(0, type === "pie" ? 1 : 3);
-  return { type, x, y: type === "pie" ? ys.slice(0, 1) : ys };
+  // Pies and donuts draw one slice per row, so they take a single value column.
+  const single = type === "pie" || type === "donut";
+  const ys = y.length ? y : numeric.slice(0, single ? 1 : 3);
+  return { type, x, y: single ? ys.slice(0, 1) : ys };
 }

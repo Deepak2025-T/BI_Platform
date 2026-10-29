@@ -13,6 +13,7 @@ import ReportEditor from "./pages/ReportEditor";
 import ReportViewer from "./pages/ReportViewer";
 import Settings from "./pages/Settings";
 import Templates from "./pages/Templates";
+import VisualBuilder from "./pages/VisualBuilder";
 import Users from "./pages/Users";
 
 export default function App() {
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="reports/:id" element={<ReportViewer />} />
         <Route path="reports/:id/edit" element={<ReportEditor />} />
         <Route path="templates" element={<Templates />} />
+        <Route path="build-chart" element={<VisualBuilder />} />
 
         {/* Manager-only pages */}
         <Route path="manage/users" element={<RequireAuth role="manager"><Users /></RequireAuth>} />
