@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     # Fernet key that encrypts saved database passwords and AI API keys. Back it up separately:
     # without it, they can't be read.
     connections_key: str = ""
+    # How long to wait for an AI model to answer. Big local models on a CPU load slowly on the
+    # first call, so this allows for that; lower it if you'd rather fail fast.
+    ai_timeout_seconds: int = 300
+    # How long Ollama keeps a model in memory after a call, so later calls skip the load time.
+    ollama_keep_alive: str = "30m"
     # Runs scheduled report refreshes inside the API process.
     scheduler_enabled: bool = True
 

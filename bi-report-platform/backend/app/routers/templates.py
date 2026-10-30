@@ -33,14 +33,21 @@ def ensure_builtin_templates(db: Session):
         if row.name in REPLACED_BUILTINS:
             for field, value in builtin_fields(by_name[REPLACED_BUILTINS[row.name]]).items():
                 setattr(row, field, value)
-    # Dashboard templates (OpenPages) arrived later: add them once, the first time none exist.
-    if not any((row.layout or {}).get("kind") == "dashboard" for row in builtins):
-        db.add_all(ReportTemplate(**builtin_fields(t)) for t in template_rows())
-    else:  # keep their charts current with this version
-        layouts = {t["name"]: t["layout"] for t in template_rows()}
-        for row in builtins:
+    # Dashboard templates (OpenPages) arrived later, and more are added over time.
+    rows = template_rows()
+    first_time = not any((row.layout or {}).get("kind") == "dashboard" for row in builtins)
+    if first_time:
+        db.add_all(ReportTemplate(**builtin_fields(t)) for t in rows)
+    else:
+        layouts = {t["name"]: t["layout"] for t in rows}
+        for row in builtins:  # keep the charts of the ones already here current with this version
             if row.name in layouts and row.layout != layouts[row.name]:
                 row.layout = layouts[row.name]
+        # Dashboard templates added since this database was set up. Nothing records which names
+        # were ever seeded, so a dashboard template someone deletes comes back on the next start;
+        # the trade is that new ones reach existing installations at all.
+        known = {row.name for row in builtins}
+        db.add_all(ReportTemplate(**builtin_fields(t)) for t in rows if t["name"] not in known)
     db.commit()
 
 

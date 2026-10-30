@@ -15,6 +15,8 @@ from dataclasses import dataclass
 import anthropic
 import httpx
 
+from ..config import settings
+
 PROVIDERS = {
     "ollama": {"label": "Ollama", "needs_base_url": True, "needs_key": False,
                "default_base_url": "http://localhost:11434"},
@@ -31,7 +33,16 @@ _CLAUDE_FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5
 # Models where a low effort setting is accepted; it keeps simple questions fast and cheap.
 _CLAUDE_EFFORT_MODELS = _CLAUDE_FALLBACK_MODELS | {"claude-haiku-5-5", "claude-sonnet-5", "claude-fable-5"}
 
-TIMEOUT = 60.0  # seconds; local models on a CPU can be slow
+# How long to wait for an answer. A large local model (e.g. a 27B at Q4_K_M) on a CPU can
+# need several minutes for the first call, because the weights are loaded into memory first.
+# Raise AI_TIMEOUT_SECONDS in backend/.env if a model is still cut off.
+TIMEOUT = float(settings.ai_timeout_seconds)
+
+# Connecting is fast even when answering isn't, so a refused connection is reported straight away.
+HTTP_TIMEOUT = httpx.Timeout(TIMEOUT, connect=10.0)
+
+# Keeps a local Ollama model in memory between calls, so only the first call pays the load time.
+OLLAMA_KEEP_ALIVE = settings.ollama_keep_alive
 
 
 class AIError(Exception):
@@ -152,9 +163,10 @@ def _ollama(spec: ModelSpec, system: str, user: str, schema: dict) -> dict:
     # schema also goes in the prompt.
     system = _with_schema(system, schema)
     body = {"model": spec.model, "stream": False, "format": schema, "options": {"temperature": 0},
+            "keep_alive": OLLAMA_KEEP_ALIVE,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     try:
-        res = httpx.post(f"{_base(spec.base_url)}/api/chat", json=body, timeout=TIMEOUT)
+        res = httpx.post(f"{_base(spec.base_url)}/api/chat", json=body, timeout=HTTP_TIMEOUT)
         if res.status_code == 404:
             raise AIError(f'Ollama doesn\'t have the model "{spec.model}". Run: ollama pull {spec.model}')
         res.raise_for_status()
@@ -174,7 +186,8 @@ def _openai_compatible(spec: ModelSpec, system: str, user: str, schema: dict) ->
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     headers = {"Authorization": f"Bearer {spec.api_key}"} if spec.api_key else {}
     try:
-        res = httpx.post(f"{_base(spec.base_url)}/chat/completions", json=body, headers=headers, timeout=TIMEOUT)
+        res = httpx.post(f"{_base(spec.base_url)}/chat/completions", json=body, headers=headers,
+                         timeout=HTTP_TIMEOUT)
         if res.status_code in (401, 403):
             raise AIError("The server rejected the API key.")
         res.raise_for_status()
@@ -189,7 +202,8 @@ def _http_message(err: Exception, hint: str = "") -> str:
     if isinstance(err, httpx.ConnectError):
         return f"Couldn't connect to the server. {hint}".strip()
     if isinstance(err, httpx.TimeoutException):
-        return "The model took too long to answer. Try a smaller model or a faster machine."
+        return (f"The model took longer than {int(TIMEOUT)}s to answer. A large model loading on a CPU "
+                "can need several minutes: raise AI_TIMEOUT_SECONDS in backend/.env, or use a smaller model.")
     if isinstance(err, httpx.HTTPStatusError):
         detail = err.response.text
         try:  # Ollama and OpenAI-style servers put the reason in "error" (a string or {"message": ...})

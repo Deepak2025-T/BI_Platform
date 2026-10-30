@@ -30,6 +30,14 @@ api.interceptors.response.use(
 /** Turns any API error into a sentence for the UI. */
 export function errorMessage(err: unknown, fallback = "Something went wrong. Try again."): string {
   if (axios.isAxiosError(err)) {
+    // A request that ran out of time also arrives with no response, so say which one it was:
+    // "is the backend running?" is misleading when the backend is running and just slow.
+    if (err.code === "ECONNABORTED" || err.code === "ETIMEDOUT") {
+      const seconds = Math.round((err.config?.timeout ?? 0) / 1000);
+      return `The server didn't answer within ${seconds}s. A large local AI model can take longer than that `
+        + "on its first call; wait and try again, or pick a smaller model.";
+    }
+    if (err.code === "ERR_CANCELED") return "The request was cancelled.";
     if (!err.response) return "Can't reach the server. Is the backend running on port 8000?";
     const detail = err.response.data?.detail;
     if (typeof detail === "string") return detail;

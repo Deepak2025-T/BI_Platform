@@ -8,7 +8,15 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": { target: "http://127.0.0.1:8000", changeOrigin: true },
+      // 127.0.0.1, not localhost: on Windows "localhost" resolves to ::1 first, and uvicorn
+      // binds IPv4 only by default, which makes every call fail with ECONNREFUSED.
+      // The timeouts allow for slow local AI models; without them the proxy cuts the call short.
+      "/api": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+        timeout: 320000,
+        proxyTimeout: 320000,
+      },
     },
   },
 });

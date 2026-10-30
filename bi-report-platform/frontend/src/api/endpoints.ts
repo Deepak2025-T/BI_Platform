@@ -72,8 +72,8 @@ export const aiModelsApi = {
   remove: (id: number) => api.delete(`/api/ai-models/${id}`),
   /** Tests the form's details without saving. Pass id to reuse a saved key. */
   testDraft: (body: { provider: AIProvider; model: string; base_url: string; api_key?: string | null; id?: number }) =>
-    api.post<AIModelTestResult>("/api/ai-models/test", body, { timeout: 90000 }).then((r) => r.data),
-  test: (id: number) => api.post<AIModelTestResult>(`/api/ai-models/${id}/test`, null, { timeout: 90000 }).then((r) => r.data),
+    api.post<AIModelTestResult>("/api/ai-models/test", body, { timeout: 310000 }).then((r) => r.data),
+  test: (id: number) => api.post<AIModelTestResult>(`/api/ai-models/${id}/test`, null, { timeout: 310000 }).then((r) => r.data),
   discover: (body: { provider: AIProvider; base_url: string; api_key?: string | null; id?: number }) =>
     api.post<string[]>("/api/ai-models/discover", body, { timeout: 30000 }).then((r) => r.data),
 };
