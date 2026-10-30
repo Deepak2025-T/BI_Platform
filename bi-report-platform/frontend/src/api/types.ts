@@ -135,6 +135,8 @@ export type TemplateLayout = ClassicLayout & {
   filters?: { label: string; kind: "date" | "category"; type?: string; field?: string }[];
 };
 export type TemplateVisibility = "private" | "shared";
+/** The domain a template is filed under. */
+export type TemplateCategory = "ERP" | "GRC" | "Common" | "Uncategorised";
 
 export interface ReportTemplate {
   id: number;
@@ -142,6 +144,7 @@ export interface ReportTemplate {
   description: string;
   prompt: string;
   color: string;
+  category: TemplateCategory;
   layout: TemplateLayout;
   visibility: TemplateVisibility;
   is_builtin: boolean;
@@ -157,6 +160,7 @@ export interface TemplateInput {
   description: string;
   prompt: string;
   color: string;
+  category: TemplateCategory;
   layout: TemplateLayout;
   visibility: TemplateVisibility;
 }

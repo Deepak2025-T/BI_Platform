@@ -97,6 +97,8 @@ class ReportTemplate(Base):
     description: Mapped[str] = mapped_column(String(200), default="")
     prompt: Mapped[str] = mapped_column(String(2000))
     color: Mapped[str] = mapped_column(String(9), default="#00B4D8")
+    # The domain this template belongs to: ERP, GRC, Common or Uncategorised (see template_data).
+    category: Mapped[str] = mapped_column(String(40), default="Uncategorised", server_default="Uncategorised")
     # Optional layout applied to reports built from this template (sections, chart, palette ...)
     layout: Mapped[dict] = mapped_column(JSON, default=dict)
     visibility: Mapped[str] = mapped_column(String(20), default="private")  # "private" | "shared"

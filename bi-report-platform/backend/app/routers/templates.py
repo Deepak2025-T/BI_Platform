@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session, joinedload
 from .. import dashboard_filters
 from ..database import get_db
 from ..datasources import QueryFailed, SourceError, get_source, run_sql
-from ..openpages_templates import template_rows
+from ..erp_templates import template_rows as erp_template_rows
+from ..openpages_templates import template_rows as openpages_template_rows
 from ..sql_guard import UnsafeSQL
 from ..deps import get_current_user
 from ..models import ReportTemplate, User
@@ -33,8 +34,8 @@ def ensure_builtin_templates(db: Session):
         if row.name in REPLACED_BUILTINS:
             for field, value in builtin_fields(by_name[REPLACED_BUILTINS[row.name]]).items():
                 setattr(row, field, value)
-    # Dashboard templates (OpenPages) arrived later, and more are added over time.
-    rows = template_rows()
+    # Dashboard templates (OpenPages, then ERP) arrived later, and more are added over time.
+    rows = openpages_template_rows() + erp_template_rows()
     first_time = not any((row.layout or {}).get("kind") == "dashboard" for row in builtins)
     if first_time:
         db.add_all(ReportTemplate(**builtin_fields(t)) for t in rows)
@@ -48,6 +49,11 @@ def ensure_builtin_templates(db: Session):
         # the trade is that new ones reach existing installations at all.
         known = {row.name for row in builtins}
         db.add_all(ReportTemplate(**builtin_fields(t)) for t in rows if t["name"] not in known)
+    # Domains arrived after the templates did, so file the ones already here.
+    domains = {t["name"]: t["category"] for t in rows + BUILTIN_TEMPLATES}
+    for row in builtins:
+        if row.category != domains.get(row.name, row.category):
+            row.category = domains[row.name]
     db.commit()
 
 
@@ -66,6 +72,7 @@ def can_edit(t: ReportTemplate, user: User) -> bool:
 
 def to_out(t: ReportTemplate, user: User) -> TemplateOut:
     return TemplateOut(id=t.id, name=t.name, description=t.description, prompt=t.prompt, color=t.color,
+                       category=t.category or "Uncategorised",
                        layout=t.layout or {}, visibility=t.visibility, is_builtin=t.is_builtin,
                        owner_id=t.owner_id, owner_name=t.owner.full_name if t.owner else None,
                        can_edit=can_edit(t, user), created_at=t.created_at, updated_at=t.updated_at)
@@ -99,8 +106,10 @@ def build_dashboard(template_id: int, body: BuildIn, db: Session = Depends(get_d
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(err))
     wanted = layout.get("source_type")
     if wanted and source.db_type != wanted:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"This template is for {wanted.replace('openpages', 'IBM OpenPages')} "
-                                                         f"connections; {source.name} is {source.type_label}.")
+        label = {"openpages": "IBM OpenPages", "postgresql": "PostgreSQL", "mysql": "MySQL",
+                 "mssql": "SQL Server", "sqlite": "SQLite"}.get(wanted, wanted)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"This template is for {label} connections; "
+                                                         f"{source.name} is {source.type_label}.")
     widgets, skipped = [], []
     for w in layout.get("widgets") or []:
         widget = {k: v for k, v in w.items() if k in ("kind", "title", "question", "sql", "chart", "size", "text", "style")}
@@ -129,7 +138,9 @@ def build_dashboard(template_id: int, body: BuildIn, db: Session = Depends(get_d
             built = dashboard_filters.make_filter(source, f.get("label", "Filter"), f.get("kind", "category"), widgets, picks)
             if built["columns"]:
                 filters.append(built)
-    title = t.name.split(": ", 1)[-1] if t.name.startswith("OpenPages: ") else t.name
+    # "OpenPages: Controls effectiveness" becomes "Controls effectiveness": the domain belongs on
+    # the template, not on every report built from it.
+    title = t.name.split(": ", 1)[-1] if t.name.split(": ", 1)[0] in ("OpenPages", "ERP") else t.name
     report = _save(db, user, title=title, prompt=t.prompt, source=source, widgets=widgets,
                    extra={"filters": filters, "template": t.name})
     return {"report": report, "skipped": skipped}

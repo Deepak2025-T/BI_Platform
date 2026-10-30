@@ -2,16 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { errorMessage } from "../api/client";
 import { templatesApi } from "../api/endpoints";
-import type { ReportTemplate, TemplateInput } from "../api/types";
+import type { ReportTemplate, TemplateCategory, TemplateInput } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import BuildFromTemplate from "../components/BuildFromTemplate";
 import Icon from "../components/Icon";
 import TemplateCard from "../components/TemplateCard";
 import TemplateForm from "../components/TemplateForm";
 import { useToast } from "../components/Toast";
+import { CATEGORY_BLURBS, TEMPLATE_CATEGORIES } from "../lib/report";
 
 type Filter = "all" | "mine" | "shared" | "builtin";
 const FILTERS: [Filter, string][] = [["all", "All"], ["mine", "Mine"], ["shared", "Shared"], ["builtin", "Built-in"]];
+
+/** "all", or one domain. Templates are grouped by domain either way. */
+type Domain = TemplateCategory | "all";
 
 type FormState = { template?: ReportTemplate; initial?: Partial<TemplateInput> } | null;
 
@@ -21,6 +25,7 @@ export default function Templates() {
   const navigate = useNavigate();
   const [templates, setTemplates] = useState<ReportTemplate[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [domain, setDomain] = useState<Domain>("all");
   const [search, setSearch] = useState("");
   const [form, setForm] = useState<FormState>(null);
   const [building, setBuilding] = useState<ReportTemplate | null>(null);
@@ -33,9 +38,16 @@ export default function Templates() {
       if (filter === "mine" && (t.owner_id !== user?.id || t.is_builtin)) return false;
       if (filter === "shared" && (t.visibility !== "shared" || t.is_builtin)) return false;
       if (filter === "builtin" && !t.is_builtin) return false;
+      if (domain !== "all" && t.category !== domain) return false;
       return !q || [t.name, t.description, t.prompt].some((s) => s.toLowerCase().includes(q));
     });
-  }, [templates, filter, search, user]);
+  }, [templates, filter, domain, search, user]);
+
+  // One section per domain, in a fixed order, and only for the domains that have something in them.
+  const groups = useMemo(
+    () => TEMPLATE_CATEGORIES.map((c) => [c, shown.filter((t) => t.category === c)] as const)
+      .filter(([, list]) => list.length > 0),
+    [shown]);
 
   function saved(t: ReportTemplate) {
     setTemplates((list) => form?.template ? (list ?? []).map((x) => (x.id === t.id ? t : x)) : [t, ...(list ?? [])]);
@@ -53,7 +65,8 @@ export default function Templates() {
   }
 
   const duplicate = (t: ReportTemplate) => setForm({
-    initial: { name: `${t.name} (copy)`, description: t.description, prompt: t.prompt, color: t.color, layout: t.layout, visibility: "private" },
+    initial: { name: `${t.name} (copy)`, description: t.description, prompt: t.prompt, color: t.color,
+               category: t.category, layout: t.layout, visibility: "private" },
   });
   // Dashboard templates build on a connection; the others start a question on the Ask page.
   const use = (t: ReportTemplate) => (t.layout.kind === "dashboard" ? setBuilding(t) : navigate("/", { state: { template: t } }));
@@ -82,36 +95,57 @@ export default function Templates() {
           </label>
         </div>
 
+        <div className="pills" role="group" aria-label="Filter by domain">
+          <button className={"pill" + (domain === "all" ? " on" : "")} aria-pressed={domain === "all"}
+            onClick={() => setDomain("all")}>All domains</button>
+          {TEMPLATE_CATEGORIES.map((c) => (
+            <button key={c} className={"pill" + (domain === c ? " on" : "")} aria-pressed={domain === c}
+              onClick={() => setDomain(c)}>{c}</button>
+          ))}
+        </div>
+
         {templates === null ? <div className="card">Loading…</div> : (
-          <div className="tpl-grid">
-            {shown.map((t) => (
-              <TemplateCard key={t.id} template={t} onUse={() => use(t)} actions={
-                <>
-                  <button className="btn btn-primary btn-sm" onClick={() => use(t)}>Use</button>
-                  {t.can_edit && <button className="btn btn-ghost btn-sm" onClick={() => setForm({ template: t })}>Edit</button>}
-                  <span className="grow" />
-                  <button className="icon-btn" aria-label={`Duplicate ${t.name}`} title="Duplicate" onClick={() => duplicate(t)}>
-                    <Icon name="copy" size={16} />
-                  </button>
-                  {t.can_edit && (
-                    <button className="icon-btn danger" aria-label={`Delete ${t.name}`} title="Delete" onClick={() => remove(t)}>
-                      <Icon name="trash" size={16} />
-                    </button>
-                  )}
-                </>
-              } />
+          <>
+            {groups.map(([category, list]) => (
+              <section key={category} className="stack tpl-domain">
+                <div className="row-between">
+                  <h2 className="h2">{category} <span className="muted small">({list.length})</span></h2>
+                  <span className="muted small">{CATEGORY_BLURBS[category]}</span>
+                </div>
+                <div className="tpl-grid">
+                  {list.map((t) => (
+                    <TemplateCard key={t.id} template={t} onUse={() => use(t)} actions={
+                      <>
+                        <button className="btn btn-primary btn-sm" onClick={() => use(t)}>Use</button>
+                        {t.can_edit && <button className="btn btn-ghost btn-sm" onClick={() => setForm({ template: t })}>Edit</button>}
+                        <span className="grow" />
+                        <button className="icon-btn" aria-label={`Duplicate ${t.name}`} title="Duplicate" onClick={() => duplicate(t)}>
+                          <Icon name="copy" size={16} />
+                        </button>
+                        {t.can_edit && (
+                          <button className="icon-btn danger" aria-label={`Delete ${t.name}`} title="Delete" onClick={() => remove(t)}>
+                            <Icon name="trash" size={16} />
+                          </button>
+                        )}
+                      </>
+                    } />
+                  ))}
+                </div>
+              </section>
             ))}
             {filter !== "builtin" && !search && (
-              <button className="tpl tpl-new" onClick={() => setForm({})}>
-                <Icon name="plus" size={22} />
-                <span className="strong">New template</span>
-                <span className="muted small">Your own question and layout</span>
-              </button>
+              <div className="tpl-grid">
+                <button className="tpl tpl-new" onClick={() => setForm({})}>
+                  <Icon name="plus" size={22} />
+                  <span className="strong">New template</span>
+                  <span className="muted small">Your own question and layout</span>
+                </button>
+              </div>
             )}
-            {shown.length === 0 && (search || filter === "builtin") && (
-              <p className="muted">No templates match. Try another search or filter.</p>
+            {groups.length === 0 && (search || filter === "builtin" || domain !== "all") && (
+              <p className="muted">No templates match. Try another search, filter or domain.</p>
             )}
-          </div>
+          </>
         )}
       </div>
 

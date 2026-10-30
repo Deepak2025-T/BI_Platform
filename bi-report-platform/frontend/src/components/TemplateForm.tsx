@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { errorMessage } from "../api/client";
 import { templatesApi } from "../api/endpoints";
-import type { ChartKind, NumberFormat, PaletteId, ReportTemplate, SectionId, TemplateInput, TemplateLayout } from "../api/types";
+import type { ChartKind, NumberFormat, PaletteId, ReportTemplate, SectionId, TemplateCategory, TemplateInput, TemplateLayout } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
-import { ALL_SECTIONS, DEFAULT_LAYOUT, PALETTES, SECTION_LABELS } from "../lib/report";
+import { ALL_SECTIONS, CATEGORY_BLURBS, DEFAULT_LAYOUT, PALETTES, SECTION_LABELS, TEMPLATE_CATEGORIES } from "../lib/report";
 import { ColorPicker, Group, SWATCH_COLORS, Seg } from "./Controls";
 import Modal from "./Modal";
 import TemplateCard from "./TemplateCard";
 
-const EMPTY: TemplateInput = { name: "", description: "", prompt: "", color: SWATCH_COLORS[0], layout: {}, visibility: "private" };
+const EMPTY: TemplateInput = { name: "", description: "", prompt: "", color: SWATCH_COLORS[0],
+                              category: "Uncategorised", layout: {}, visibility: "private" };
 
 interface Props {
   /** Template to edit. Leave out to create a new one. */
@@ -24,7 +25,7 @@ export default function TemplateForm({ template, initial, onClose, onSaved }: Pr
   const [form, setForm] = useState<TemplateInput>(() =>
     template
       ? { name: template.name, description: template.description, prompt: template.prompt, color: template.color,
-          layout: template.layout, visibility: template.visibility }
+          category: template.category, layout: template.layout, visibility: template.visibility }
       : { ...EMPTY, ...initial });
   const [customLayout, setCustomLayout] = useState(Object.keys(form.layout).length > 0);
   const isDashboard = form.layout.kind === "dashboard";
@@ -83,6 +84,16 @@ export default function TemplateForm({ template, initial, onClose, onSaved }: Pr
         </label>
 
         <ColorPicker value={form.color} onChange={(c) => set("color", c)} />
+
+        <fieldset className="group">
+          <legend>Domain</legend>
+          <div className="seg-row wide">
+            {TEMPLATE_CATEGORIES.map((c) => (
+              <Seg key={c} on={form.category === c} onClick={() => set("category", c as TemplateCategory)}>{c}</Seg>
+            ))}
+          </div>
+          <span className="hint">{CATEGORY_BLURBS[form.category]}</span>
+        </fieldset>
 
         <fieldset className="group">
           <legend>Who can use it</legend>

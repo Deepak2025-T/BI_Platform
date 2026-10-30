@@ -733,3 +733,8 @@ body.focus-mode .main { flex-basis: 100%; }
 .tray-remove { background: none; border: 0; border-left: 1px solid var(--border); cursor: pointer;
                color: var(--muted); padding: 0 8px; display: flex; align-items: center; }
 .tray-remove:hover { color: var(--bad); background: var(--surface); }
+
+/* Templates grouped by domain: a heading, then that domain's cards. */
+.tpl-domain { gap: 10px; }
+.tpl-domain + .tpl-domain { margin-top: 6px; }
+.tpl-domain .row-between { align-items: baseline; gap: 12px; }

@@ -105,6 +105,10 @@ class ReportOut(BaseModel):
 Visibility = Literal["private", "shared"]
 
 
+# The domains templates are filed under. Uncategorised is the default for anything new.
+TemplateCategory = Literal["ERP", "GRC", "Common", "Uncategorised"]
+
+
 class TemplateLayout(BaseModel):
     """Report layout a template applies. Every field is optional; missing ones use the defaults."""
 
@@ -126,6 +130,7 @@ class TemplateIn(BaseModel):
     description: str = Field(default="", max_length=200)
     prompt: str = Field(min_length=3, max_length=2000)
     color: str = Field(default="#00B4D8", pattern=r"^#[0-9A-Fa-f]{6}$")
+    category: TemplateCategory = "Uncategorised"
     layout: TemplateLayout = TemplateLayout()
     visibility: Visibility = "private"
 
@@ -135,6 +140,7 @@ class TemplateUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=200)
     prompt: str | None = Field(default=None, min_length=3, max_length=2000)
     color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    category: TemplateCategory | None = None
     layout: TemplateLayout | None = None
     visibility: Visibility | None = None
 
@@ -145,6 +151,7 @@ class TemplateOut(BaseModel):
     description: str
     prompt: str
     color: str
+    category: str
     layout: dict
     visibility: Visibility
     is_builtin: bool

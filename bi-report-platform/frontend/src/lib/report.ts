@@ -1,4 +1,4 @@
-import type { ClassicLayout, NumberFormat, PaletteId, QueryParams, QueryResult, ReportConfig, SectionId, TemplateLayout } from "../api/types";
+import type { ClassicLayout, TemplateCategory, NumberFormat, PaletteId, QueryParams, QueryResult, ReportConfig, SectionId, TemplateLayout } from "../api/types";
 import { money, pct } from "./format";
 
 export const SECTION_LABELS: Record<SectionId, string> = {
@@ -31,6 +31,16 @@ export function regionColor(region: string, colors: string[]) {
   const i = REGION_ORDER.indexOf(region);
   return colors[(i < 0 ? 0 : i) % colors.length];
 }
+
+/** The domains templates are filed under, in the order the Templates page lists them. */
+export const TEMPLATE_CATEGORIES: TemplateCategory[] = ["ERP", "GRC", "Common", "Uncategorised"];
+
+export const CATEGORY_BLURBS: Record<TemplateCategory, string> = {
+  ERP: "Sales, CRM, helpdesk, learning and finance, built on your ERP tables",
+  GRC: "Risk, controls, audit and compliance, for IBM OpenPages connections",
+  Common: "General starting points that work on the sample data",
+  Uncategorised: "Not filed under a domain yet",
+};
 
 export const ALL_SECTIONS: SectionId[] = ["kpis", "revenue", "products", "insights"];
 

@@ -7,16 +7,20 @@ Sample questions only use words the phase 1 query engine understands (revenue, s
 region, product, Q1 2024, Q4 2023, gross), so every sample builds a working report.
 """
 
+# Every template is filed under one of these. Built-ins ship with a domain; anything a person
+# creates starts as Uncategorised until they file it.
+CATEGORIES = ["ERP", "GRC", "Common", "Uncategorised"]
+
 BUILTIN_TEMPLATES = [
-    {"name": "Sales performance", "description": "Revenue trend, regions, top products", "color": "#00B4D8",
+    {"name": "Sales performance", "description": "Revenue trend, regions, top products", "color": "#00B4D8", "category": "Common",
      "prompt": "Show monthly revenue by region for Q1 2024 and the top 5 products"},
-    {"name": "Quarter over quarter", "description": "Q1 2024 net revenue against the previous quarter", "color": "#0D3B66",
+    {"name": "Quarter over quarter", "description": "Q1 2024 net revenue against the previous quarter", "color": "#0D3B66", "category": "Common",
      "prompt": "Net revenue by region for Q1 2024 compared with the previous quarter",
      "layout": {"sections": ["kpis", "revenue", "insights"]}},
-    {"name": "Gross revenue by region", "description": "Revenue before discounts and refunds", "color": "#F5A623",
+    {"name": "Gross revenue by region", "description": "Revenue before discounts and refunds", "color": "#F5A623", "category": "Common",
      "prompt": "Gross revenue by region for Q1 2024",
      "layout": {"chart": "stacked", "palette": "warm"}},
-    {"name": "Product mix", "description": "Which products bring in the most revenue", "color": "#7A8BA3",
+    {"name": "Product mix", "description": "Which products bring in the most revenue", "color": "#7A8BA3", "category": "Common",
      "prompt": "Revenue by product for Q1 2024",
      "layout": {"sections": ["products", "kpis", "revenue"]}},
 ]

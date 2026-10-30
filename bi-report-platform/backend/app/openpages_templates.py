@@ -344,6 +344,7 @@ OPENPAGES_TEMPLATES = [
 def template_rows() -> list[dict]:
     """The templates as rows for report_templates (layout holds the dashboard)."""
     return [{"name": t["name"], "description": t["description"], "color": t["color"], "prompt": t["prompt"],
+             "category": "GRC",
              "layout": {"kind": "dashboard", "source_type": "openpages", "widgets": t["widgets"],
                         "filters": t["filters"]}}
             for t in OPENPAGES_TEMPLATES]
