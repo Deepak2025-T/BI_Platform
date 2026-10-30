@@ -7,6 +7,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    // Template/ holds reference reports, not source. Watching it is pointless, and on Windows a
+    // file still being copied in is locked: the watcher hits EBUSY and takes the dev server down.
+    watch: { ignored: ["**/Template/**"] },
     proxy: {
       // 127.0.0.1, not localhost: on Windows "localhost" resolves to ::1 first, and uvicorn
       // binds IPv4 only by default, which makes every call fail with ECONNREFUSED.
