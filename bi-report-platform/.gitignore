@@ -1,0 +1,19 @@
+# Dependencies and builds
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.tsbuildinfo
+
+# Secrets: copy backend/.env.example to backend/.env on each machine
+.env
+
+# Local files that belong to one computer
+.claude/
+.local-run/
+*.pid
+*.log
+*.db
+*.sqlite3

@@ -10,6 +10,12 @@ deploy/    DB init + nginx config
 docker-compose.yml   postgres+pgvector, ollama, backend, frontend
 ```
 
+> **Also on this branch: [BI Report Platform](bi-report-platform/)**, a separate app in the `bi-report-platform/`
+> folder: chat with your databases (PostgreSQL, MySQL, SQL Server, SQLite, IBM OpenPages), AI-built dashboards,
+> report templates, auto-refresh with history. Install it with
+> [bi-report-platform/SETUP.md](bi-report-platform/SETUP.md); features are in
+> [bi-report-platform/README.md](bi-report-platform/README.md).
+
 ## Quick start (Docker)
 
 ```bash
