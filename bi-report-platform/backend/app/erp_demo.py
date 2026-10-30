@@ -2,12 +2,17 @@
 Loads the ERP demo data (erp_demo.sql) into one of the saved connections, and shares its
 tables so reports can use them.
 
-    python -m app.erp_demo --connection finance_demo
-    python -m app.erp_demo --connection finance_demo --no-share   # load only
+    python -m app.erp_demo --connection "ERP demo"
+    python -m app.erp_demo --connection "ERP demo" --no-share   # load only
 
 The connection must be a PostgreSQL one, and the account it uses has to be allowed to
 create schemas — unlike the read-only account reports should normally run with. Only the
 tables in erp_demo.sql are dropped and recreated; nothing else in the database is touched.
+
+Give these tables a connection of their own rather than adding them to one people chat with.
+Chat sends every shared table's columns to the model, and these sixteen are about 3,000 tokens
+of them — enough to fill a small local model's context before the question is even asked. Two
+connections can point at the same database with different tables shared.
 """
 
 import argparse
@@ -69,13 +74,17 @@ def load(connection_name: str, share: bool = True) -> None:
             dispose_engine(conn.id)  # the next query re-reads the connection
             db.commit()
             print(f"\nShared {len(added)} new table(s) on {conn.name}; {len(conn.allowed_tables)} in total.")
+            if len(conn.allowed_tables) > len(TABLES):
+                print(f"  Note: chat on {conn.name} now sends all {len(conn.allowed_tables)} tables' columns to the "
+                      "AI model.\n  Keep the ERP tables on a connection of their own if people chat with this one.")
     finally:
         db.close()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Load the ERP demo data into a saved connection.")
-    parser.add_argument("--connection", default="finance_demo", help="name of the saved connection")
+    parser.add_argument("--connection", default="ERP demo",
+                        help="name of the saved connection (give the ERP tables one of their own)")
     parser.add_argument("--no-share", action="store_true", help="load the data but don't share the tables")
     args = parser.parse_args()
     print(f"Loading {SQL_FILE.name} into {args.connection} …")

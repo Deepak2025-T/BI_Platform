@@ -1,8 +1,10 @@
 """
 The visual builder: build a chart by choosing fields, without writing SQL.
 
-The browser asks for the tables a connection shares, then the columns of one table, then sends a
-spec saying what to put on the axis and what to add up. visual_query turns the spec into SQL and
+The browser asks for the tables a connection shares, then the columns of the ones it picks, then
+sends a spec saying what to put on the axis and what to add up. A chart can read several tables:
+the spec says how each one is joined to the first, and /relationships offers the conditions the
+database's own foreign keys imply. visual_query turns the spec into SQL and
 datasources runs it read-only, the same way it runs SQL an AI model wrote.
 
 Everything here needs a signed-in user, not a manager: these read only the tables a manager has
@@ -18,7 +20,8 @@ from ..datasources import QueryFailed, SourceError, column_values, get_source, r
 from ..deps import get_current_user
 from ..models import User
 from ..sql_guard import UnsafeSQL
-from ..visual_query import AGGS, BUCKETS, MAX_IN_VALUES, OPS, SpecError, compile_spec, describe_table
+from ..visual_query import (AGGS, BUCKETS, JOIN_OPS, JOIN_TYPES, MAX_IN_VALUES, OPS, SpecError,
+                            compile_spec, describe_table, relationships)
 
 router = APIRouter(prefix="/api/visuals", tags=["visual builder"])
 
@@ -27,11 +30,13 @@ class SpecIn(BaseModel):
     """One chart as the builder describes it. Every name is checked against the shared tables."""
 
     table: str = Field(min_length=1, max_length=200)
-    # {"column", "bucket" (dates only), "alias"}
+    # {"table", "type": inner|left|right|full, "on": [{"left": {...}, "op", "right": {...}}]}
+    joins: list[dict] = Field(default_factory=list, max_length=3)
+    # {"table" (when the chart reads more than one), "column", "bucket" (dates only), "alias"}
     dimensions: list[dict] = Field(default_factory=list, max_length=8)
-    # {"column", "agg", "alias"}
+    # {"table", "column", "agg", "alias"}
     measures: list[dict] = Field(default_factory=list, max_length=12)
-    # {"column", "op", "values"}
+    # {"table", "column", "op", "values"}
     filters: list[dict] = Field(default_factory=list, max_length=30)
     # {"ref", "dir"}
     order: list[dict] = Field(default_factory=list, max_length=4)
@@ -71,7 +76,20 @@ def options(_: User = Depends(get_current_user)):
         "buckets": list(BUCKETS),
         "ops": list(OPS),
         "max_filter_values": MAX_IN_VALUES,
+        "join_types": [{"id": key, "label": why} for key, (_, why) in JOIN_TYPES.items()],
+        "join_ops": list(JOIN_OPS),
     }
+
+
+@router.get("/relationships")
+def table_relationships(source_id: int | None = None, tables: str = Query(default=""),
+                        db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """How these tables are related, from the database's foreign keys, as ready-made conditions.
+
+    A suggestion only: the builder shows them and the person can change or replace them. Tables
+    the connection doesn't share are ignored."""
+    wanted = [t.strip() for t in tables.split(",") if t.strip()][:8]
+    return {"relationships": relationships(_source(db, source_id), wanted)}
 
 
 @router.get("/tables")

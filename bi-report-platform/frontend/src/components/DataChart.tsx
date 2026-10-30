@@ -1,6 +1,6 @@
 import ReactEChartsCore from "echarts-for-react/lib/core";
-import { BarChart, LineChart, PieChart } from "echarts/charts";
-import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
+import { BarChart, HeatmapChart, LineChart, PieChart } from "echarts/charts";
+import { GridComponent, LegendComponent, TooltipComponent, VisualMapComponent } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import type { Cell, ChartSpec, WidgetStyle } from "../api/types";
@@ -9,7 +9,8 @@ import { columnLabel, formatValue } from "../lib/format";
 import { delta, tone } from "../lib/history";
 import ResultTable from "./ResultTable";
 
-echarts.use([BarChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
+echarts.use([BarChart, HeatmapChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent,
+             VisualMapComponent, CanvasRenderer]);
 
 export const CHART_COLORS = ["#00B4D8", "#0D3B66", "#F5A623", "#7A8BA3", "#2A9D8F", "#A63D40", "#6D597A", "#1E7F4F"];
 
@@ -28,6 +29,8 @@ interface Props {
   spark?: number[];
   /** Fit the value axis to the data instead of starting at 0 (history lines, where small changes matter). */
   fitAxis?: boolean;
+  /** Called with the category that was clicked, when the chart can be drilled into. */
+  onPoint?: (name: string) => void;
 }
 
 /** A small line of a number tile's history. */
@@ -43,7 +46,7 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
 }
 
 /** Draws any query result from a chart spec: KPI tile, bar, line, area, pie or table, styled by `style`. */
-export default function DataChart({ columns, rows, chart, style = {}, height = 280, tableHeight, truncated, compare, spark, fitAxis }: Props) {
+export default function DataChart({ columns, rows, chart, style = {}, height = 280, tableHeight, truncated, compare, spark, fitAxis, onPoint }: Props) {
   const xi = columns.indexOf(chart.x);
   const ys = chart.y.filter((c) => columns.includes(c));
   const fmt = (v: number) => formatValue(v, style);
@@ -86,9 +89,13 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     ? [...rows].sort((a, b) => (Number(a[sortIndex]) - Number(b[sortIndex])) * (style.sort === "desc" ? -1 : 1))
     : rows;
 
+  // A heatmap needs a second field for its columns; without one there is no grid to colour in.
+  const gridIndex = chart.type === "heatmap" ? columns.indexOf(chart.legend ?? "") : -1;
+
   // A chart needs a category column and at least one number; otherwise show the rows.
   // A matrix is a table until pivoting is built.
-  if (chart.type === "table" || chart.type === "matrix" || notDrawnYet || xi < 0 || ys.length === 0) {
+  if (chart.type === "table" || chart.type === "matrix" || notDrawnYet || xi < 0 || ys.length === 0
+      || (chart.type === "heatmap" && gridIndex < 0)) {
     const table = <ResultTable columns={columns} rows={sorted} truncated={truncated} limit={50} />;
     return tableHeight ? <div className="table-scroll" style={{ maxHeight: tableHeight }}>{table}</div> : table;
   }
@@ -109,8 +116,56 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     ({ show: !!style.showValues, position, fontSize: 11, color: strong,
        formatter: (p: { value: number }) => as(p.value) });
 
+  // Clicking a bar, slice or cell asks for that category; the caller decides what to do with it.
+  const clicks = onPoint ? { click: (p: { name?: string }) => p?.name && onPoint(String(p.name)) } : undefined;
+
   let option;
   let changes: string[] = [];
+  if (chart.type === "heatmap") {
+    // One cell per pair of values: rows down the side, columns across the top, colour for the
+    // number. Rows arrive one per pair, so they are laid out onto the grid by name.
+    const down = [...new Set(labels)];
+    const across = [...new Set(sorted.map((r) => String(r[gridIndex] ?? "")))];
+    const vi = columns.indexOf(ys[0]);
+    const cells = sorted.map((r) => [
+      across.indexOf(String(r[gridIndex] ?? "")),
+      down.indexOf(String(r[xi] ?? "")),
+      typeof r[vi] === "number" ? r[vi] as number : Number(r[vi]),
+    ]).filter((c) => Number.isFinite(c[2] as number));
+    const numbers = cells.map((c) => c[2] as number);
+    const low = Math.min(0, ...numbers), high = Math.max(...numbers, 1);
+    const main = colors[0];
+    return (
+      <div role="img" aria-label={`Heatmap of ${columnLabel(ys[0])} by ${columnLabel(chart.x)} and ${columnLabel(chart.legend!)}`}>
+        <ReactEChartsCore echarts={echarts} notMerge style={{ height, width: "100%" }}
+          onEvents={onPoint ? { click: (p: { value: [number, number, number] }) => onPoint(down[p.value[1]]) } : undefined}
+          option={{
+          tooltip: {
+            // The axes hold positions, so the tooltip puts the names back.
+            formatter: (p: { value: [number, number, number] }) =>
+              `${across[p.value[0]]} · ${down[p.value[1]]}<br/><b>${fmt(p.value[2])}</b>`,
+          },
+          grid: { left: 8, right: 12, top: 12, bottom: 48, containLabel: true },
+          xAxis: { type: "category", data: across, ...AXIS, splitArea: { show: true },
+                   axisLabel: { ...AXIS.axisLabel, hideOverlap: true } },
+          yAxis: { type: "category", data: down, ...AXIS, splitArea: { show: true },
+                   axisLabel: { ...AXIS.axisLabel, width: 150, overflow: "truncate" } },
+          visualMap: {
+            min: low, max: high, calculable: true, orient: "horizontal", left: "center", bottom: 4,
+            textStyle: { color: ink }, formatter: fmt,
+            // Pale to the card's own colour, so a heatmap matches the rest of the dashboard.
+            inRange: { color: [dark ? "#1B2A38" : "#F2F7FB", main] },
+          },
+          series: [{
+            type: "heatmap", data: cells,
+            label: { show: !!style.showValues, fontSize: 10, color: strong, formatter: (p: { value: [number, number, number] }) => fmt(p.value[2]) },
+            itemStyle: { borderColor: dark ? "rgba(255,255,255,.08)" : "#FFFFFF", borderWidth: 1 },
+            emphasis: { itemStyle: { borderColor: strong, borderWidth: 1.5 } },
+          }],
+        }} />
+      </div>
+    );
+  }
   if (chart.type === "pie" || chart.type === "donut") {
     const before = thenOf(ys[0]);
     if (before) {
@@ -200,7 +255,7 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
   return (
     <>
       <div role="img" aria-label={alt}>
-        <ReactEChartsCore echarts={echarts} option={option} notMerge style={{ height, width: "100%" }} />
+        <ReactEChartsCore echarts={echarts} option={option} notMerge style={{ height, width: "100%" }} onEvents={clicks} />
       </div>
       {compare && (chart.type === "pie" || chart.type === "donut") && (
         <p className="chart-changes small muted">Since {compare.label}: {changes.length ? changes.join(" · ") : "no change"}</p>

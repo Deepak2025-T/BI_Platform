@@ -15,5 +15,7 @@ anthropic==1.15.0
 httpx==0.28.1
 # Checks AI-written SQL before it runs (one read-only SELECT on allowed tables)
 sqlglot==30.23.0
+# Receives uploaded logos and images (multipart form data)
+python-multipart==0.0.20
 # Excel export of dashboards
 XlsxWriter==3.2.0

@@ -3,16 +3,21 @@ import { useNavigate } from "react-router-dom";
 import { errorMessage } from "../api/client";
 import { assistantApi } from "../api/endpoints";
 import { visualsApi } from "../api/visuals";
-import type { Agg, ChartSpec, DataSourceInfo, DateBucket, QueryData, VisualField, VisualFilter, VisualMeasure, VisualSpec, VisualTable, Widget, WidgetStyle } from "../api/types";
+import type { Agg, ChartSpec, DataSourceInfo, DateBucket, QueryData, VisualField, VisualFilter, VisualJoin, VisualMeasure, VisualSpec, VisualTable, Widget, WidgetStyle } from "../api/types";
 import DataChart from "../components/DataChart";
 import Icon from "../components/Icon";
 import { useToast } from "../components/Toast";
 import VisualFields from "../components/VisualFields";
 import VisualFilters from "../components/VisualFilters";
 import VisualGallery from "../components/VisualGallery";
+import VisualJoins from "../components/VisualJoins";
 import VisualWells from "../components/VisualWells";
 import { rememberSource, rememberedSource, sourceIdOf, sourceValue } from "../lib/sources";
-import { VISUAL_BY_ID, type WellId, type Wells, buildSpec, canDrop, emptyWells, missingWell } from "../lib/visuals";
+import { VISUAL_BY_ID, type WellId, type Wells, buildSpec, canDrop, emptyWells, fieldKey, missingWell,
+         tableOf } from "../lib/visuals";
+
+/** How many tables one chart may read. More than this and a chart stops being readable. */
+const MAX_TABLES = 4;
 
 /** How long to wait after the last change before running the preview query. */
 const PREVIEW_DELAY = 450;
@@ -29,6 +34,9 @@ interface TrayChart {
   key: string;
   title: string;
   table: string;
+  /** Every table the chart reads, and how the extra ones are joined, so it reopens as it was. */
+  tables: string[];
+  joins: VisualJoin[];
   visualId: string;
   wells: Wells;
   buckets: Record<string, DateBucket | undefined>;
@@ -56,9 +64,11 @@ export default function VisualBuilder() {
 
   const [sources, setSources] = useState<DataSourceInfo[]>([]);
   const [source, setSource] = useState<string>("");
-  const [tables, setTables] = useState<VisualTable[]>([]);
-  const [table, setTable] = useState("");
-  const [fields, setFields] = useState<VisualField[]>([]);
+  const [allTables, setAllTables] = useState<VisualTable[]>([]);
+  // The tables this chart reads: the first one, then any joined to it.
+  const [picked, setPicked] = useState<string[]>([]);
+  const [joins, setJoins] = useState<VisualJoin[]>([]);
+  const [fieldsByTable, setFieldsByTable] = useState<Record<string, VisualField[]>>({});
 
   const [visualId, setVisualId] = useState("column_clustered");
   const [wells, setWells] = useState<Wells>(emptyWells);
@@ -82,6 +92,8 @@ export default function VisualBuilder() {
 
   const visual = VISUAL_BY_ID[visualId];
   const sourceId = source ? sourceIdOf(source) : null;
+  const table = picked[0] ?? "";
+  const fields = useMemo(() => picked.flatMap((t) => fieldsByTable[t] ?? []), [picked, fieldsByTable]);
 
   /** Set while reopening a saved chart, so changing the table restores it instead of clearing it. */
   const reopening = useRef<TrayChart | null>(null);
@@ -100,27 +112,40 @@ export default function VisualBuilder() {
   useEffect(() => {
     if (!source) return;
     rememberSource(source);
-    setTables([]);
-    setTable("");
+    setAllTables([]);
+    setPicked([]);
+    setJoins([]);
+    setFieldsByTable({});
     // A report runs against one database, so charts built on the last one can't come along.
     setCharts([]);
     setEditingKey(null);
     visualsApi.tables(sourceIdOf(source))
       .then((list) => {
-        setTables(list);
-        if (list.length === 1) setTable(list[0].table);
+        setAllTables(list);
+        if (list.length === 1) setPicked([list[0].table]);
       })
       .catch((err) => setError(errorMessage(err)));
   }, [source]);
 
+  // Each table's columns are fetched once and kept, so adding and removing tables is instant.
   useEffect(() => {
-    if (!table) { setFields([]); return; }
-    setData(null);
-    setSql("");
-    // Reopening a chart that was built on another table sets the table first and brings its own
-    // fields with it; otherwise the fields belong to this table and nothing on the chart applies.
+    const missing = picked.filter((t) => !fieldsByTable[t]);
+    if (missing.length === 0) return;
+    Promise.all(missing.map((t) => visualsApi.fields(sourceId, t)
+      .then((r) => [t, r.fields.map((f) => ({ ...f, table: t }))] as const)))
+      .then((loaded) => setFieldsByTable((m) => ({ ...m, ...Object.fromEntries(loaded) })))
+      .catch((err) => setError(errorMessage(err)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picked, fieldsByTable]);
+
+  /** Starts again on a different first table: nothing on the chart belongs to it. */
+  function chooseBase(next: string) {
     const reopened = reopening.current;
     reopening.current = null;
+    setPicked(reopened ? reopened.tables : next ? [next] : []);
+    setJoins(reopened ? reopened.joins : []);
+    setData(null);
+    setSql("");
     if (reopened) {
       setWells(reopened.wells);
       setBuckets(reopened.buckets);
@@ -130,11 +155,45 @@ export default function VisualBuilder() {
       setBuckets({});
       setFilters([]);
     }
-    visualsApi.fields(sourceId, table)
-      .then((r) => setFields(r.fields))
-      .catch((err) => { setFields([]); setError(errorMessage(err)); });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table]);
+  }
+
+  /**
+   * Adds a table to the chart, with the condition the database's own foreign keys imply where
+   * there is one. The suggestion is a starting point: it can be changed, or swapped for a
+   * comparison that isn't a key at all.
+   */
+  async function addTable(next: string) {
+    if (!next || picked.includes(next) || picked.length > MAX_TABLES - 1) return;
+    let on: VisualJoin["on"] = [];
+    try {
+      const found = await visualsApi.relationships(sourceId, [...picked, next]);
+      on = found
+        // A key can point either way; what matters is that one end is the table being added.
+        .map((r) => (r.left.table === next ? r : r.right.table === next ? { left: r.right, op: r.op, right: r.left } : null))
+        .filter((r): r is VisualJoin["on"][number] => !!r && picked.includes(r.right.table ?? ""))
+        .slice(0, 2);
+    } catch {
+      // Suggestions are a convenience; the condition can always be set by hand.
+    }
+    setPicked([...picked, next]);
+    setJoins([...joins, { table: next, type: "left", on }]);
+    setNote(on.length ? "" : `Say how ${next.split(".").pop()} matches the chart.`);
+  }
+
+  /** Takes a table off the chart, along with its join and anything built from its columns. */
+  function removeTable(gone: string) {
+    const mine = (key: string) => tableOf(key) === gone;
+    setPicked(picked.filter((t) => t !== gone));
+    setJoins(joins.filter((j) => j.table !== gone));
+    setWells((w) => ({
+      axis: w.axis.filter((k) => !mine(k)), legend: w.legend.filter((k) => !mine(k)),
+      rows: w.rows.filter((k) => !mine(k)), columns: w.columns.filter((k) => !mine(k)),
+      values: w.values.filter((m) => !mine(m.column)),
+      values2: w.values2.filter((m) => !mine(m.column)),
+      size: w.size.filter((m) => !mine(m.column)),
+    }));
+    setFilters((list) => list.filter((f) => f.table !== gone));
+  }
 
   // ---------- The spec, and the preview it drives ----------
 
@@ -148,7 +207,9 @@ export default function VisualBuilder() {
       const given = (f.values ?? []).filter((v) => String(v).trim() !== "");
       return f.op === "in" || f.op === "not_in" ? given.length > 0 : given.length === count;
     }).map((f) => ({ ...f, values: (f.values ?? []).filter((v) => String(v).trim() !== "") }));
-    const built = buildSpec(visual, wells, buckets, { table, filters: ready, order: [], limit: 500 });
+    // A table with no condition yet would only make the query fail, so wait for it.
+    if (joins.some((j) => j.on.length === 0 || j.on.some((c) => !c.left.column || !c.right.column))) return null;
+    const built = buildSpec(visual, wells, buckets, { table, joins, filters: ready, order: [], limit: 500 });
 
     // A query comes back in whatever order the database likes, so the chart has to ask. Dates read
     // in time order; everything else reads best ranked by its first number, as Power BI does.
@@ -159,7 +220,7 @@ export default function VisualBuilder() {
       : axis ? [{ ref: axis.alias!, dir: "asc" as const }]
       : [];
     return { ...built, spec: { ...built.spec, order } };
-  }, [visual, wells, buckets, filters, table]);
+  }, [visual, wells, buckets, filters, table, joins]);
 
   // Each change restarts the wait, so a run happens once the person stops rather than per keystroke.
   const runId = useRef(0);
@@ -180,16 +241,16 @@ export default function VisualBuilder() {
 
   // ---------- Putting fields on the chart ----------
 
-  const addTo = useCallback((well: WellId, column: string) => {
+  const addTo = useCallback((well: WellId, key: string) => {
     setWells((w) => {
       const def = visual.wells.find((x) => x.id === well);
       if (!def) return w;
       if (def.accepts === "measure") {
-        const field = fields.find((f) => f.name === column);
+        const field = fields.find((f) => fieldKey(f.table, f.name) === key);
         const agg: Agg = field?.is_number ? "sum" : "count";
-        return { ...w, [well]: [...(w[well] as never[]), { column, agg }] };
+        return { ...w, [well]: [...(w[well] as never[]), { column: key, agg }] };
       }
-      return { ...w, [well]: [...(w[well] as string[]), column] };
+      return { ...w, [well]: [...(w[well] as string[]), key] };
     });
     setNote("");
   }, [visual, fields]);
@@ -208,7 +269,7 @@ export default function VisualBuilder() {
       setNote(`There's no room for "${field.name}" on a ${visual.label.toLowerCase()}. Remove a field first.`);
       return;
     }
-    addTo(fit.id, field.name);
+    addTo(fit.id, fieldKey(field.table, field.name));
   }, [visual, wells, addTo]);
 
   const removeFrom = (well: WellId, index: number) =>
@@ -251,7 +312,7 @@ export default function VisualBuilder() {
     });
   }
 
-  const usedColumns = useMemo(() => new Set<string>([
+  const usedKeys = useMemo(() => new Set<string>([
     ...wells.axis, ...wells.legend, ...wells.rows, ...wells.columns,
     ...[...wells.values, ...wells.values2, ...wells.size].map((m) => m.column),
   ]), [wells]);
@@ -270,7 +331,7 @@ export default function VisualBuilder() {
     const standalone = await visualsApi.compile(sourceId, built!.spec, true);
     return {
       key: editingKey ?? `c${Date.now().toString(36)}${charts.length}`,
-      title: chartName(), table, visualId, wells, buckets, filters,
+      title: chartName(), table, tables: picked, joins, visualId, wells, buckets, filters,
       spec: built!.spec, chart: built!.chart, style: visual.style, sql: standalone.sql,
     };
   }
@@ -311,14 +372,8 @@ export default function VisualBuilder() {
     setVisualId(c.visualId);
     setTitle(c.title);
     setNote("");
-    if (c.table !== table) {
-      reopening.current = c;
-      setTable(c.table);
-    } else {
-      setWells(c.wells);
-      setBuckets(c.buckets);
-      setFilters(c.filters);
-    }
+    reopening.current = c;
+    chooseBase(c.table);
   }
 
   function removeChart(key: string) {
@@ -381,11 +436,24 @@ export default function VisualBuilder() {
           </label>
           <label className="field">
             Table
-            <select value={table} onChange={(e) => setTable(e.target.value)} disabled={tables.length === 0}>
-              <option value="">{tables.length ? "Choose a table…" : "No tables shared"}</option>
-              {tables.map((t) => <option key={t.table} value={t.table}>{t.table}</option>)}
+            <select value={table} onChange={(e) => chooseBase(e.target.value)} disabled={allTables.length === 0}>
+              <option value="">{allTables.length ? "Choose a table…" : "No tables shared"}</option>
+              {allTables.map((t) => <option key={t.table} value={t.table}>{t.table}</option>)}
             </select>
           </label>
+          {table && (
+            <label className="field">
+              Join another
+              <select value="" aria-label="Join another table" disabled={picked.length >= MAX_TABLES}
+                onChange={(e) => addTable(e.target.value)}>
+                <option value="">
+                  {picked.length >= MAX_TABLES ? `${MAX_TABLES} tables is the most` : "Add a table…"}
+                </option>
+                {allTables.filter((t) => !picked.includes(t.table))
+                  .map((t) => <option key={t.table} value={t.table}>{t.table}</option>)}
+              </select>
+            </label>
+          )}
           <label className="field builder-title">
             Chart title
             <input value={title} placeholder={table ? `${visual.label} of ${table.split(".").pop()}` : "Untitled"}
@@ -407,7 +475,7 @@ export default function VisualBuilder() {
         </div>
       </div>
 
-      {tables.length === 0 && source && (
+      {allTables.length === 0 && source && (
         <p className="muted small">
           No tables have been shared from {sourceName} yet. A manager chooses them on the Connections page.
         </p>
@@ -446,7 +514,7 @@ export default function VisualBuilder() {
       <div className="builder-grid">
         <aside className="builder-pane" aria-label="Fields">
           {table
-            ? <VisualFields fields={fields} table={table} used={usedColumns} onAdd={addAnywhere} />
+            ? <VisualFields fields={fields} tables={picked} used={usedKeys} onAdd={addAnywhere} />
             : <p className="muted small">Choose a table to see its fields.</p>}
         </aside>
 
@@ -493,19 +561,25 @@ export default function VisualBuilder() {
               <div className="field-group-label">Visualisation</div>
               <VisualGallery value={visualId} onChange={changeVisual} />
             </div>
+            {table && joins.length > 0 && (
+              <div>
+                <div className="field-group-label">How the tables match</div>
+                <VisualJoins tables={picked} joins={joins} fieldsByTable={fieldsByTable}
+                  onChange={setJoins} onRemove={removeTable} />
+              </div>
+            )}
             {table && (
               <>
                 <div>
                   <div className="field-group-label">{visual.label}</div>
                   <VisualWells visual={visual} wells={wells} fields={fields} buckets={buckets}
-                    onDrop={addTo} onRemove={removeFrom} onAgg={setAgg}
-                    onBucket={(column, bucket) => setBuckets((b) => ({ ...b, [column]: bucket }))}
+                    tableCount={picked.length} onDrop={addTo} onRemove={removeFrom} onAgg={setAgg}
+                    onBucket={(key, bucket) => setBuckets((b) => ({ ...b, [key]: bucket }))}
                     onRefuse={setNote} />
                 </div>
                 <div>
                   <div className="field-group-label">Filters on this chart</div>
-                  <VisualFilters sourceId={sourceId} table={table} fields={fields}
-                    filters={filters} onChange={setFilters} />
+                  <VisualFilters sourceId={sourceId} fields={fields} filters={filters} onChange={setFilters} />
                 </div>
               </>
             )}

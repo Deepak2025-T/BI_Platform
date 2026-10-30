@@ -34,6 +34,9 @@ const PATHS: Record<string, string> = {
   x: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20M15 9l-6 6M9 9l6 6",
 };
 
+/** Every icon's name, for pickers. */
+export const ICON_NAMES = Object.keys(PATHS);
+
 export default function Icon({ name, size = 18, className }: { name: keyof typeof PATHS | string; size?: number; className?: string }) {
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"

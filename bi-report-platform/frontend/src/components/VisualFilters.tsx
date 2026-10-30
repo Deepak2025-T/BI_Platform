@@ -24,15 +24,15 @@ const valuesNeeded = (op: FilterOp) => VALUE_COUNT[op] ?? 1;
 
 interface Props {
   sourceId: number | null;
-  table: string;
+  /** Every field of every table on the chart; each one says which table it belongs to. */
   fields: VisualField[];
   filters: VisualFilter[];
   onChange: (filters: VisualFilter[]) => void;
 }
 
 /** One filter row: a column, a comparison, and the values it compares against. */
-function Row({ filter, field, sourceId, table, onChange, onRemove }: {
-  filter: VisualFilter; field: VisualField | undefined; sourceId: number | null; table: string;
+function Row({ filter, field, sourceId, several, onChange, onRemove }: {
+  filter: VisualFilter; field: VisualField | undefined; sourceId: number | null; several: boolean;
   onChange: (f: VisualFilter) => void; onRemove: () => void;
 }) {
   const [options, setOptions] = useState<string[] | null>(null);
@@ -45,11 +45,11 @@ function Row({ filter, field, sourceId, table, onChange, onRemove }: {
   useEffect(() => {
     if (!isList || options !== null || loading) return;
     setLoading(true);
-    visualsApi.values(sourceId, table, filter.column)
+    visualsApi.values(sourceId, filter.table ?? "", filter.column)
       .then((r) => setOptions(r.values))
       .catch(() => setOptions([]))
       .finally(() => setLoading(false));
-  }, [isList, options, loading, sourceId, table, filter.column]);
+  }, [isList, options, loading, sourceId, filter.table, filter.column]);
 
   const setValue = (i: number, v: string) => {
     const next = [...values];
@@ -62,7 +62,10 @@ function Row({ filter, field, sourceId, table, onChange, onRemove }: {
   return (
     <li className="filter-row">
       <div className="filter-head">
-        <span className="filter-column" title={filter.column}>{filter.column}</span>
+        <span className="filter-column" title={`${filter.table ?? ""}.${filter.column}`}>
+          {filter.column}
+          {several && filter.table && <span className="muted"> · {filter.table.split(".").pop()}</span>}
+        </span>
         <select aria-label={`How to compare ${filter.column}`} value={filter.op}
           onChange={(e) => {
             const op = e.target.value as FilterOp;
@@ -107,14 +110,17 @@ function Row({ filter, field, sourceId, table, onChange, onRemove }: {
 }
 
 /** Filters that narrow the rows this one chart reads, before anything is grouped. */
-export default function VisualFilters({ sourceId, table, fields, filters, onChange }: Props) {
+export default function VisualFilters({ sourceId, fields, filters, onChange }: Props) {
   const [adding, setAdding] = useState("");
+  const tables = [...new Set(fields.map((f) => f.table))];
+  const several = tables.length > 1;
+  const keyOf = (f: VisualField) => `${f.table}::${f.name}`;
 
-  function add(column: string) {
-    const field = fields.find((f) => f.name === column);
+  function add(key: string) {
+    const field = fields.find((f) => keyOf(f) === key);
     if (!field) return;
     const op: FilterOp = field.is_date ? "between" : field.is_number ? "=" : "in";
-    onChange([...filters, { column, op, values: [] }]);
+    onChange([...filters, { table: field.table, column: field.name, op, values: [] }]);
     setAdding("");
   }
 
@@ -122,15 +128,18 @@ export default function VisualFilters({ sourceId, table, fields, filters, onChan
     <div className="stack-sm">
       <ul className="filter-list">
         {filters.map((f, i) => (
-          <Row key={`${f.column}-${i}`} filter={f} field={fields.find((x) => x.name === f.column)}
-            sourceId={sourceId} table={table}
+          <Row key={`${f.table}-${f.column}-${i}`} filter={f} several={several}
+            field={fields.find((x) => x.name === f.column && (!f.table || x.table === f.table))}
+            sourceId={sourceId}
             onChange={(next) => onChange(filters.map((x, j) => (j === i ? next : x)))}
             onRemove={() => onChange(filters.filter((_, j) => j !== i))} />
         ))}
       </ul>
       <select aria-label="Add a filter" value={adding} onChange={(e) => add(e.target.value)}>
         <option value="">Add a filter…</option>
-        {fields.map((f) => <option key={f.name} value={f.name}>{f.name}</option>)}
+        {fields.map((f) => (
+          <option key={keyOf(f)} value={keyOf(f)}>{several ? `${f.table.split(".").pop()}.${f.name}` : f.name}</option>
+        ))}
       </select>
     </div>
   );

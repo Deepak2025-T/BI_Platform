@@ -9,16 +9,18 @@ from .. import dashboard_filters
 from ..ai.assistant import AssistantError, chat, new_widget, plan_dashboard, write_widget
 from ..ai.providers import AIError, ModelSpec
 from ..connections import crypto
-from ..datasources import SourceError, get_source, list_sources
+from ..datasources import QueryFailed, SourceError, get_source, list_sources, run_sql
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import AIModel, Report, User
 from ..excel_export import dashboard_workbook
-from ..schemas import ChatIn, DashboardDataIn, DashboardIn, FilterMapIn, ReportOut, SaveDashboardIn, SourceOut, WidgetIn
+from ..schemas import (ChatIn, DashboardDataIn, DashboardIn, DrillIn, FilterMapIn, ReportOut,
+                       SaveDashboardIn, SourceOut, WidgetIn)
 from ..refresh import RefreshFailed, as_utc, latest_snapshot, refresh_report, snapshot_matches
 from ..report_data import active_filters, run_widgets
 from ..datasources import check_query
 from ..sql_guard import UnsafeSQL
+from ..visual_query import SpecError, compile_spec
 from .reports import check_can_edit, get_visible, to_out
 
 router = APIRouter(tags=["assistant"])
@@ -124,6 +126,64 @@ def dashboard_data(report_id: int, body: DashboardDataIn | None = None, db: Sess
         return {"source": snap.data.get("source", source.name), "snapshot_at": at,
                 "widgets": [{**w, "ran_at": at, "cached": False} for w in snap.data["widgets"]]}
     return {"source": source.name, "snapshot_at": None, "widgets": _run_widgets(report.config, source, body)}
+
+
+@router.post("/api/reports/{report_id}/drill")
+def drill_widget(report_id: int, body: DrillIn, db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """One level deeper into a chart built from fields.
+
+    The chart keeps the fields it was built from, and any after the first on its axis are its
+    drill levels. `values` is the trail of what was clicked, so one value asks for the second
+    level inside that value, two values for the third, and so on. The columns come from the saved
+    chart, never from the request: the request only says what was clicked.
+
+    The query is built here rather than filtered in the browser, so a drilled chart is a real
+    GROUP BY over the whole table and its totals are right."""
+    report, source = _dashboard(db, report_id, user)
+    widget = next((w for w in report.config.get("widgets") or [] if w.get("id") == body.widget_id), None)
+    if widget is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "That chart isn't on this dashboard")
+    visual = widget.get("visual") or {}
+    levels = [d for d in (visual.get("drill") or []) if isinstance(d, dict)]
+    shown = [d for d in (visual.get("dimensions") or []) if isinstance(d, dict)]
+    if not levels or not shown:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "This chart has nothing to drill into. Charts built in Build a chart drill down when "
+                            "their axis has more than one field.")
+    depth = len(body.values)
+    if not 1 <= depth <= len(levels):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"This chart has {len(levels)} level(s) to drill into.")
+
+    trail = [shown[0]] + levels            # level 0 is what the chart shows to begin with
+    dimensions = [trail[depth]] + shown[1:]  # the new level, keeping any legend field
+    conditions = list(visual.get("filters") or [])
+    for item, value in zip(trail, body.values):
+        conditions.append({"column": item.get("column"), "bucket": item.get("bucket"),
+                           "op": "is_null" if value is None else "=",
+                           "values": [] if value is None else [value]})
+    measures = [m for m in (visual.get("measures") or []) if isinstance(m, dict)]
+    axis, first = dimensions[0], (measures[0].get("alias") if measures else None)
+    # Dates read in time order; everything else ranks by its first number, as the builder does.
+    order = ([{"ref": axis.get("alias"), "dir": "asc"}] if axis.get("bucket") and axis.get("alias")
+             else [{"ref": first, "dir": "desc"}] if first else [])
+    spec = {**visual, "dimensions": dimensions, "filters": conditions, "order": order}
+    try:
+        # Inlined, so the dashboard's own filters can still bind values of their own below.
+        sql, _ = compile_spec(source, spec, inline=True)
+    except SpecError as err:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"This chart can't be drilled into: {err}")
+
+    values = {k: v.model_dump() for k, v in body.filters.items()}
+    sql, params, _, skipped = dashboard_filters.apply(sql, source, report.config.get("filters") or [],
+                                                      values, body.widget_id)
+    try:
+        data = run_sql(source, sql, params, refresh=body.refresh)
+    except (UnsafeSQL, QueryFailed) as err:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"The drilled chart couldn't run: {err}")
+    return {**data, "chart": {**(widget.get("chart") or {}), "x": axis.get("alias")},
+            "depth": depth, "levels": len(levels), "not_filtered": skipped,
+            "label": axis.get("alias") or axis.get("column")}
 
 
 @router.post("/api/reports/{report_id}/export")

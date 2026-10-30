@@ -42,7 +42,8 @@ export interface VisualDef {
 const VALUES = (max: number, label = "Values"): Well =>
   ({ id: "values", label, accepts: "measure", max, required: true, hint: "Numbers to show" });
 const AXIS = (max = 2): Well =>
-  ({ id: "axis", label: "Axis", accepts: "dimension", max, required: true, hint: "What to group by" });
+  ({ id: "axis", label: "Axis", accepts: "dimension", max, required: true,
+     hint: max > 1 ? "What to group by; a second field drills down" : "What to group by" });
 const LEGEND: Well =
   { id: "legend", label: "Legend", accepts: "dimension", max: 1, hint: "Split into one series per value" };
 
@@ -87,6 +88,12 @@ export const VISUALS: VisualDef[] = [
     { id: "rows", label: "Rows", accepts: "dimension", max: 3, required: true, hint: "Down the side" },
     { id: "columns", label: "Columns", accepts: "dimension", max: 1, hint: "Across the top" },
     VALUES(4),
+  ] },
+
+  { id: "heatmap", label: "Heatmap", group: "Tables", chart: "heatmap", wells: [
+    { id: "rows", label: "Rows", accepts: "dimension", max: 1, required: true, hint: "Down the side" },
+    { id: "columns", label: "Columns", accepts: "dimension", max: 1, required: true, hint: "Across the top" },
+    VALUES(1, "Colour"),
   ] },
 
   { id: "kpi", label: "Number", group: "Numbers", chart: "kpi", wells: [VALUES(1)] },
@@ -140,7 +147,22 @@ export const AGG_LABELS: Record<Agg, string> = {
 
 export const defaultDimensionName = (column: string, bucket?: DateBucket) => (bucket ? `${column} (${bucket})` : column);
 export const defaultMeasureName = (m: VisualMeasure) =>
-  (m.agg === "count" && !m.column ? "Count" : `${AGG_LABELS[m.agg]} of ${m.column}`);
+  (m.agg === "count" && !m.column ? "Count" : `${AGG_LABELS[m.agg]} of ${columnOf(m.column)}`);
+
+/**
+ * A chart can read more than one table, so a well holds "schema.table::column" rather than a
+ * bare column name: two tables may each have a "region", and the query has to know which.
+ */
+const SEP = "::";
+export const fieldKey = (table: string, column: string) => `${table}${SEP}${column}`;
+export function splitKey(key: string): { table?: string; column: string } {
+  const at = key.indexOf(SEP);
+  return at < 0 ? { column: key } : { table: key.slice(0, at), column: key.slice(at + SEP.length) };
+}
+/** Just the column, for labels. */
+export const columnOf = (key: string) => splitKey(key).column;
+/** Which table a key came from, for labels and for grouping the field list. */
+export const tableOf = (key: string) => splitKey(key).table ?? "";
 
 /** The same rule the compiler uses, so two fields never end up sharing a column name. */
 function unique(name: string, taken: Set<string>): string {
@@ -158,29 +180,42 @@ function unique(name: string, taken: Set<string>): string {
  * field is given an explicit name. Dimensions come first because the compiler selects them first,
  * and the chart then points at those names rather than guessing them.
  */
+/** Shapes that show every field at once, so extra axis fields are not drill levels. */
+const NO_DRILL = new Set<ChartType>(["table", "matrix", "heatmap"]);
+
 export function buildSpec(visual: VisualDef, wells: Wells, buckets: Record<string, DateBucket | undefined>,
-                          base: Pick<VisualSpec, "table" | "filters" | "order" | "limit">):
+                          base: Pick<VisualSpec, "table" | "joins" | "filters" | "order" | "limit">):
                           { spec: VisualSpec; chart: ChartSpec } {
   const taken = new Set<string>();
   // Rows and axis share a well in the data, so a matrix and a bar chart compile the same way.
   const axisColumns = [...wells.rows, ...wells.axis];
   const legendColumns = [...wells.columns, ...wells.legend];
 
-  const named = (column: string) => {
-    const bucket = buckets[column];
-    return { column, bucket, alias: unique(defaultDimensionName(column, bucket), taken) };
+  const named = (key: string) => {
+    const bucket = buckets[key];
+    const { table, column } = splitKey(key);
+    return { table, column, bucket, alias: unique(defaultDimensionName(column, bucket), taken) };
   };
-  const dimensions = [...axisColumns, ...legendColumns].map(named);
-  const nameOfAxis = dimensions.slice(0, axisColumns.length).map((d) => d.alias);
-  const nameOfLegend = dimensions.slice(axisColumns.length).map((d) => d.alias);
+  // On a chart that is drawn by category, only the first axis field is shown: the ones after it
+  // are the levels clicking a bar drills into. A table, matrix or heatmap shows all of them at
+  // once, so nothing is held back there.
+  const drills = !NO_DRILL.has(visual.chart);
+  const onAxis = drills ? axisColumns.slice(0, 1) : axisColumns;
+  const dimensions = [...onAxis, ...legendColumns].map(named);
+  const drill = drills ? axisColumns.slice(1).map(named) : [];
+  const nameOfAxis = dimensions.slice(0, onAxis.length).map((d) => d.alias);
+  const nameOfLegend = dimensions.slice(onAxis.length).map((d) => d.alias);
 
-  const measure = (m: VisualMeasure) => ({ ...m, alias: unique(m.alias?.trim() || defaultMeasureName(m), taken) });
+  const measure = (m: VisualMeasure) => ({
+    ...m, ...splitKey(m.column),
+    alias: unique(m.alias?.trim() || defaultMeasureName(m), taken),
+  });
   const values = wells.values.map(measure);
   const values2 = wells.values2.map(measure);
   const size = wells.size.map(measure);
 
   return {
-    spec: { ...base, dimensions, measures: [...values, ...values2, ...size] },
+    spec: { ...base, dimensions, drill, measures: [...values, ...values2, ...size] },
     chart: {
       type: visual.chart,
       // A pie or donut has no axis well: the legend is what it is cut by, so that becomes the

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Agg, DateBucket, VisualField, VisualMeasure } from "../api/types";
-import { AGG_LABELS, type VisualDef, type WellId, type Wells, canDrop, defaultMeasureName } from "../lib/visuals";
+import { AGG_LABELS, type VisualDef, type WellId, type Wells, canDrop, columnOf, defaultMeasureName,
+         fieldKey, tableOf } from "../lib/visuals";
 import { FIELD_DRAG_TYPE } from "./VisualFields";
 import Icon from "./Icon";
 
@@ -11,8 +12,10 @@ interface Props {
   visual: VisualDef;
   wells: Wells;
   fields: VisualField[];
-  /** Date groupings, by column name. */
+  /** Date groupings, by field key. */
   buckets: Record<string, DateBucket | undefined>;
+  /** How many tables the chart reads: with more than one, each field says where it came from. */
+  tableCount?: number;
   onDrop: (well: WellId, column: string) => void;
   onRemove: (well: WellId, index: number) => void;
   onAgg: (well: WellId, index: number, agg: Agg) => void;
@@ -27,9 +30,9 @@ interface Props {
  * A well only takes what it can draw, so dropping text on Values is refused with a reason rather
  * than accepted and left to fail when the query runs.
  */
-export default function VisualWells({ visual, wells, fields, buckets, onDrop, onRemove, onAgg, onBucket, onRefuse }: Props) {
+export default function VisualWells({ visual, wells, fields, buckets, tableCount = 1, onDrop, onRemove, onAgg, onBucket, onRefuse }: Props) {
   const [over, setOver] = useState<WellId | null>(null);
-  const fieldOf = (name: string) => fields.find((f) => f.name === name);
+  const fieldOf = (key: string) => fields.find((f) => fieldKey(f.table, f.name) === key);
 
   function handleDrop(well: WellId, e: React.DragEvent) {
     e.preventDefault();
@@ -61,10 +64,11 @@ export default function VisualWells({ visual, wells, fields, buckets, onDrop, on
 
             <ul className="well-items">
               {held.map((item, i) => {
-                const column = isMeasure ? (item as VisualMeasure).column : (item as string);
-                const field = fieldOf(column);
+                const key = isMeasure ? (item as VisualMeasure).column : (item as string);
+                const field = fieldOf(key);
+                const column = columnOf(key);
                 return (
-                  <li key={`${column}-${i}`} className="well-item">
+                  <li key={`${key}-${i}`} className="well-item">
                     {isMeasure ? (
                       <>
                         <select aria-label={`How to summarise ${column}`} value={(item as VisualMeasure).agg}
@@ -74,14 +78,18 @@ export default function VisualWells({ visual, wells, fields, buckets, onDrop, on
                         </select>
                         <span className="well-item-name" title={defaultMeasureName(item as VisualMeasure)}>
                           {column || "rows"}
+                          {tableCount > 1 && key && <span className="well-item-table"> · {tableOf(key).split(".").pop()}</span>}
                         </span>
                       </>
                     ) : (
                       <>
-                        <span className="well-item-name" title={column}>{column}</span>
+                        <span className="well-item-name" title={key}>
+                          {column}
+                          {tableCount > 1 && <span className="well-item-table"> · {tableOf(key).split(".").pop()}</span>}
+                        </span>
                         {field?.is_date && (
-                          <select aria-label={`How to group ${column}`} value={buckets[column] ?? ""}
-                            onChange={(e) => onBucket(column, (e.target.value || undefined) as DateBucket | undefined)}>
+                          <select aria-label={`How to group ${column}`} value={buckets[key] ?? ""}
+                            onChange={(e) => onBucket(key, (e.target.value || undefined) as DateBucket | undefined)}>
                             <option value="">Each value</option>
                             {BUCKETS.map((b) => <option key={b} value={b}>By {b}</option>)}
                           </select>

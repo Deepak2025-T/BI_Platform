@@ -1,6 +1,6 @@
 import { api } from "./client";
 import type {
-  ChatResult, DashboardConfig, DashboardDataRequest, DashboardFilter, DashboardParameters, DataSourceInfo, QueryData, Widget, WidgetData,
+  ChatResult, DashboardConfig, DashboardDataRequest, DashboardFilter, DrillResult, DashboardParameters, DataSourceInfo, QueryData, Widget, WidgetData,
   AIModel, AIModelInput, AIModelPublic, AIModelTestResult, AIProvider, AIProviderInfo, Category, CategoryInput, ConnectionInput, ConnectionTestResult, DataConnection, QueryParams, QueryResult, Report,
   ReportConfig, ReportTemplate, Role, SchemaTables, TemplateInput, User,
 } from "./types";
@@ -11,10 +11,17 @@ export const authApi = {
   me: () => api.get<User>("/api/auth/me").then((r) => r.data),
 };
 
+/**
+ * How long to wait for one model call, a little longer than the backend's own AI_TIMEOUT_SECONDS
+ * (300s by default). The browser must not give up first: the backend keeps going, saves the
+ * answer, and the person is told the server didn't answer when in fact it did.
+ */
+const AI_WAIT = 310000;
+
 export const queryApi = {
   /** modelId null uses the built-in keyword engine. Local models can be slow, so allow 2 minutes. */
   generate: (prompt: string, modelId: number | null = null) =>
-    api.post<QueryResult>("/api/query/generate", { prompt, model_id: modelId }, { timeout: 120000 }).then((r) => r.data),
+    api.post<QueryResult>("/api/query/generate", { prompt, model_id: modelId }, { timeout: AI_WAIT }).then((r) => r.data),
   run: (params: QueryParams) => api.post<QueryResult>("/api/query/run", params).then((r) => r.data),
 };
 
@@ -72,8 +79,8 @@ export const aiModelsApi = {
   remove: (id: number) => api.delete(`/api/ai-models/${id}`),
   /** Tests the form's details without saving. Pass id to reuse a saved key. */
   testDraft: (body: { provider: AIProvider; model: string; base_url: string; api_key?: string | null; id?: number }) =>
-    api.post<AIModelTestResult>("/api/ai-models/test", body, { timeout: 310000 }).then((r) => r.data),
-  test: (id: number) => api.post<AIModelTestResult>(`/api/ai-models/${id}/test`, null, { timeout: 310000 }).then((r) => r.data),
+    api.post<AIModelTestResult>("/api/ai-models/test", body, { timeout: AI_WAIT }).then((r) => r.data),
+  test: (id: number) => api.post<AIModelTestResult>(`/api/ai-models/${id}/test`, null, { timeout: AI_WAIT }).then((r) => r.data),
   discover: (body: { provider: AIProvider; base_url: string; api_key?: string | null; id?: number }) =>
     api.post<string[]>("/api/ai-models/discover", body, { timeout: 30000 }).then((r) => r.data),
 };
@@ -83,22 +90,28 @@ export const assistantApi = {
   sources: () => api.get<DataSourceInfo[]>("/api/sources").then((r) => r.data),
   chat: (body: { source_id: number | null; model_id: number; question: string;
                  history: { question: string; reply: string; sql: string }[] }) =>
-    api.post<ChatResult>("/api/assistant/chat", body, { timeout: 240000 }).then((r) => r.data),
+    api.post<ChatResult>("/api/assistant/chat", body, { timeout: AI_WAIT }).then((r) => r.data),
   widget: (body: { source_id: number | null; model_id: number; question: string }) =>
-    api.post<{ widget: Widget; data: QueryData }>("/api/assistant/widget", body, { timeout: 240000 }).then((r) => r.data),
+    api.post<{ widget: Widget; data: QueryData }>("/api/assistant/widget", body, { timeout: AI_WAIT }).then((r) => r.data),
   dashboard: (body: { source_id: number | null; model_id: number; prompt: string; parameters: DashboardParameters }) =>
-    api.post<{ report: Report; failed: { title: string; error: string }[] }>("/api/assistant/dashboard", body, { timeout: 420000 })
+    api.post<{ report: Report; failed: { title: string; error: string }[] }>("/api/assistant/dashboard", body, { timeout: AI_WAIT * 4 })
       .then((r) => r.data),
   save: (body: { source_id: number | null; title: string; prompt: string; widgets: Widget[] }) =>
     api.post<Report>("/api/assistant/save", body).then((r) => r.data),
   data: (reportId: number, body: DashboardDataRequest = { filters: {} }) =>
     api.post<{ source: string; widgets: WidgetData[]; snapshot_at: string | null }>(`/api/reports/${reportId}/data`, body, { timeout: 120000 }).then((r) => r.data),
+  /**
+   * One level deeper into a chart built from fields. `values` is the trail of what was clicked,
+   * outermost first; the columns come from the saved chart, so this only says what was picked.
+   */
+  drill: (reportId: number, body: DashboardDataRequest & { widget_id: string; values: (string | null)[] }) =>
+    api.post<DrillResult>(`/api/reports/${reportId}/drill`, body, { timeout: 120000 }).then((r) => r.data),
   /** The dashboard as an .xlsx file, one sheet per chart, with the same filters. */
   exportExcel: (reportId: number, body: DashboardDataRequest) =>
     api.post<Blob>(`/api/reports/${reportId}/export`, body, { timeout: 180000, responseType: "blob" }).then((r) => r.data),
   /** Design time: the AI model picks the column each chart filters on. Nothing is saved. */
   mapFilter: (reportId: number, body: { model_id: number; label: string; kind: DashboardFilter["kind"]; id?: string; widgets: Widget[] }) =>
-    api.post<DashboardFilter>(`/api/reports/${reportId}/filters/map`, body, { timeout: 240000 }).then((r) => r.data),
+    api.post<DashboardFilter>(`/api/reports/${reportId}/filters/map`, body, { timeout: AI_WAIT }).then((r) => r.data),
 };
 
 export const usersApi = {

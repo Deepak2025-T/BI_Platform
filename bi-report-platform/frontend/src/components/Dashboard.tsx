@@ -5,11 +5,11 @@ import { aiModelsApi, assistantApi, reportsApi } from "../api/endpoints";
 import { reportToolsApi } from "../api/reportTools";
 import { scheduleApi } from "../api/schedule";
 import type {
-  AIModelPublic, Cell, ChartType, DashboardConfig, DashboardFilter, FilterValue, Report, Widget, WidgetData,
+  AIModelPublic, Cell, ChartType, DashboardConfig, DashboardFilter, DrillResult, FilterValue, Report, Widget, WidgetData,
 } from "../api/types";
 import { rememberedModel } from "../lib/aiModels";
 import { cardLook } from "../lib/cardColors";
-import { shortDate } from "../lib/format";
+import { columnLabel, shortDate } from "../lib/format";
 import { COMPARE_OPTIONS, type CompareWith, type HistoryPoint, compareAt, timeLabels } from "../lib/history";
 import { useAutosave } from "../lib/useAutosave";
 import { HEIGHT, WIDTHS, hasHeight, sizeForCols, tileCols } from "../lib/tileSize";
@@ -20,6 +20,7 @@ import ChartEditor from "./ChartEditor";
 import DataChart from "./DataChart";
 import FilterColumnsDialog from "./FilterColumnsDialog";
 import FullscreenButton from "./FullscreenButton";
+import MediaTile, { LogoMark, LogoPicker } from "./MediaTile";
 import Icon from "./Icon";
 import PublishDialog from "./PublishDialog";
 import RefreshSchedule from "./RefreshSchedule";
@@ -27,6 +28,12 @@ import TableChanges from "./TableChanges";
 import TileMenu from "./TileMenu";
 import ResizeHandle from "./ResizeHandle";
 import { useToast } from "./Toast";
+
+/** A chart the reader has clicked into: what was clicked on the way down, and what came back. */
+interface Drilled {
+  trail: string[];
+  data: DrillResult;
+}
 
 interface Props {
   report: Report & { config: DashboardConfig };
@@ -61,6 +68,30 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
   const [compareWith, setCompareWith] = useState<CompareWith>("previous");
   const [baseline, setBaseline] = useState<{ label: string; widgets: Record<string, { columns: string[]; rows: Cell[][] }> } | null>(null);
   const [historyOpen, setHistoryOpen] = useState<Set<string>>(new Set());
+  // Charts the reader has clicked into: the trail of values on the way down, and what came back.
+  const [drilled, setDrilled] = useState<Record<string, Drilled>>({});
+  const [drilling, setDrilling] = useState<string | null>(null);
+
+  /** How many levels a chart can be clicked into, from the fields it was built with. */
+  const levelsOf = (w: Widget) => w.visual?.drill?.length ?? 0;
+
+  /**
+   * Goes one level deeper, or back up to `keep` values. The server groups the whole table again
+   * at the new level, so the numbers are real totals rather than the clicked bar split up.
+   */
+  async function drill(w: Widget, next: string[]) {
+    if (next.length > levelsOf(w)) return;
+    if (next.length === 0) { setDrilled((m) => { const { [w.id]: _gone, ...rest } = m; return rest; }); return; }
+    setDrilling(w.id);
+    try {
+      const res = await assistantApi.drill(report.id, { filters: values, widget_id: w.id, values: next });
+      setDrilled((m) => ({ ...m, [w.id]: { trail: next, data: res } }));
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setDrilling(null);
+    }
+  }
 
   // Runs every chart's saved SQL with the chosen filter values. refresh skips the 15-minute cache.
   const load = useCallback((refresh = false) => {
@@ -70,6 +101,8 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
       .then((res) => {
         if (n !== latest.current) return;
         setData(Object.fromEntries(res.widgets.map((w) => [w.id, w])));
+        // The filters have changed under them, so anything drilled into goes back to the top.
+        setDrilled({});
         setSnapshotAt(res.snapshot_at);
         setLoadError("");
       })
@@ -166,6 +199,10 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
   const addText = () => setWidgets([...config.widgets, {
     id: Math.random().toString(16).slice(2, 10), kind: "text", title: "New section", text: "", question: "", sql: "",
     chart: { type: "table", x: "", y: [] }, size: "full",
+  }]);
+  const addMedia = () => setWidgets([...config.widgets, {
+    id: Math.random().toString(16).slice(2, 10), kind: "media", title: "", text: "", question: "", sql: "",
+    chart: { type: "table", x: "", y: [] }, size: "third", height: 140,
   }]);
   // Resizing: the corner handle on each tile (see ResizeHandle).
   const gridRef = useRef<HTMLDivElement>(null);
@@ -264,6 +301,7 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
         {editable ? (
           <>
             <label htmlFor="dtitle" className="sr-only">Dashboard title</label>
+            <LogoPicker logo={config.logo} onChange={(logo) => setConfig((c) => ({ ...c, logo }))} />
             <input id="dtitle" className="title-input" value={title} onChange={(e) => setTitle(e.target.value)} />
             <span className="muted small" aria-live="polite">
               {saveState === "saving" ? "Saving…" : saveState === "error" ? "Couldn't save. Check your connection." : report.status === "published" ? "Published, changes saved" : "Draft, saved"}
@@ -277,6 +315,7 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
           <div className="row-between">
             <div>
               <div className="row-wrap">
+                <LogoMark logo={config.logo} />
                 <h1 className="h1">{report.title}</h1>
                 {report.status === "published" && <CategoryBadge category={report.category} />}
               </div>
@@ -364,6 +403,31 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
 
         <div className="dash-grid" ref={gridRef}>
           {config.widgets.map((w, i) => {
+            if (w.kind === "media") {
+              return (
+                <section key={w.id} className={`widget w-media size-${w.size ?? "third"}${editable || w.style?.cardBg ? " card" : ""}${editable ? " editing" : ""}${cardLook(w.style).className}${dragClass(w.id)}${resizeClass(w)}`}
+                  style={cardLook(w.style).style} aria-label={w.title || w.alt || "Picture"} {...dragProps(w.id)}>
+                  <div className="widget-head">
+                    {handle(w)}
+                    {editable ? (
+                      <input className="widget-title-input text-tile-title" value={w.title} placeholder="Caption (optional)"
+                        aria-label="Caption" onChange={(e) => change(w.id, { title: e.target.value })} />
+                    ) : w.title && <h2 className="text-tile-title">{w.title}</h2>}
+                    {editable && (
+                      <div className="widget-tools no-print">
+                        <select className="chart-pick" value={sizeForCols(tileCols(w))} aria-label="Width" onChange={(e) => change(w.id, { size: e.target.value as Widget["size"] })}>
+                          {WIDTHS.map((x) => <option key={x.size} value={x.size}>{x.label}</option>)}
+                        </select>
+                        <CardColors name={w.title || "picture"} style={w.style ?? {}} onChange={(p) => setLook(w, p)} onApplyAll={lookAll} />
+                        <TileMenu name={w.title || "picture"} items={menuItems(w, i)} />
+                      </div>
+                    )}
+                  </div>
+                  <MediaTile widget={w} editable={editable} onChange={(patch) => change(w.id, patch)} />
+                  {resizer(w)}
+                </section>
+              );
+            }
             if (w.kind === "text") {
               return (
                 <section key={w.id} className={`widget w-text size-${w.size ?? "auto"}${editable || w.style?.cardBg ? " card" : ""}${editable ? " editing" : ""}${cardLook(w.style).className}${dragClass(w.id)}${resizeClass(w)}`}
@@ -399,6 +463,10 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
             const compare = before && d?.ok ? { label: baseline!.label, columns: before.columns, rows: before.rows } : undefined;
             const spark = w.chart.type === "kpi" ? points.map((p) => p.value).filter((v): v is number => typeof v === "number") : undefined;
             const unfiltered = (d?.not_filtered ?? []).map((id) => filters.find((f) => f.id === id)?.label).filter(Boolean);
+            // A drilled chart shows the level it was clicked into; everything else shows its own data.
+            const down = drilled[w.id];
+            const shown = down ? down.data : (d?.ok ? { ...d, chart: w.chart } : null)!;
+            const canDrill = !!d?.ok && levelsOf(w) > (down?.trail.length ?? 0) && !showHistory;
             return (
               <section key={w.id} className={`card widget w-${w.chart.type} size-${w.size ?? "auto"}${cardLook(w.style).className}${dragClass(w.id)}${resizeClass(w)}`}
                 style={cardLook(w.style).style} aria-label={w.title} {...dragProps(w.id)}>
@@ -446,8 +514,33 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
                   : showHistory ? <HistoryChart widget={w} points={points} height={w.height ?? HEIGHT.default} />
                   : d.ok ? <>
                       {compare && w.chart.type === "table" && <TableChanges columns={d.columns} rows={d.rows} compare={compare} />}
-                      <DataChart columns={d.columns} rows={d.rows} chart={w.chart} style={w.style} truncated={d.truncated}
-                        height={w.height ?? HEIGHT.default} tableHeight={w.height} compare={compare} spark={spark} />
+                      {down && (
+                        <div className="drill-trail small no-print">
+                          <button className="btn btn-ghost btn-sm" onClick={() => drill(w, [])}>
+                            <Icon name="up" size={14} />Back to {columnLabel(w.chart.x)}
+                          </button>
+                          {down.trail.map((v, level) => (
+                            <span key={level} className="drill-step">
+                              <Icon name="arrow" size={12} className="faint" />
+                              {level < down.trail.length - 1
+                                ? <button className="link-btn" onClick={() => drill(w, down.trail.slice(0, level + 1))}>{v}</button>
+                                : <b>{v}</b>}
+                            </span>
+                          ))}
+                          <span className="muted">· now by {columnLabel(down.data.label)}</span>
+                          {drilling === w.id && <span className="spinner" aria-label="Loading" />}
+                        </div>
+                      )}
+                      <DataChart columns={shown.columns} rows={shown.rows} chart={shown.chart} style={w.style}
+                        truncated={shown.truncated} height={w.height ?? HEIGHT.default} tableHeight={w.height}
+                        compare={down ? undefined : compare} spark={spark}
+                        onPoint={canDrill ? (name) => drill(w, [...(down?.trail ?? []), name]) : undefined} />
+                      {canDrill && !down && (
+                        <p className="muted small no-print drill-hint">
+                          Click a {w.chart.type === "pie" || w.chart.type === "donut" ? "slice" : "bar"} to see it by{" "}
+                          {columnLabel(w.visual!.drill![0].alias ?? w.visual!.drill![0].column)}.
+                        </p>
+                      )}
                     </>
                   : <div className="note note-bad">This chart's query couldn't run: {d.error}</div>}
                 {resizer(w)}
@@ -460,6 +553,7 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
         {editable && (
           <div className="add-tiles no-print">
             <button className="btn btn-ghost" onClick={addText}><Icon name="plus" size={16} />Add a heading or note</button>
+            <button className="btn btn-ghost" onClick={addMedia}><Icon name="plus" size={16} />Add a picture or link</button>
             <span className="muted small">Drag tiles by their <Icon name="grip" size={14} /> handle to rearrange them, and by the bottom-right corner to resize them.</span>
           </div>
         )}

@@ -388,3 +388,153 @@ def test_a_plain_user_may_build_charts(client, user, source_id):
     """The builder reads only tables a manager already shared, so it is not manager-only."""
     assert client.get("/api/visuals/fields", headers=user,
                       params={"source_id": source_id, "table": "main.orders"}).status_code == 200
+
+
+def test_a_filter_can_match_a_grouped_date(source):
+    """Drilling into "2024-02" asks for that month, not for a date equal to the label."""
+    sql, params = compile_spec(source, {
+        "table": "main.orders",
+        "dimensions": [{"column": "region"}],
+        "measures": [{"column": "amount", "agg": "sum", "alias": "Total"}],
+        "filters": [{"column": "order_date", "bucket": "month", "op": "=", "values": ["2024-02"]}]})
+    assert list(params.values()) == ["2024-02"]        # text, not a date
+    from app.datasources import run_sql
+    assert run_sql(source, sql, params, refresh=True)["rows"] == [["North", 200.0], ["South", 50.0]]
+
+
+def test_a_date_grouping_in_a_filter_is_checked_like_any_other(source):
+    with pytest.raises(SpecError, match="isn't a way to group dates"):
+        compile_spec(source, {"table": "main.orders", "dimensions": [{"column": "region"}],
+                              "filters": [{"column": "order_date", "bucket": "fortnight", "op": "=",
+                                           "values": ["2024-02"]}]})
+
+
+def test_only_a_date_column_can_be_grouped_in_a_filter(source):
+    with pytest.raises(SpecError, match="isn't a date column"):
+        compile_spec(source, {"table": "main.orders", "dimensions": [{"column": "region"}],
+                              "filters": [{"column": "region", "bucket": "month", "op": "=", "values": ["x"]}]})
+
+
+# ---------- Charts that read more than one table ----------
+
+@pytest.fixture(scope="module")
+def joined(client, manager, tmp_path_factory):
+    """A second database where orders have a region table beside them, with a real foreign key."""
+    path = (tmp_path_factory.mktemp("joins") / "shop.db").as_posix()
+    con = sqlite3.connect(path)
+    con.executescript("""
+        CREATE TABLE regions (region TEXT PRIMARY KEY, manager TEXT, target REAL);
+        CREATE TABLE orders (id INTEGER PRIMARY KEY, region TEXT REFERENCES regions(region),
+                             amount REAL, order_date DATE);
+        CREATE TABLE secrets (id INTEGER PRIMARY KEY, token TEXT);
+        INSERT INTO regions VALUES ('North', 'Asha', 250), ('South', 'Ben', 100);
+        INSERT INTO orders (region, amount, order_date) VALUES
+            ('North', 100, '2024-01-15'), ('North', 200, '2024-02-10'),
+            ('South',  50, '2024-02-28'), ('East',   25, '2024-03-05');
+        INSERT INTO secrets (token) VALUES ('shhh');
+    """)
+    con.commit()
+    con.close()
+    c = client.post("/api/connections", headers=manager, json={
+        "name": f"Joins {uuid.uuid4().hex[:6]}", "db_type": "sqlite", "database": path}).json()
+    client.put(f"/api/connections/{c['id']}", headers=manager,
+               json={"allowed_tables": ["main.orders", "main.regions"]})
+    db = SessionLocal()
+    try:
+        yield get_source(db, c["id"]), c["id"]
+    finally:
+        db.close()
+        client.delete(f"/api/connections/{c['id']}", headers=manager)
+
+
+def _join_spec(**over):
+    spec = {
+        "table": "main.orders",
+        "joins": [{"table": "main.regions", "type": "inner", "on": [
+            {"left": {"column": "region"}, "op": "=", "right": {"table": "main.orders", "column": "region"}}]}],
+        "dimensions": [{"table": "main.regions", "column": "manager", "alias": "Manager"}],
+        "measures": [{"table": "main.orders", "column": "amount", "agg": "sum", "alias": "Total"}],
+        "order": [{"ref": "Total", "dir": "desc"}],
+    }
+    spec.update(over)
+    return spec
+
+
+def test_a_chart_can_join_two_tables(joined):
+    source, _ = joined
+    assert run(source, _join_spec())["rows"] == [["Asha", 300.0], ["Ben", 50.0]]
+
+
+def test_an_inner_join_drops_rows_with_no_match_and_a_left_join_keeps_them(joined):
+    source, _ = joined
+    spec = _join_spec(dimensions=[{"table": "main.orders", "column": "region", "alias": "Region"}])
+    assert len(run(source, spec)["rows"]) == 2            # East has no region row
+    spec["joins"][0]["type"] = "left"
+    assert len(run(source, spec)["rows"]) == 3            # East comes back
+
+
+def test_a_join_can_compare_with_something_other_than_equals(joined):
+    """Matching on a range, not a key: every region whose target the order beat."""
+    source, _ = joined
+    spec = _join_spec(
+        joins=[{"table": "main.regions", "type": "inner", "on": [
+            {"left": {"column": "target"}, "op": "<", "right": {"table": "main.orders", "column": "amount"}}]}],
+        dimensions=[{"table": "main.regions", "column": "manager", "alias": "Manager"}],
+        measures=[{"agg": "count", "alias": "Orders"}], order=[{"ref": "Orders", "dir": "desc"}])
+    # Only the 200 order beats a target (South's 100); nothing beats North's 250.
+    assert run(source, spec)["rows"] == [["Ben", 1]]
+
+
+def test_the_same_column_name_on_both_tables_must_say_which(joined):
+    source, _ = joined
+    with pytest.raises(SpecError, match="Say which table"):
+        compile_spec(source, _join_spec(dimensions=[{"column": "region"}], measures=[], order=[]))
+
+
+def test_a_table_that_was_not_shared_cannot_be_joined(joined):
+    source, _ = joined
+    with pytest.raises(SpecError, match="isn't one of the tables"):
+        compile_spec(source, _join_spec(joins=[{"table": "main.secrets", "type": "inner", "on": [
+            {"left": {"column": "token"}, "op": "=", "right": {"table": "main.orders", "column": "region"}}]}]))
+
+
+def test_a_join_needs_a_condition(joined):
+    source, _ = joined
+    with pytest.raises(SpecError, match="Say how"):
+        compile_spec(source, _join_spec(joins=[{"table": "main.regions", "type": "inner", "on": []}]))
+
+
+def test_an_unknown_way_of_matching_is_refused(joined):
+    source, _ = joined
+    with pytest.raises(SpecError, match="isn't a way to match rows"):
+        compile_spec(source, _join_spec(joins=[{"table": "main.regions", "type": "inner", "on": [
+            {"left": {"column": "region"}, "op": "LIKE", "right": {"table": "main.orders", "column": "region"}}]}]))
+
+
+def test_an_unknown_kind_of_join_is_refused(joined):
+    source, _ = joined
+    with pytest.raises(SpecError, match="isn't a kind of join"):
+        compile_spec(source, _join_spec(joins=[{"table": "main.regions", "type": "cross", "on": [
+            {"left": {"column": "region"}, "op": "=", "right": {"table": "main.orders", "column": "region"}}]}]))
+
+
+def test_relationships_come_from_the_foreign_keys(joined):
+    from app.visual_query import relationships
+    source, _ = joined
+    found = relationships(source, ["main.orders", "main.regions"])
+    assert {"left": {"table": "main.orders", "column": "region"}, "op": "=",
+            "right": {"table": "main.regions", "column": "region"}} in found
+
+
+def test_relationships_ignore_a_table_that_was_not_shared(joined):
+    from app.visual_query import relationships
+    source, _ = joined
+    assert relationships(source, ["main.orders", "main.secrets"]) == []
+
+
+def test_the_relationships_endpoint_answers(client, user, joined):
+    _, source_id = joined
+    res = client.get("/api/visuals/relationships", headers=user,
+                     params={"source_id": source_id, "tables": "main.orders,main.regions"})
+    assert res.status_code == 200, res.text
+    assert len(res.json()["relationships"]) == 1

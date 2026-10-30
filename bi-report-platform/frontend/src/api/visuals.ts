@@ -1,5 +1,5 @@
 import { api } from "./client";
-import type { QueryData, VisualFields, VisualSpec, VisualTable } from "./types";
+import type { QueryData, VisualFields, VisualJoin, VisualSpec, VisualTable } from "./types";
 
 /** The visual builder: browse a connection's shared tables, then build a chart from its columns. */
 export const visualsApi = {
@@ -8,6 +8,14 @@ export const visualsApi = {
 
   fields: (sourceId: number | null, table: string) =>
     api.get<VisualFields>("/api/visuals/fields", { params: { source_id: sourceId, table }, timeout: 60000 }).then((r) => r.data),
+
+  /**
+   * The joins the database's own foreign keys imply between these tables, ready to drop into a
+   * chart. A suggestion only: the builder shows them and the person can change them.
+   */
+  relationships: (sourceId: number | null, tables: string[]) =>
+    api.get<{ relationships: VisualJoin["on"] }>("/api/visuals/relationships",
+      { params: { source_id: sourceId, tables: tables.join(",") }, timeout: 60000 }).then((r) => r.data.relationships),
 
   /** The values one column holds, for a filter's list. */
   values: (sourceId: number | null, table: string, column: string, limit = 200) =>

@@ -207,3 +207,21 @@ class Sale(Base):
     revenue: Mapped[float] = mapped_column(Numeric(14, 2))
     discount: Mapped[float] = mapped_column(Numeric(14, 2))
     refund_amount: Mapped[float] = mapped_column(Numeric(14, 2))
+
+
+class Upload(Base):
+    """A picture someone put on a report: a logo, or an image tile.
+
+    The file itself lives on disk under backend/uploads; this row says what it is and who put it
+    there. `stored_name` is a random name, and that name is the whole address the browser uses, so
+    it is long enough not to be guessed."""
+
+    __tablename__ = "uploads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    stored_name: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    original_name: Mapped[str] = mapped_column(String(200), default="")
+    content_type: Mapped[str] = mapped_column(String(80))
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)

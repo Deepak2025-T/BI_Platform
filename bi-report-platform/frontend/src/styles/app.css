@@ -738,3 +738,34 @@ body.focus-mode .main { flex-basis: 100%; }
 .tpl-domain { gap: 10px; }
 .tpl-domain + .tpl-domain { margin-top: 6px; }
 .tpl-domain .row-between { align-items: baseline; gap: 12px; }
+
+/* Drilling into a chart: the trail of what was clicked, above the chart. */
+.drill-trail { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
+.drill-step { display: inline-flex; align-items: center; gap: 4px; }
+.link-btn { background: none; border: 0; padding: 0; cursor: pointer; color: var(--accent);
+            font: inherit; text-decoration: underline; }
+.drill-hint { margin: 4px 0 0; }
+
+/* Pictures, icons and links on a dashboard. */
+.media-body { display: flex; align-items: center; justify-content: center; min-height: 48px; }
+.media-img { max-width: 100%; object-fit: contain; }
+.media-icon { color: var(--accent); }
+.media-edit .field { width: 100%; }
+.report-logo { max-width: 180px; object-fit: contain; display: block; }
+.logo-picker { display: inline-flex; align-items: center; gap: 8px; }
+a.media-body:hover .media-img, a.media-body:hover .media-icon { opacity: .85; }
+
+/* Charts that read more than one table: the field list, the wells and the joins. */
+.field-table { border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px; }
+.field-table:first-of-type { border-top: 0; margin-top: 0; }
+.field-table-name { font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 2px; }
+.well-item-table { font-size: 10px; color: var(--muted); }
+.join { border: 1px solid var(--border); border-radius: 10px; padding: 8px; background: var(--row);
+        display: flex; flex-direction: column; gap: 6px; }
+.join-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+/* Three selects don't fit side by side in a 300px pane, so the column being matched sits on its
+   own line and the comparison reads underneath it. */
+.join-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px; align-items: center; }
+.join-row > *:first-child { grid-column: 1 / -1; }
+.join-row select { min-width: 0; }
+.join-op { font-size: 11px; }

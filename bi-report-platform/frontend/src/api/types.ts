@@ -306,7 +306,7 @@ export interface DataSourceInfo {
  */
 export type ChartType =
   | "kpi" | "bar" | "line" | "area" | "pie" | "table"
-  | "combo" | "scatter" | "donut" | "gauge" | "matrix";
+  | "combo" | "scatter" | "donut" | "gauge" | "matrix" | "heatmap";
 
 export interface ChartSpec {
   type: ChartType;
@@ -356,7 +356,25 @@ export type FilterOp =
   | "between" | "in" | "not_in" | "is_null" | "is_not_null";
 
 /** A column people drag onto an axis or a legend. */
+/** One column of one of the chart's tables. The table can be left out when only one has it. */
+export interface VisualFieldRef {
+  table?: string;
+  column: string;
+}
+
+/** How rows of a joined table are matched to rows already on the chart. */
+export type JoinOp = "=" | "!=" | ">" | ">=" | "<" | "<=";
+export type JoinType = "inner" | "left" | "right" | "full";
+
+export interface VisualJoin {
+  table: string;
+  type: JoinType;
+  /** Every condition must hold. `left` is on the joined table, `right` on an earlier one. */
+  on: { left: VisualFieldRef; op: JoinOp; right: VisualFieldRef }[];
+}
+
 export interface VisualDimension {
+  table?: string;
   column: string;
   /** Date columns only: group by year, quarter, month, week or day. */
   bucket?: DateBucket;
@@ -366,6 +384,7 @@ export interface VisualDimension {
 
 /** A column people drag onto Values, with the way it is summarised. */
 export interface VisualMeasure {
+  table?: string;
   /** Empty with agg "count" counts rows. */
   column: string;
   agg: Agg;
@@ -373,6 +392,7 @@ export interface VisualMeasure {
 }
 
 export interface VisualFilter {
+  table?: string;
   column: string;
   op: FilterOp;
   /** "is_null" and "is_not_null" take none, "between" takes two, "in" takes any number. */
@@ -384,7 +404,15 @@ export interface VisualFilter {
  * visual_query.compile_spec; the browser never writes SQL.
  */
 export interface VisualSpec {
+  /**
+   * Axis fields after the first: the levels the chart drills into, outermost first. The chart
+   * itself is grouped by `dimensions`; these are what clicking a bar asks the server for.
+   */
+  drill?: VisualDimension[];
+  /** The first table the chart reads. */
   table: string;
+  /** Tables joined to it, in order; each is matched to the first or to an earlier join. */
+  joins?: VisualJoin[];
   dimensions: VisualDimension[];
   measures: VisualMeasure[];
   filters: VisualFilter[];
@@ -395,6 +423,8 @@ export interface VisualSpec {
 /** A column of a shared table, as the fields pane lists it. */
 export interface VisualField {
   name: string;
+  /** Which of the chart's tables it belongs to, as "schema.table". */
+  table: string;
   type: string;
   /** What it is good for by default: a number to add up, or something to group by. */
   role: "dimension" | "measure";
@@ -434,9 +464,20 @@ export interface Widget {
   visual?: VisualSpec;
   /** Width on the dashboard; "auto" (or missing) picks from the chart type. */
   size?: WidgetSize;
-  /** "text" tiles are headings and notes between charts: no SQL, just title and text. */
-  kind?: "chart" | "text";
+  /**
+   * "text" tiles are headings and notes between charts: no SQL, just title and text.
+   * "media" tiles hold a picture or an icon, and can link somewhere.
+   */
+  kind?: "chart" | "text" | "media";
   text?: string;
+  /** Media tiles: the uploaded picture's address. */
+  image?: string;
+  /** Media tiles: an icon's name, used when there is no picture. */
+  icon?: string;
+  /** Media tiles: where clicking the tile goes. http(s) only; opens in a new tab. */
+  link?: string;
+  /** Media tiles: what the picture shows, for people using a screen reader. */
+  alt?: string;
   style?: WidgetStyle;
   /** Chart height in pixels (default 280). Tables scroll inside it. */
   height?: number;
@@ -481,6 +522,8 @@ export interface DashboardConfig {
   source_id: number | null;
   source_name: string;
   widgets: Widget[];
+  /** A logo above the title, shown to viewers and in the printed and exported copies. */
+  logo?: { url: string; height?: number; link?: string };
   parameters?: DashboardParameters;
   model?: string;
   filters?: DashboardFilter[];
@@ -511,6 +554,17 @@ export interface DashboardDataRequest {
 /** Ids of the active filters that did and didn't apply to a chart. */
 type FilterInfo = { filtered?: string[]; not_filtered?: string[] };
 export type WidgetData = (({ id: string; ok: true } & QueryData) | { id: string; ok: false; error: string }) & FilterInfo;
+
+/** A chart redrawn one level deeper, with the chart spec that now matches its columns. */
+export type DrillResult = QueryData & {
+  chart: ChartSpec;
+  /** How far down this is, and how far it can go. */
+  depth: number;
+  levels: number;
+  /** The field this level groups by, for the trail above the chart. */
+  label: string;
+  not_filtered?: string[];
+};
 
 export function isDashboard(config: Report["config"]): config is DashboardConfig {
   return (config as DashboardConfig).kind === "dashboard";

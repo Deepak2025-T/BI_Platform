@@ -18,6 +18,7 @@ export function rememberSource(value: string) {
 export const CHART_LABELS: Record<ChartType, string> = {
   kpi: "Number", bar: "Bars", line: "Line", area: "Area", pie: "Pie", table: "Table",
   combo: "Line and column", scatter: "Scatter", donut: "Donut", gauge: "Gauge", matrix: "Matrix",
+  heatmap: "Heatmap",
 };
 
 /** The types the chart editor's type switcher offers: the ones `retype` can move between safely. */

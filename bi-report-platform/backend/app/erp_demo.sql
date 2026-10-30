@@ -500,7 +500,8 @@ FROM generate_series(1, 36) g;
 CREATE TABLE sales.sales_orders (
     order_id        integer PRIMARY KEY,
     order_no        text NOT NULL,
-    customer_id     integer,
+    -- A real key, so the builder can suggest the join to crm.customers by itself.
+    customer_id     integer REFERENCES crm.customers(customer_id),
     customer_name   text NOT NULL,
     sales_rep       text NOT NULL,
     department      text NOT NULL,

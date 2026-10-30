@@ -51,6 +51,10 @@ function Glyph({ chart, style }: { chart: ChartType; style?: VisualDef["style"] 
         <line x1="3" y1="9" x2="19" y2="9" stroke={a} strokeWidth="1.5" />
         <line x1="8" y1="4" x2="8" y2="18" stroke={a} strokeWidth="1.5" />
         <line x1="13.5" y1="4" x2="13.5" y2="18" stroke={b} /></svg>;
+    case "heatmap":
+      return <svg viewBox="0 0 22 22">{[0, 1, 2].map((r) => [0, 1, 2].map((c) => (
+        <rect key={`${r}-${c}`} x={4 + c * 5} y={5 + r * 5} width={4} height={4} rx={1} fill={a}
+          opacity={0.2 + ((r + c * 2) % 5) * 0.2} />)))}</svg>;
     case "kpi":
       return <svg viewBox="0 0 22 22"><rect x="3" y="6" width="16" height="10" rx="2" fill="none" stroke={b} />
         <text x="11" y="14.5" textAnchor="middle" fontSize="8" fontWeight="700" fill={a}>42</text></svg>;

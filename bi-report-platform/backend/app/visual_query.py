@@ -5,11 +5,18 @@ The visual builder never sends SQL. It sends a spec saying which table to read, 
 on the axis, which numbers to aggregate, and how to filter them:
 
     {"table": "public.sales",
+     "joins": [{"table": "public.reps", "type": "left",
+                "on": [{"left": {"column": "rep_id"}, "op": "=",
+                        "right": {"table": "public.sales", "column": "rep_id"}}]}],
      "dimensions": [{"column": "region"}, {"column": "sale_date", "bucket": "month"}],
      "measures": [{"column": "amount", "agg": "sum", "alias": "Revenue"}],
      "filters": [{"column": "status", "op": "in", "values": ["open"]}],
      "order": [{"ref": "Revenue", "dir": "desc"}],
      "limit": 500}
+
+A chart may read several tables: each join says how its rows are matched to a table already on
+the chart, with =, >, < and so on, and every table gets an alias so a field can say where it
+came from. relationships() reads the database's own foreign keys to suggest those conditions.
 
 compile_spec turns that into one SELECT ... GROUP BY for the connection's dialect, with every
 value the person typed sent as a bound parameter (:bi_pN), never written into the SQL. The result
@@ -28,6 +35,7 @@ import datetime as dt
 
 import sqlglot
 from sqlglot import exp
+from sqlalchemy import inspect
 from sqlglot.errors import SqlglotError
 
 from .datasources import DataSource, table_columns
@@ -36,6 +44,19 @@ from .sql_guard import DIALECTS
 MAX_DIMENSIONS = 4
 MAX_MEASURES = 8
 MAX_FILTERS = 20
+# Tables joined to the first one, and conditions per join.
+MAX_JOINS = 3
+MAX_JOIN_CONDITIONS = 4
+
+# How a joined table's rows are matched, and what each one keeps.
+JOIN_TYPES = {
+    "inner": ("INNER", "only rows that match on both sides"),
+    "left": ("LEFT OUTER", "every row of the first table, matched or not"),
+    "right": ("RIGHT OUTER", "every row of the joined table, matched or not"),
+    "full": ("FULL OUTER", "every row of both tables"),
+}
+# Joins compare two columns; "=" is the usual one, the rest are for ranges and bands.
+JOIN_OPS = ("=", "!=", ">", ">=", "<", "<=")
 MAX_IN_VALUES = 500
 DEFAULT_LIMIT = 500
 MAX_LIMIT = 5000
@@ -138,6 +159,9 @@ class _Columns:
             raise SpecError(f'{self.table} has no column called "{column}".')
         return found[0]
 
+    def has(self, column: str) -> bool:
+        return str(column or "").strip().lower() in self._types
+
     def type_of(self, column: str) -> str:
         return self._types[column.strip().lower()][1]
 
@@ -146,6 +170,95 @@ class _Columns:
 
     def is_number(self, column: str) -> bool:
         return any(t in self.type_of(column) for t in _NUMBER_TYPES)
+
+
+class _Model:
+    """
+    The tables one chart reads: the first one, and anything joined to it.
+
+    Every table gets a short alias, so a column can say which table it came from and two tables
+    with a column of the same name don't collide. A field that doesn't name a table belongs to
+    whichever table has that column — and if more than one does, the spec has to say which.
+    """
+
+    def __init__(self, source: DataSource, spec: dict):
+        base = _resolve_table(source, spec.get("table", ""))
+        self.source = source
+        self.tables: list[str] = [base]
+        self.columns: dict[str, _Columns] = {base: _Columns(source, base)}
+        self.aliases: dict[str, str] = {base: self._alias(base)}
+
+        joins = spec.get("joins") or []
+        if not isinstance(joins, list):
+            raise SpecError("The chart's joined tables must be a list.")
+        if len(joins) > MAX_JOINS:
+            raise SpecError(f"A chart can join at most {MAX_JOINS} more table(s); this one joins {len(joins)}.")
+        self.joins: list[dict] = []
+        for item in joins:
+            if not isinstance(item, dict):
+                raise SpecError("Each joined table needs a table and a condition.")
+            table = _resolve_table(source, item.get("table", ""))
+            if table in self.columns:
+                raise SpecError(f"{table} is already on this chart. Joining a table to itself isn't supported yet.")
+            self.tables.append(table)
+            self.columns[table] = _Columns(source, table)
+            self.aliases[table] = self._alias(table)
+            self.joins.append({**item, "table": table})
+
+    def _alias(self, table: str) -> str:
+        """A short name for the table in the query, kept unique."""
+        base = table.rpartition(".")[2] or table
+        taken = set(getattr(self, "aliases", {}).values())
+        if base not in taken:
+            return base
+        n = 2
+        while f"{base}_{n}" in taken:
+            n += 1
+        return f"{base}_{n}"
+
+    @property
+    def base(self) -> str:
+        return self.tables[0]
+
+    def table_named(self, name: str, *, known: list[str] | None = None) -> str:
+        """One of this chart's tables, however the caller spelled it."""
+        allowed = known if known is not None else self.tables
+        wanted = str(name or "").strip().lower()
+        matches = [t for t in allowed if t == wanted or t.rpartition(".")[2] == wanted.rpartition(".")[2]]
+        if len(matches) == 1:
+            return matches[0]
+        if matches:
+            raise SpecError(f'Several of this chart\'s tables are called "{name}". Give the schema too.')
+        raise SpecError(f'"{name}" isn\'t one of the tables on this chart. Add it to the chart first.')
+
+    def field(self, item: dict, *, known: list[str] | None = None) -> tuple[str, str, _Columns]:
+        """(alias, the column as the database spells it, that table's columns) for one field."""
+        column = str(item.get("column") or "").strip()
+        named = str(item.get("table") or "").strip()
+        if named:
+            table = self.table_named(named, known=known)
+            return self.aliases[table], self.columns[table].real(column), self.columns[table]
+        if not column:
+            raise SpecError("Each field must say which column it uses.")
+        # No table given: the one table that has this column, with the first table winning a tie.
+        search = known if known is not None else self.tables
+        holders = [t for t in search if self.columns[t].has(column)]
+        if not holders:
+            where = " or ".join(search)
+            raise SpecError(f'{where} has no column called "{column}".')
+        if len(holders) > 1:
+            raise SpecError(f'More than one table on this chart has a column called "{column}" '
+                            f'({", ".join(holders)}). Say which table it comes from.')
+        table = holders[0]
+        return self.aliases[table], self.columns[table].real(column), self.columns[table]
+
+    def column(self, item: dict, *, known: list[str] | None = None) -> tuple[exp.Column, str, _Columns]:
+        alias, name, columns = self.field(item, known=known)
+        return exp.column(name, table=alias, quoted=True), name, columns
+
+    def from_clause(self, table: str) -> exp.Table:
+        schema, _, name = table.rpartition(".")
+        return exp.table_(name, db=schema or None, quoted=True, alias=self.aliases[table])
 
 
 def _unique(name: str, taken: set[str]) -> str:
@@ -158,32 +271,32 @@ def _unique(name: str, taken: set[str]) -> str:
     return candidate
 
 
-def _bucket_expression(column: str, bucket: str, dialect: str) -> exp.Expression:
+def _bucket_expression(column: str, bucket: str, dialect: str, table: str = "") -> exp.Expression:
     template = _BUCKET_SQL[dialect][bucket]
-    quoted = exp.column(column, quoted=True).sql(dialect=dialect)
+    quoted = exp.column(column, table=table or None, quoted=True).sql(dialect=dialect)
     # The column name is already checked against the table, so this only ever builds a known shape.
     return sqlglot.parse_one(template.format(col=quoted), read=dialect)
 
 
-def _dimension(item: dict, columns: _Columns, dialect: str, taken: set[str]) -> tuple[exp.Expression, str]:
+def _dimension(item: dict, model: _Model, dialect: str, taken: set[str]) -> tuple[exp.Expression, str]:
     """(expression, output name) for one axis or legend field."""
-    column = columns.real(item.get("column", ""))
+    col, column, columns = model.column(item)
     bucket = str(item.get("bucket") or "").strip().lower()
     if bucket:
         if bucket not in BUCKETS:
             raise SpecError(f'"{bucket}" isn\'t a way to group dates. Use one of: {", ".join(BUCKETS)}.')
         if not columns.is_date(column):
             raise SpecError(f'"{column}" isn\'t a date column, so it can\'t be grouped by {bucket}.')
-        body = _bucket_expression(column, bucket, dialect)
+        body = _bucket_expression(column, bucket, dialect, col.table)
         default = f"{column} ({bucket})"
     else:
-        body = exp.column(column, quoted=True)
+        body = col
         default = column
     alias = _unique(str(item.get("alias") or "").strip() or default, taken)
     return body, alias
 
 
-def _measure(item: dict, columns: _Columns, taken: set[str]) -> tuple[exp.Expression, str]:
+def _measure(item: dict, model: _Model, taken: set[str]) -> tuple[exp.Expression, str]:
     """(expression, output name) for one number field."""
     agg = str(item.get("agg") or "sum").strip().lower()
     if agg not in AGGS:
@@ -195,11 +308,10 @@ def _measure(item: dict, columns: _Columns, taken: set[str]) -> tuple[exp.Expres
         body: exp.Expression = exp.Count(this=exp.Star())
         default = "Count"
     else:
-        column = columns.real(raw)
+        col, column, columns = model.column(item)
         if agg in ("sum", "avg") and not columns.is_number(column):
             raise SpecError(f'"{column}" holds {columns.type_of(column)}, which can\'t be added up. '
                             f"Count it instead, or pick a number column.")
-        col = exp.column(column, quoted=True)
         if agg == "count_distinct":
             body = exp.Count(this=exp.Distinct(expressions=[col]))
         elif agg == "count":
@@ -253,12 +365,22 @@ def _filter_value(raw, column: str, columns: _Columns, source: DataSource):
     return str(raw)
 
 
-def _condition(item: dict, columns: _Columns, source: DataSource, binder: _Binder) -> exp.Expression:
-    column = columns.real(item.get("column", ""))
+def _condition(item: dict, model: _Model, source: DataSource, binder: _Binder,
+               dialect: str) -> exp.Expression:
+    col, column, columns = model.column(item)
     op = str(item.get("op") or "=").strip().lower()
     if op not in _OPS_VALUES:
         raise SpecError(f'"{op}" isn\'t a way to filter. Use one of: {", ".join(OPS)}.')
-    col = exp.column(column, quoted=True)
+
+    # A filter can name the same date grouping a dimension uses, so drilling into "2024-03" asks
+    # for that month rather than for a date equal to the label.
+    bucket = str(item.get("bucket") or "").strip().lower()
+    if bucket:
+        if bucket not in BUCKETS:
+            raise SpecError(f'"{bucket}" isn\'t a way to group dates. Use one of: {", ".join(BUCKETS)}.')
+        if not columns.is_date(column):
+            raise SpecError(f'"{column}" isn\'t a date column, so it can\'t be grouped by {bucket}.')
+        col = _bucket_expression(column, bucket, dialect, col.table)
 
     raw_values = item.get("values")
     values = list(raw_values) if isinstance(raw_values, (list, tuple)) else ([] if raw_values is None else [raw_values])
@@ -280,7 +402,8 @@ def _condition(item: dict, columns: _Columns, source: DataSource, binder: _Binde
         pattern = {"contains": f"%{text}%", "starts_with": f"{text}%", "ends_with": f"%{text}"}[op]
         return exp.Like(this=col, expression=binder.bind(pattern))
 
-    bind = lambda v: binder.bind(_filter_value(v, column, columns, source))  # noqa: E731
+    # A grouped date is a text label ("2024-03"), so it is compared as text, not as a date.
+    bind = lambda v: binder.bind(str(v) if bucket else _filter_value(v, column, columns, source))  # noqa: E731
     if op == "in":
         return col.isin(*[bind(v) for v in values])
     if op == "not_in":
@@ -326,6 +449,46 @@ def _order(spec: dict, outputs: dict[str, exp.Expression], grouped: bool) -> lis
     return out
 
 
+def _join_condition(item: dict, model: _Model, table: str, known: list[str]) -> exp.Expression:
+    """One "this column matches that column" test between the joined table and an earlier one."""
+    if not isinstance(item, dict):
+        raise SpecError(f"Each condition for {table} needs two columns to compare.")
+    op = str(item.get("op") or "=").strip()
+    if op not in JOIN_OPS:
+        raise SpecError(f'"{op}" isn\'t a way to match rows. Use one of: {", ".join(JOIN_OPS)}.')
+    # The left column belongs to the table being joined; the right to one already on the chart.
+    left, _, _ = model.column({**(item.get("left") or {}), "table": item.get("left", {}).get("table") or table},
+                              known=[table])
+    right_item = item.get("right") or {}
+    if not right_item.get("table") and len(known) > 1:
+        raise SpecError(f"Say which table {table} is matched against.")
+    right, _, _ = model.column({**right_item, "table": right_item.get("table") or known[0]}, known=known)
+    builder = {"=": left.eq, "!=": left.neq, ">": left.__gt__, ">=": left.__ge__,
+               "<": left.__lt__, "<=": left.__le__}[op]
+    return builder(right)
+
+
+def _joins(model: _Model) -> list[tuple[exp.Table, exp.Expression, str]]:
+    """(table, matching rule, kind) for each table joined to the first one, in order."""
+    out = []
+    for i, item in enumerate(model.joins):
+        table = item["table"]
+        kind = str(item.get("type") or "inner").strip().lower()
+        if kind not in JOIN_TYPES:
+            raise SpecError(f'"{kind}" isn\'t a kind of join. Use one of: {", ".join(JOIN_TYPES)}.')
+        conditions = item.get("on") or []
+        if not isinstance(conditions, list) or not conditions:
+            raise SpecError(f"Say how {table} matches the rest of the chart.")
+        if len(conditions) > MAX_JOIN_CONDITIONS:
+            raise SpecError(f"A join can use at most {MAX_JOIN_CONDITIONS} conditions; "
+                            f"{table} has {len(conditions)}.")
+        # Only tables already joined can be matched against, so the joins stay in a sensible order.
+        known = model.tables[:i + 1]
+        on = exp.and_(*[_join_condition(c, model, table, known) for c in conditions])
+        out.append((model.from_clause(table), on, JOIN_TYPES[kind][0]))
+    return out
+
+
 def compile_spec(source: DataSource, spec: dict, *, inline: bool = False) -> tuple[str, dict]:
     """(sql, parameters) for one visual-builder chart.
 
@@ -337,8 +500,7 @@ def compile_spec(source: DataSource, spec: dict, *, inline: bool = False) -> tup
     if not isinstance(spec, dict):
         raise SpecError("The chart is missing.")
     dialect = _dialect(source)
-    table = _resolve_table(source, spec.get("table", ""))
-    columns = _Columns(source, table)
+    model = _Model(source, spec)
 
     dimension_items = spec.get("dimensions") or []
     measure_items = spec.get("measures") or []
@@ -360,20 +522,21 @@ def compile_spec(source: DataSource, spec: dict, *, inline: bool = False) -> tup
     outputs: dict[str, exp.Expression] = {}
     selects, groups = [], []
     for item in dimension_items:
-        body, alias = _dimension(item, columns, dialect, taken)
+        body, alias = _dimension(item, model, dialect, taken)
         selects.append(exp.alias_(body.copy(), alias, quoted=True))
         groups.append(body)
         outputs[alias] = body
     for item in measure_items:
-        body, alias = _measure(item, columns, taken)
+        body, alias = _measure(item, model, taken)
         selects.append(exp.alias_(body.copy(), alias, quoted=True))
         outputs[alias] = body
 
     binder = _Binder(inline=inline)
-    conditions = [_condition(item, columns, source, binder) for item in filter_items]
+    conditions = [_condition(item, model, source, binder, dialect) for item in filter_items]
 
-    schema, _, name = table.rpartition(".")
-    query = exp.select(*selects).from_(exp.table_(name, db=schema or None, quoted=True))
+    query = exp.select(*selects).from_(model.from_clause(model.base))
+    for table_expr, on, kind in _joins(model):
+        query = query.join(table_expr, on=on, join_type=kind)
     if conditions:
         query = query.where(exp.and_(*conditions))
     # Measures without fields are one total row, so there is nothing to group by.
@@ -391,6 +554,41 @@ def compile_spec(source: DataSource, spec: dict, *, inline: bool = False) -> tup
     except SqlglotError as err:
         raise SpecError(f"The chart can't be turned into a query: {err}") from err
     return sql, binder.params
+
+
+def relationships(source: DataSource, tables: list[str]) -> list[dict]:
+    """
+    The joins the database itself implies between these tables, from its foreign keys.
+
+    Only a suggestion: the builder offers them ready-made and the person can change or replace
+    them. Both ends have to be tables the chart is reading and the connection shares, so nothing
+    here points at a table someone isn't allowed to see.
+    """
+    if source.is_openpages or source.engine is None:
+        return []
+    wanted = []
+    for name in tables:
+        try:
+            wanted.append(_resolve_table(source, name))
+        except SpecError:
+            continue
+    inspector = inspect(source.engine)
+    out: list[dict] = []
+    for table in wanted:
+        schema, _, name = table.rpartition(".")
+        try:
+            keys = inspector.get_foreign_keys(name, schema=schema or None)
+        except Exception:
+            continue
+        for key in keys:
+            other_schema = key.get("referred_schema") or schema
+            other = f"{other_schema}.{key.get('referred_table')}".lower()
+            if other not in wanted or other == table:
+                continue
+            for column, other_column in zip(key.get("constrained_columns") or [], key.get("referred_columns") or []):
+                out.append({"left": {"table": table, "column": column}, "op": "=",
+                            "right": {"table": other, "column": other_column}})
+    return out
 
 
 def describe_table(source: DataSource, table: str) -> dict:

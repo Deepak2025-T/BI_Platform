@@ -440,6 +440,14 @@ class DashboardDataIn(BaseModel):
     refresh: bool = False  # skip the result cache
 
 
+class DrillIn(DashboardDataIn):
+    """One step deeper into a chart built from fields. `values` is what was clicked on the way
+    down, outermost first; the columns come from the saved chart, not from here."""
+
+    widget_id: str = Field(min_length=1, max_length=40)
+    values: list[str | None] = Field(default_factory=list, max_length=4)
+
+
 class FilterMapIn(BaseModel):
     model_id: int
     label: str = Field(min_length=1, max_length=60)
