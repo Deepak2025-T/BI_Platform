@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { errorMessage } from "../api/client";
 import { assistantApi } from "../api/endpoints";
 import { visualsApi } from "../api/visuals";
-import type { Agg, DataSourceInfo, DateBucket, QueryData, VisualField, VisualFilter, VisualMeasure, VisualTable, Widget } from "../api/types";
+import type { Agg, ChartSpec, DataSourceInfo, DateBucket, QueryData, VisualField, VisualFilter, VisualMeasure, VisualSpec, VisualTable, Widget, WidgetStyle } from "../api/types";
 import DataChart from "../components/DataChart";
 import Icon from "../components/Icon";
 import { useToast } from "../components/Toast";
@@ -18,11 +18,37 @@ import { VISUAL_BY_ID, type WellId, type Wells, buildSpec, canDrop, emptyWells, 
 const PREVIEW_DELAY = 450;
 
 /**
+ * A chart that has been put on the report but not saved yet.
+ *
+ * It holds two things at once: what the report needs (the standalone SQL and how to draw it), and
+ * what the builder needs to open it again (the table, the visual, the wells, the filters). Keeping
+ * the builder's own state means reopening a chart is exact — nothing has to be read back out of
+ * the compiled query.
+ */
+interface TrayChart {
+  key: string;
+  title: string;
+  table: string;
+  visualId: string;
+  wells: Wells;
+  buckets: Record<string, DateBucket | undefined>;
+  filters: VisualFilter[];
+  spec: VisualSpec;
+  chart: ChartSpec;
+  style?: Partial<WidgetStyle>;
+  sql: string;
+}
+
+/**
  * Builds a chart by choosing fields instead of writing SQL or asking a model.
  *
  * Nothing here writes SQL: the wells become a spec, the backend compiles and runs it, and what
- * comes back is drawn with the same renderer the dashboards use. Saving makes an ordinary
- * one-chart report, so it can then be arranged, filtered, scheduled and published like any other.
+ * comes back is drawn with the same renderer the dashboards use.
+ *
+ * One chart is built at a time, and "Add to report" puts it aside so the next one can be built —
+ * each with its own table, filters and shape. Saving makes an ordinary dashboard report out of
+ * however many were collected, so it can then be arranged, filtered, scheduled and published like
+ * any other.
  */
 export default function VisualBuilder() {
   const navigate = useNavigate();
@@ -40,6 +66,12 @@ export default function VisualBuilder() {
   const [filters, setFilters] = useState<VisualFilter[]>([]);
   const [title, setTitle] = useState("");
 
+  // The charts put aside for this report, and which of them the canvas is currently editing.
+  const [charts, setCharts] = useState<TrayChart[]>([]);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [reportTitle, setReportTitle] = useState("");
+  const [adding, setAdding] = useState(false);
+
   const [data, setData] = useState<QueryData | null>(null);
   const [sql, setSql] = useState("");
   const [showSql, setShowSql] = useState(false);
@@ -50,6 +82,9 @@ export default function VisualBuilder() {
 
   const visual = VISUAL_BY_ID[visualId];
   const sourceId = source ? sourceIdOf(source) : null;
+
+  /** Set while reopening a saved chart, so changing the table restores it instead of clearing it. */
+  const reopening = useRef<TrayChart | null>(null);
 
   // ---------- Choosing a database and a table ----------
 
@@ -67,6 +102,9 @@ export default function VisualBuilder() {
     rememberSource(source);
     setTables([]);
     setTable("");
+    // A report runs against one database, so charts built on the last one can't come along.
+    setCharts([]);
+    setEditingKey(null);
     visualsApi.tables(sourceIdOf(source))
       .then((list) => {
         setTables(list);
@@ -77,12 +115,21 @@ export default function VisualBuilder() {
 
   useEffect(() => {
     if (!table) { setFields([]); return; }
-    // The fields belong to this table, so anything already on the chart no longer applies.
-    setWells(emptyWells());
-    setBuckets({});
-    setFilters([]);
     setData(null);
     setSql("");
+    // Reopening a chart that was built on another table sets the table first and brings its own
+    // fields with it; otherwise the fields belong to this table and nothing on the chart applies.
+    const reopened = reopening.current;
+    reopening.current = null;
+    if (reopened) {
+      setWells(reopened.wells);
+      setBuckets(reopened.buckets);
+      setFilters(reopened.filters);
+    } else {
+      setWells(emptyWells());
+      setBuckets({});
+      setFilters([]);
+    }
     visualsApi.fields(sourceId, table)
       .then((r) => setFields(r.fields))
       .catch((err) => { setFields([]); setError(errorMessage(err)); });
@@ -209,29 +256,106 @@ export default function VisualBuilder() {
     ...[...wells.values, ...wells.values2, ...wells.size].map((m) => m.column),
   ]), [wells]);
 
+  // ---------- Collecting the charts ----------
+
+  const chartName = () => title.trim() || `${visual.label} of ${table.split(".").pop()}`;
+
+  /**
+   * The chart on the canvas, ready to be put on the report.
+   *
+   * The preview keeps filter values out of the SQL, but a saved chart is run later by the
+   * dashboard with nothing alongside it, so ask for a query that stands on its own.
+   */
+  async function currentChart(): Promise<TrayChart> {
+    const standalone = await visualsApi.compile(sourceId, built!.spec, true);
+    return {
+      key: editingKey ?? `c${Date.now().toString(36)}${charts.length}`,
+      title: chartName(), table, visualId, wells, buckets, filters,
+      spec: built!.spec, chart: built!.chart, style: visual.style, sql: standalone.sql,
+    };
+  }
+
+  /** Puts the canvas chart on the report, replacing the one being edited, and clears the canvas. */
+  async function addChart() {
+    if (!built || !data) return;
+    setAdding(true);
+    setError("");
+    try {
+      const item = await currentChart();
+      setCharts((cs) => (editingKey ? cs.map((c) => (c.key === editingKey ? item : c)) : [...cs, item]));
+      toast(editingKey ? `Updated "${item.title}".` : `Added "${item.title}" to the report.`);
+      clearCanvas();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  function clearCanvas() {
+    setEditingKey(null);
+    setWells(emptyWells());
+    setBuckets({});
+    setFilters([]);
+    setTitle("");
+    setData(null);
+    setSql("");
+    setNote("");
+  }
+
+  /** Brings a chart back onto the canvas, exactly as it was built. */
+  function editChart(key: string) {
+    const c = charts.find((x) => x.key === key);
+    if (!c) return;
+    setEditingKey(key);
+    setVisualId(c.visualId);
+    setTitle(c.title);
+    setNote("");
+    if (c.table !== table) {
+      reopening.current = c;
+      setTable(c.table);
+    } else {
+      setWells(c.wells);
+      setBuckets(c.buckets);
+      setFilters(c.filters);
+    }
+  }
+
+  function removeChart(key: string) {
+    setCharts((cs) => cs.filter((c) => c.key !== key));
+    if (editingKey === key) clearCanvas();
+  }
+
   // ---------- Saving ----------
 
+  /**
+   * Saves every chart on the report as one dashboard. Whatever is on the canvas counts too, so a
+   * single chart needs no "add" first and a half-finished addition is never quietly dropped.
+   */
   async function save() {
-    if (!built || !data) return;
-    const name = title.trim() || `${visual.label} of ${table.split(".").pop()}`;
     setSaving(true);
     setError("");
     try {
-      // The preview keeps filter values out of the SQL, but a saved chart is run later by the
-      // dashboard with nothing alongside it, so ask for a query that stands on its own.
-      const standalone = await visualsApi.compile(sourceId, built.spec, true);
-      const widget: Widget = {
-        id: "v1",
-        title: name,
+      let items = charts;
+      if (built && data) {
+        const item = await currentChart();
+        items = editingKey ? charts.map((c) => (c.key === editingKey ? item : c)) : [...charts, item];
+      }
+      if (!items.length) { setError("Add a chart to the report first."); return; }
+      const name = reportTitle.trim() || items[0].title;
+      const widgets: Widget[] = items.map((c, i) => ({
+        id: `v${i + 1}`,
+        title: c.title,
         question: "",
-        sql: standalone.sql,
-        chart: built.chart,
-        visual: built.spec,
-        style: visual.style,
-        size: "full",
-      };
-      const report = await assistantApi.save({ source_id: sourceId, title: name, prompt: "", widgets: [widget] });
-      toast(`Saved "${name}". Add more charts, or publish it.`);
+        sql: c.sql,
+        chart: c.chart,
+        visual: c.spec,
+        style: c.style,
+        // Side by side once there is more than one, as a dashboard of one chart reads better wide.
+        size: items.length > 1 ? "half" : "full",
+      }));
+      const report = await assistantApi.save({ source_id: sourceId, title: name, prompt: "", widgets });
+      toast(`Saved "${name}" with ${widgets.length} chart${widgets.length === 1 ? "" : "s"}.`);
       navigate(`/reports/${report.id}/edit`);
     } catch (err) {
       setError(errorMessage(err));
@@ -273,8 +397,12 @@ export default function VisualBuilder() {
           <button className="btn btn-ghost" disabled={!sql} onClick={() => setShowSql((s) => !s)}>
             <Icon name="layers" size={16} />{showSql ? "Hide SQL" : "Show SQL"}
           </button>
-          <button className="btn btn-primary" disabled={!data || saving} onClick={save}>
-            {saving ? "Saving…" : "Save as a report"}
+          <button className="btn" disabled={!data || adding || saving} onClick={addChart}>
+            <Icon name="plus" size={16} />
+            {adding ? "Adding…" : editingKey ? "Update chart" : "Add to report"}
+          </button>
+          <button className="btn btn-primary" disabled={(!data && charts.length === 0) || saving || adding} onClick={save}>
+            {saving ? "Saving…" : charts.length ? `Save report (${charts.length + (data ? (editingKey ? 0 : 1) : 0)})` : "Save as a report"}
           </button>
         </div>
       </div>
@@ -283,6 +411,36 @@ export default function VisualBuilder() {
         <p className="muted small">
           No tables have been shared from {sourceName} yet. A manager chooses them on the Connections page.
         </p>
+      )}
+
+      {charts.length > 0 && (
+        <div className="card builder-tray">
+          <div className="row-between row-wrap">
+            <label className="field builder-title">
+              Report name
+              <input value={reportTitle} placeholder={charts[0].title}
+                onChange={(e) => setReportTitle(e.target.value)} />
+            </label>
+            <span className="muted small">
+              {charts.length} chart{charts.length === 1 ? "" : "s"} on this report
+              {data && !editingKey ? ", plus the one on the canvas" : ""}
+            </span>
+          </div>
+          <ul className="tray-list">
+            {charts.map((c) => (
+              <li key={c.key} className={`tray-chip${editingKey === c.key ? " on" : ""}`}>
+                <button type="button" className="tray-open" onClick={() => editChart(c.key)}>
+                  <b>{c.title}</b>
+                  <span className="muted small">{VISUAL_BY_ID[c.visualId].label} · {c.table}</span>
+                </button>
+                <button type="button" className="tray-remove" aria-label={`Remove ${c.title}`}
+                  onClick={() => removeChart(c.key)}>
+                  <Icon name="x" size={15} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <div className="builder-grid">

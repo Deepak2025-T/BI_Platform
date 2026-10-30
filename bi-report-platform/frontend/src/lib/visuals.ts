@@ -183,11 +183,13 @@ export function buildSpec(visual: VisualDef, wells: Wells, buckets: Record<strin
     spec: { ...base, dimensions, measures: [...values, ...values2, ...size] },
     chart: {
       type: visual.chart,
-      x: nameOfAxis[0] ?? "",
+      // A pie or donut has no axis well: the legend is what it is cut by, so that becomes the
+      // renderer's x. Without this the chart has no category column and falls back to the rows.
+      x: nameOfAxis[0] ?? nameOfLegend[0] ?? "",
       y: values.map((m) => m.alias),
       y2: values2.length ? values2.map((m) => m.alias) : undefined,
       extra: size.length ? size[0].alias : undefined,
-      legend: nameOfLegend[0],
+      legend: nameOfAxis.length ? nameOfLegend[0] : undefined,
     },
   };
 }
