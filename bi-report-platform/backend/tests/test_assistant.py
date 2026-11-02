@@ -58,7 +58,19 @@ def _reply(system: str, user: str) -> dict:
 class FakeOllama(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        answer = _reply(body["messages"][0]["content"], body["messages"][1]["content"])
+        question = body["messages"][1]["content"]
+        if "run out of room" in question.lower():
+            # What Ollama sends when the answer hit the end of the context: half an object.
+            reply = {"message": {"role": "assistant", "content": '{"action": "query", "sql": "SELECT reg'},
+                     "done_reason": "length", "prompt_eval_count": 3900, "eval_count": 196}
+            data = json.dumps(reply).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        answer = _reply(body["messages"][0]["content"], question)
         data = json.dumps({"message": {"role": "assistant", "content": json.dumps(answer)}}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -191,3 +203,43 @@ def test_other_users_drafts_stay_private(client, manager, user, source_id):
     good = {"id": "a1", "title": "By region", "sql": GOOD_SQL, "chart": {"type": "table", "x": "", "y": []}}
     report = client.post("/api/assistant/save", headers=manager, json={"source_id": source_id, "title": "t", "widgets": [good]}).json()
     assert client.post(f"/api/reports/{report['id']}/data", headers=user).status_code == 404
+
+
+def test_an_answer_cut_off_by_the_context_says_so(client, user, model_id, source_id):
+    """Half a JSON object is not a model that can't write JSON: it is one that ran out of room,
+    and the fix is a bigger window, not a bigger model."""
+    res = client.post("/api/assistant/chat", headers=user, json={
+        "source_id": source_id, "model_id": model_id, "question": "make this run out of room"})
+    assert res.status_code == 502, res.text
+    detail = res.json()["detail"]
+    assert "cut off" in detail and "OLLAMA_NUM_CTX" in detail
+    assert "3900" in detail                      # what the prompt took
+    assert "valid JSON" not in detail            # the old, misleading message
+
+
+def test_ollama_is_told_how_much_room_to_use(monkeypatch):
+    """Ollama's own default is 4096 whatever the model supports, so the setting has to be sent."""
+    import httpx
+    from app.ai import providers
+
+    sent = {}
+
+    class Res:
+        status_code = 200
+
+        @staticmethod
+        def raise_for_status():
+            pass
+
+        @staticmethod
+        def json():
+            return {"message": {"content": '{"ok": true}'}}
+
+    def fake_post(url, json=None, **kw):
+        sent.update(json or {})
+        return Res()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    providers._ollama(providers.ModelSpec(provider="ollama", model="m", base_url="http://x"),
+                      "system", "user", {"type": "object"})
+    assert sent["options"]["num_ctx"] == providers.OLLAMA_NUM_CTX

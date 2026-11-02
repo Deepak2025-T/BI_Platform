@@ -44,6 +44,30 @@ HTTP_TIMEOUT = httpx.Timeout(TIMEOUT, connect=10.0)
 # Keeps a local Ollama model in memory between calls, so only the first call pays the load time.
 OLLAMA_KEEP_ALIVE = settings.ollama_keep_alive
 
+# How much room one Ollama call gets for the prompt and the answer together.
+#
+# Ollama does not use the model's own context length: unless it is told otherwise it uses 4096,
+# whatever the model can really do. A database of a dozen tables fills most of that with the schema
+# alone, and the answer is then cut off mid-sentence — which arrives as "the model's answer wasn't
+# valid JSON", because half a JSON object is exactly that. Raise OLLAMA_NUM_CTX for a connection
+# with many tables; lower it if a machine runs short of memory.
+OLLAMA_NUM_CTX = settings.ollama_num_ctx
+
+
+def _check_room(answer: dict, spec: "ModelSpec") -> None:
+    """Ollama says done_reason "length" when it ran out of context mid-answer. Saying so beats
+    letting it surface as unreadable JSON, because the fix is a bigger window, not a bigger model."""
+    if answer.get("done_reason") != "length":
+        return
+    used = answer.get("prompt_eval_count") or 0
+    wrote = answer.get("eval_count") or 0
+    raise AIError(
+        f"The answer was cut off: the question and the tables took {used} of {OLLAMA_NUM_CTX} tokens, "
+        f"leaving room for only {wrote}. Raise OLLAMA_NUM_CTX in backend/.env (it is {OLLAMA_NUM_CTX} now), "
+        f"or ask about a connection that shares fewer tables."
+        if used else
+        f"{spec.model} ran out of room mid-answer. Raise OLLAMA_NUM_CTX in backend/.env.")
+
 
 class AIError(Exception):
     """The model couldn't be reached or didn't give a usable answer. The message is safe to show."""
@@ -162,7 +186,8 @@ def _ollama(spec: ModelSpec, system: str, user: str, schema: dict) -> dict:
     # Local models are held to the schema by "format"; Ollama's cloud models ignore it, so the
     # schema also goes in the prompt.
     system = _with_schema(system, schema)
-    body = {"model": spec.model, "stream": False, "format": schema, "options": {"temperature": 0},
+    body = {"model": spec.model, "stream": False, "format": schema,
+            "options": {"temperature": 0, "num_ctx": OLLAMA_NUM_CTX},
             "keep_alive": OLLAMA_KEEP_ALIVE,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     try:
@@ -170,7 +195,9 @@ def _ollama(spec: ModelSpec, system: str, user: str, schema: dict) -> dict:
         if res.status_code == 404:
             raise AIError(f'Ollama doesn\'t have the model "{spec.model}". Run: ollama pull {spec.model}')
         res.raise_for_status()
-        return _parse_json(res.json()["message"]["content"])
+        answer = res.json()
+        _check_room(answer, spec)
+        return _parse_json(answer["message"]["content"])
     except AIError:
         raise
     except (httpx.HTTPError, KeyError, ValueError) as err:

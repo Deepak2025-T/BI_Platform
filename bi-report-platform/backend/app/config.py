@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     ai_timeout_seconds: int = 300
     # How long Ollama keeps a model in memory after a call, so later calls skip the load time.
     ollama_keep_alive: str = "30m"
+    # Room for one Ollama call: the prompt and the answer together, in tokens. Ollama's own
+    # default is 4096 whatever the model supports, which a dozen tables of schema will fill.
+    # More costs memory; less cuts answers short.
+    ollama_num_ctx: int = 16384
     # Runs scheduled report refreshes inside the API process.
     scheduler_enabled: bool = True
 
