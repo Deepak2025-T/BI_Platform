@@ -7,7 +7,7 @@ import type { AIModelPublic, ChatResult, DataSourceInfo, Widget } from "../api/t
 import { useAuth } from "../auth/AuthContext";
 import DataChart from "../components/DataChart";
 import Icon from "../components/Icon";
-import Modal from "../components/Modal";
+import AddToReport from "../components/AddToReport";
 import ResultTable from "../components/ResultTable";
 import { useToast } from "../components/Toast";
 import { rememberModel, rememberedModel } from "../lib/aiModels";
@@ -174,7 +174,7 @@ export default function Chat() {
         <header className="chat-head">
           <div>
             <h1 className="h1">Chat with your data</h1>
-            <p className="muted small">Every chat is saved in your history. Pin answers to save them together as a report.</p>
+            <p className="muted small">Every chat is saved in your history. Pin answers to put them on a report — a new one, or one you already have.</p>
           </div>
           <div className="row-wrap">
             <label className="model-picker">
@@ -245,7 +245,7 @@ export default function Chat() {
             <div className="pin-bar">
               <span><b>{pinned.length}</b> answer{pinned.length === 1 ? "" : "s"} pinned</span>
               <button className="btn btn-ghost btn-sm" onClick={() => setPinned([])}>Clear</button>
-              <button className="btn btn-primary btn-sm" onClick={() => setSaving(true)}>Save as report</button>
+              <button className="btn btn-primary btn-sm" onClick={() => setSaving(true)}>Add to a report</button>
             </div>
           )}
           <form className="chat-compose" onSubmit={(e) => { e.preventDefault(); send(input); }}>
@@ -263,12 +263,13 @@ export default function Chat() {
       </div>
 
       {saving && (
-        <SaveDialog count={pinned.length} defaultTitle={widgetsFrom(pinned)[0]?.title ?? "Chat report"}
+        <AddToReport sourceId={sourceIdOf(source)} sourceName={sourceName || "this database"}
+          widgets={widgetsFrom(pinned)} defaultTitle={widgetsFrom(pinned)[0]?.title ?? "Chat report"}
+          prompt={messages[0]?.question ?? ""}
           onClose={() => setSaving(false)}
-          onSave={async (title) => {
-            const report = await assistantApi.save({ source_id: sourceIdOf(source), title, prompt: messages[0]?.question ?? title,
-                                                     widgets: widgetsFrom(pinned) });
-            toast("Saved as a draft report. Arrange the charts, then publish.");
+          onDone={(report, created) => {
+            toast(created ? "Saved as a draft report. Arrange the charts, then publish."
+                          : `Added to "${report.title}".`);
             navigate(`/reports/${report.id}/edit`);
           }} />
       )}
@@ -360,7 +361,7 @@ function Answer({ result, pinned, onPin, onSave, onRetype }: {
         <button className={"btn btn-sm " + (pinned ? "btn-primary" : "btn-ghost")} aria-pressed={pinned} onClick={onPin}>
           <Icon name="plus" size={14} />{pinned ? "Pinned" : "Pin to report"}
         </button>
-        <button className="btn btn-ghost btn-sm" onClick={onSave}>Save as report</button>
+        <button className="btn btn-ghost btn-sm" onClick={onSave}>Add to a report</button>
       </div>
       {show === "table" && <ResultTable columns={result.columns} rows={result.rows} truncated={result.truncated} />}
       {show === "sql" && <pre className="code">{result.sql}</pre>}
@@ -368,32 +369,5 @@ function Answer({ result, pinned, onPin, onSave, onRetype }: {
         <ul className="tries">{result.attempts.map((a, i) => <li key={i} className={"note " + (a.ok ? "note-ok" : "note-bad")}>{a.message}</li>)}</ul>
       )}
     </div>
-  );
-}
-
-function SaveDialog({ count, defaultTitle, onClose, onSave }: {
-  count: number; defaultTitle: string; onClose: () => void; onSave: (title: string) => Promise<void>;
-}) {
-  const [title, setTitle] = useState(defaultTitle);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  async function save() {
-    if (!title.trim()) return;
-    setBusy(true);
-    setError("");
-    try { await onSave(title.trim()); } catch (err) { setError(errorMessage(err)); setBusy(false); }
-  }
-  return (
-    <Modal size="sm" title="Save as report" onClose={onClose} onSubmit={save} error={error}
-      footer={<><button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button type="submit" className="btn btn-primary" disabled={busy || !title.trim()}>{busy ? "Saving…" : "Save report"}</button></>}>
-      <div className="stack">
-        <p className="muted">{count} chart{count === 1 ? "" : "s"} will be saved as a draft dashboard. Each keeps its query, so the
-          report shows current data every time it opens.</p>
-        <label className="field">Report title
-          <input data-autofocus value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} />
-        </label>
-      </div>
-    </Modal>
   );
 }

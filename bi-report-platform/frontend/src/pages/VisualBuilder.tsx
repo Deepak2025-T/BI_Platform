@@ -4,6 +4,7 @@ import { errorMessage } from "../api/client";
 import { assistantApi } from "../api/endpoints";
 import { visualsApi } from "../api/visuals";
 import type { Agg, ChartSpec, DataSourceInfo, DateBucket, QueryData, VisualField, VisualFilter, VisualJoin, VisualMeasure, VisualSpec, VisualTable, Widget, WidgetStyle } from "../api/types";
+import AddToReport from "../components/AddToReport";
 import DataChart from "../components/DataChart";
 import Icon from "../components/Icon";
 import { useToast } from "../components/Toast";
@@ -81,6 +82,8 @@ export default function VisualBuilder() {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [reportTitle, setReportTitle] = useState("");
   const [adding, setAdding] = useState(false);
+  // The charts waiting to be put on a report, while the person says which one.
+  const [pending, setPending] = useState<Widget[] | null>(null);
 
   const [data, setData] = useState<QueryData | null>(null);
   const [sql, setSql] = useState("");
@@ -387,6 +390,10 @@ export default function VisualBuilder() {
    * Saves every chart on the report as one dashboard. Whatever is on the canvas counts too, so a
    * single chart needs no "add" first and a half-finished addition is never quietly dropped.
    */
+  /**
+   * Gets the charts ready and asks where they should go: a new report, or one that already reads
+   * this database. Nothing is saved until that is answered.
+   */
   async function save() {
     setSaving(true);
     setError("");
@@ -397,8 +404,7 @@ export default function VisualBuilder() {
         items = editingKey ? charts.map((c) => (c.key === editingKey ? item : c)) : [...charts, item];
       }
       if (!items.length) { setError("Add a chart to the report first."); return; }
-      const name = reportTitle.trim() || items[0].title;
-      const widgets: Widget[] = items.map((c, i) => ({
+      setPending(items.map((c, i) => ({
         id: `v${i + 1}`,
         title: c.title,
         question: "",
@@ -408,10 +414,7 @@ export default function VisualBuilder() {
         style: c.style,
         // Side by side once there is more than one, as a dashboard of one chart reads better wide.
         size: items.length > 1 ? "half" : "full",
-      }));
-      const report = await assistantApi.save({ source_id: sourceId, title: name, prompt: "", widgets });
-      toast(`Saved "${name}" with ${widgets.length} chart${widgets.length === 1 ? "" : "s"}.`);
-      navigate(`/reports/${report.id}/edit`);
+      })));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -470,7 +473,9 @@ export default function VisualBuilder() {
             {adding ? "Adding…" : editingKey ? "Update chart" : "Add to report"}
           </button>
           <button className="btn btn-primary" disabled={(!data && charts.length === 0) || saving || adding} onClick={save}>
-            {saving ? "Saving…" : charts.length ? `Save report (${charts.length + (data ? (editingKey ? 0 : 1) : 0)})` : "Save as a report"}
+            {saving ? "Saving…"
+              : charts.length ? `Put ${charts.length + (data ? (editingKey ? 0 : 1) : 0)} on a report`
+              : "Save as a report"}
           </button>
         </div>
       </div>
@@ -586,6 +591,17 @@ export default function VisualBuilder() {
           </div>
         </aside>
       </div>
+
+      {pending && (
+        <AddToReport sourceId={sourceId} sourceName={sourceName || "this database"} widgets={pending}
+          defaultTitle={reportTitle.trim() || pending[0].title}
+          onClose={() => setPending(null)}
+          onDone={(report, created) => {
+            toast(created ? `Saved "${report.title}" with ${pending.length} chart${pending.length === 1 ? "" : "s"}.`
+                          : `Added ${pending.length} chart${pending.length === 1 ? "" : "s"} to "${report.title}".`);
+            navigate(`/reports/${report.id}/edit`);
+          }} />
+      )}
     </div>
   );
 }

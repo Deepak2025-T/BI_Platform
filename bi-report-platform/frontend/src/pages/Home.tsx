@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { errorMessage } from "../api/client";
 import { aiModelsApi, assistantApi, reportsApi, templatesApi } from "../api/endpoints";
-import type { AIModelPublic, DataSourceInfo, Report, ReportTemplate } from "../api/types";
+import type { AIModelPublic, DataSourceInfo, PlannedChart, Report, ReportTemplate, TemplateCategory } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import CategoryBadge from "../components/CategoryBadge";
 import FlowDiagram, { type FlowStep } from "../components/FlowDiagram";
@@ -12,13 +13,20 @@ import { useToast } from "../components/Toast";
 import { type AskModel, rememberModel, rememberedModel } from "../lib/aiModels";
 import { shortDate } from "../lib/format";
 import { useCountUp, useReveal } from "../lib/motion";
+import { TEMPLATE_CATEGORIES } from "../lib/report";
 import { rememberSource, rememberedSource, sourceIdOf, sourceValue } from "../lib/sources";
 import type { BuildRequest } from "./BuildDashboard";
 
+/** Shown until the chosen database suggests its own, and if it has nothing to suggest. */
 const SUGGESTIONS = [
   "Show monthly revenue by region for Q1 2024 and the top 5 products",
   "Gross revenue by region for Q4 2023",
   "Show customer churn by signup cohort",
+];
+
+/** The chart shapes an AI-planned dashboard can be held to. */
+const CHARTS: [PlannedChart, string][] = [
+  ["kpi", "Number"], ["bar", "Bars"], ["line", "Line"], ["area", "Area"], ["pie", "Pie"], ["table", "Table"],
 ];
 
 const HOME_TEMPLATES = 7; // plus the "New template" card
@@ -56,6 +64,13 @@ export default function Home() {
   const [sources, setSources] = useState<DataSourceInfo[]>([]);
   const [sourceChoice, setSourceChoice] = useState("builtin");
   const [params, setParams] = useState({ date_from: "", date_to: "", filters: "" });
+  // Chart shapes to hold the model to; empty lets it pick whatever fits each chart.
+  const [charts, setCharts] = useState<PlannedChart[]>([]);
+  // Questions this database can answer, from its own columns.
+  const [ideas, setIdeas] = useState<string[]>([]);
+  const [building, setBuilding] = useState(false);
+  // Templates are chosen in two steps: the domain first, then the templates filed under it.
+  const [domain, setDomain] = useState<TemplateCategory | "">("");
   const [tplSection, tplShown] = useReveal<HTMLElement>();
   const [recentSection, recentShown] = useReveal<HTMLElement>();
 
@@ -64,8 +79,7 @@ export default function Home() {
     // Your own templates first, then shared, then built-in.
     const rank = (t: ReportTemplate) => (t.is_builtin ? 2 : t.owner_id === user?.id ? 0 : 1);
     templatesApi.list()
-      // Dashboard templates (e.g. OpenPages) are built from the Templates page, not asked here.
-      .then((t) => setTemplates(t.filter((x) => x.layout.kind !== "dashboard").sort((a, b) => rank(a) - rank(b))))
+      .then((t) => setTemplates(t.sort((a, b) => rank(a) - rank(b))))
       .catch(() => setTemplates([]));
     aiModelsApi.available().then((list) => {
       setModels(list);
@@ -86,7 +100,18 @@ export default function Home() {
     }).catch(() => setSources([]));
   }, [user?.id]);
 
+  // Every database suggests its own questions, so the chips are never about someone else's data.
+  useEffect(() => {
+    let current = true;
+    assistantApi.promptIdeas(sourceIdOf(sourceChoice))
+      .then((list) => { if (current) setIdeas(list); })
+      .catch(() => { if (current) setIdeas([]); });
+    return () => { current = false; };
+  }, [sourceChoice]);
+
   const recent = reports.slice(0, RECENT_SHOWN);
+  // The templates the Template picker offers: all of them, or one category's.
+  const inDomain = domain ? templates.filter((t) => t.category === domain) : templates;
 
   const chosenModel = models.find((m) => String(m.id) === modelChoice) ?? null;
   const chooseModel = (v: string) => { setModelChoice(v); rememberModel(v); };
@@ -94,26 +119,39 @@ export default function Home() {
   const chosenSource = sources.find((x) => sourceValue(x) === sourceChoice) ?? null;
   const chooseSource = (v: string) => { setSourceChoice(v); rememberSource(v); };
 
-  const pick = (t: ReportTemplate) => {
-    if (template?.id === t.id) { setTemplate(null); return; }
+  /**
+   * Choosing a template. There are two kinds, and they behave differently:
+   *  - a dashboard template brings its own ready-written charts, and builds on the database
+   *    chosen below, with no AI model involved;
+   *  - a question template fills the box. One that also carries a classic layout (sections,
+   *    palette) only applies to the sample data, which is the only thing that layout draws.
+   */
+  const pick = (t: ReportTemplate | null) => {
+    if (!t || template?.id === t.id) { setTemplate(null); return; }
     setTemplate(t);
+    setDomain(t.category);
     setPrompt(t.prompt);
     setMode("build");
-    chooseSource("builtin"); // templates are questions about the sample sales data
+    if (t.layout.kind !== "dashboard" && Object.keys(t.layout).length > 0) chooseSource("builtin");
     document.getElementById("ask")?.focus();
   };
 
-  // "Build a report" with a template, or without an AI model, makes the classic sales report.
+  // A dashboard template is built from its own SQL, so it needs neither the model nor the prompt.
+  const readyMade = template?.layout.kind === "dashboard" ? template : null;
+  // A question template with a layout, or no AI model at all, makes the classic sales report.
   // Otherwise the AI model plans a dashboard from the chosen database.
-  const classic = mode === "build" && (!!template || !chosenModel);
-  const needsModel = !chosenModel && (mode === "chat" || sourceChoice !== "builtin");
-  const plan = needsModel
+  const hasLayout = !!template && !readyMade && Object.keys(template.layout).length > 0;
+  const classic = mode === "build" && !readyMade && (hasLayout || !chosenModel);
+  const needsModel = !readyMade && !chosenModel && (mode === "chat" || sourceChoice !== "builtin");
+  const plan = readyMade
+    ? `Builds ${readyMade.name.split(": ").pop()} on ${chosenSource?.name ?? "the database"} from its own queries. No AI model is used.`
+    : needsModel
     ? (mode === "chat" ? "Chat needs an AI model. Pick one above." : "Pick an AI model to build a dashboard from this database.")
     : mode === "chat" ? `${chosenModel?.name} answers from ${chosenSource?.name ?? "the database"}, with the query and the rows.`
     : classic ? "Builds the standard sales report from the sample data."
     : `${chosenModel?.name} plans a dashboard of 4 to 6 charts from ${chosenSource?.name ?? "the database"}.`;
 
-  const ready = prompt.trim().length >= 3 && !needsModel;
+  const ready = (!!readyMade || prompt.trim().length >= 3) && !needsModel && !building;
 
   // The diagram mirrors the choices above it, so the picture is never out of date.
   const words = prompt.trim() ? prompt.trim().split(/\s+/).length : 0;
@@ -122,16 +160,39 @@ export default function Home() {
     {
       icon: "spark",
       label: "AI model",
-      sub: classic ? "Not used" : chosenModel?.name ?? "None picked",
-      dim: classic || !chosenModel,
+      sub: classic || readyMade ? "Not used" : chosenModel?.name ?? "None picked",
+      dim: classic || !!readyMade || !chosenModel,
     },
-    { icon: "database", label: "Database", sub: template ? "Sample sales data" : chosenSource?.name ?? "Sample sales data" },
+    { icon: "database", label: "Database", sub: classic ? "Sample sales data" : chosenSource?.name ?? "Sample sales data" },
     mode === "chat"
       ? { icon: "chat", label: "Answer", sub: "Query and rows shown" }
-      : { icon: "grid", label: "Dashboard", sub: classic ? "Standard sales report" : "4 to 6 charts" },
+      : {
+          icon: "grid", label: "Dashboard",
+          sub: readyMade ? `${(readyMade.layout.widgets ?? []).filter((w) => w.kind !== "text").length} ready-made charts`
+            : classic ? "Standard sales report"
+            : charts.length ? `4 to 6 charts, ${charts.length === 1 ? CHARTS.find(([c]) => c === charts[0])?.[1].toLowerCase() : "chosen shapes"}`
+            : "4 to 6 charts",
+        },
   ];
 
+  /** Builds a ready-made dashboard template on the chosen database, then opens it. */
+  async function buildTemplate(t: ReportTemplate) {
+    setBuilding(true);
+    try {
+      const { report, skipped } = await templatesApi.build(t.id, sourceIdOf(sourceChoice));
+      toast(skipped.length
+        ? `Built, without ${skipped.length} chart${skipped.length === 1 ? "" : "s"} this database can't answer.`
+        : "Built. Arrange it, then publish.");
+      navigate(`/reports/${report.id}/edit`);
+    } catch (err) {
+      toast(errorMessage(err));
+    } finally {
+      setBuilding(false);
+    }
+  }
+
   function ask() {
+    if (readyMade) { buildTemplate(readyMade); return; }
     const text = prompt.trim();
     if (text.length < 3 || needsModel) return;
     if (mode === "chat" && chosenModel) {
@@ -144,7 +205,8 @@ export default function Home() {
         source: { id: sourceIdOf(sourceChoice), name: chosenSource?.name ?? "" },
         model: { id: chosenModel.id, name: chosenModel.name },
         prompt: text,
-        parameters: { date_from: params.date_from || null, date_to: params.date_to || null, filters: params.filters.trim() },
+        parameters: { date_from: params.date_from || null, date_to: params.date_to || null,
+                      filters: params.filters.trim(), charts },
       };
       navigate("/build", { state: req });
     }
@@ -184,7 +246,10 @@ export default function Home() {
               {template && (
                 <div className="ask-template">
                   <span className="tpl-dot" style={{ background: template.color }} aria-hidden="true" />
-                  <span className="small">Using template <b>{template.name}</b>{Object.keys(template.layout).length > 0 && ", with its layout"}</span>
+                  <span className="small">
+                    Using template <b>{template.name}</b>
+                    {readyMade ? ", with its own charts" : hasLayout ? ", with its layout" : ""}
+                  </span>
                   <button className="icon-btn sm" aria-label="Stop using this template" onClick={() => setTemplate(null)}>✕</button>
                 </div>
               )}
@@ -205,20 +270,71 @@ export default function Home() {
                     <input value={params.filters} maxLength={300} placeholder="e.g. region = North, status = paid"
                       onChange={(e) => setParams({ ...params, filters: e.target.value })} />
                   </label>
+                  <div className="field grow">
+                    <span>Charts</span>
+                    <div className="chip-row tight" role="group" aria-label="Chart types to use">
+                      {CHARTS.map(([id, label]) => {
+                        const on = charts.includes(id);
+                        return (
+                          <button key={id} type="button" className={"chip-btn sm" + (on ? " on" : "")} aria-pressed={on}
+                            onClick={() => setCharts(on ? charts.filter((c) => c !== id) : [...charts, id])}>
+                            {label}
+                          </button>
+                        );
+                      })}
+                      {charts.length > 0 && (
+                        <button type="button" className="link-btn small" onClick={() => setCharts([])}>Any</button>
+                      )}
+                    </div>
+                    <span className="hint">{charts.length ? "Only these shapes are used." : "The model picks what fits."}</span>
+                  </div>
                 </fieldset>
               )}
               <div className="ask-foot">
                 <div className="row-wrap">
+                  {mode === "build" && templates.length > 0 && (
+                    <>
+                      <label className="model-picker">
+                        <span className="muted small">Category</span>
+                        <select value={domain} aria-label="Template category"
+                          onChange={(e) => { setDomain(e.target.value as TemplateCategory | ""); pick(null); }}>
+                          <option value="">All categories</option>
+                          {TEMPLATE_CATEGORIES.filter((c) => templates.some((t) => t.category === c))
+                            .map((c) => (
+                              <option key={c} value={c}>
+                                {c} ({templates.filter((t) => t.category === c).length})
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                      <label className="model-picker">
+                        <span className="muted small">Template</span>
+                        <select value={template?.id ?? ""} aria-label="Template to build from"
+                          onChange={(e) => pick(inDomain.find((t) => String(t.id) === e.target.value) ?? null)}>
+                          <option value="">{inDomain.length ? "No template" : "None in this category"}</option>
+                          <optgroup label="Ready-made dashboards">
+                            {inDomain.filter((t) => t.layout.kind === "dashboard")
+                              .map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </optgroup>
+                          <optgroup label="Questions">
+                            {inDomain.filter((t) => t.layout.kind !== "dashboard")
+                              .map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </optgroup>
+                        </select>
+                      </label>
+                    </>
+                  )}
                   <label className="model-picker">
                     <span className="muted small">Database</span>
-                    <select value={sourceChoice} onChange={(e) => chooseSource(e.target.value)} aria-label="Database" disabled={!!template}>
+                    <select value={sourceChoice} onChange={(e) => chooseSource(e.target.value)} aria-label="Database" disabled={classic}>
                       {sources.map((x) => <option key={sourceValue(x)} value={sourceValue(x)}>{x.name}</option>)}
                       {sources.length === 0 && <option value="builtin">Sample sales data</option>}
                     </select>
                   </label>
                   <label className="model-picker">
                     <span className="muted small">AI model</span>
-                    <select value={modelChoice} onChange={(e) => chooseModel(e.target.value)} aria-label="AI model for this question">
+                    <select value={modelChoice} onChange={(e) => chooseModel(e.target.value)}
+                      aria-label="AI model for this question" disabled={!!readyMade}>
                       {models.map((m) => (
                         <option key={m.id} value={m.id} title={m.provider_label}>{m.name}{m.is_default ? " (default)" : ""}</option>
                       ))}
@@ -227,7 +343,7 @@ export default function Home() {
                   </label>
                 </div>
                 <button className="btn btn-primary btn-lg btn-go" onClick={ask} disabled={!ready}>
-                  {mode === "chat" ? "Ask" : "Build my report"}
+                  {building ? "Building…" : mode === "chat" ? "Ask" : readyMade ? "Build this template" : "Build my report"}
                   <Icon name="arrow" size={17} className="go-arrow" />
                 </button>
               </div>
@@ -236,7 +352,7 @@ export default function Home() {
 
             <div className="chip-row rise rise-5">
               <span className="muted small">Try</span>
-              {SUGGESTIONS.map((s) => (
+              {(ideas.length ? ideas : SUGGESTIONS).map((s) => (
                 <button key={s} className="chip-btn" onClick={() => setPrompt(s)}>{s}</button>
               ))}
             </div>

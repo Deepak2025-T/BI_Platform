@@ -177,3 +177,52 @@ def test_ctes_and_unmapped_filters():
     assert applied == [] and skipped == ["r"] and params == {}
     # A filter with no value isn't counted either way.
     assert dashboard_filters.apply("SELECT * FROM orders", PG, [REGION], {}, "w")[2:] == ([], [])
+
+
+# ---------- Adding charts to a report that already exists ----------
+
+def _add(client, headers, report_id, widgets, source_id):
+    return client.post(f"/api/reports/{report_id}/widgets", headers=headers,
+                       json={"source_id": source_id, "widgets": widgets})
+
+
+def test_a_chart_can_be_added_to_a_report_that_already_exists(client, user, dashboard, source):
+    before = len(dashboard["config"]["widgets"])
+    res = _add(client, user, dashboard["id"], [_widget("extra", "One more", TOTAL, "kpi")], source)
+    assert res.status_code == 200, res.text
+    widgets = res.json()["config"]["widgets"]
+    assert len(widgets) == before + 1
+    assert widgets[-1]["title"] == "One more"
+    # Everything that was already there is untouched, and in the same order.
+    assert [w["title"] for w in widgets[:before]] == [w["title"] for w in dashboard["config"]["widgets"]]
+
+
+def test_an_added_chart_gets_an_id_of_its_own(client, user, dashboard, source):
+    res = _add(client, user, dashboard["id"], [_widget("total", "Clashing id", TOTAL, "kpi")], source)
+    assert res.status_code == 200, res.text
+    ids = [w["id"] for w in res.json()["config"]["widgets"]]
+    assert len(ids) == len(set(ids)), f"ids repeat: {ids}"
+
+
+def test_a_chart_from_another_database_is_refused(client, user, dashboard):
+    res = _add(client, user, dashboard["id"], [_widget("x", "Elsewhere", TOTAL, "kpi")], 99999)
+    assert res.status_code == 400
+    assert "another database" in res.json()["detail"]
+
+
+def test_a_query_the_connection_no_longer_allows_is_refused(client, user, dashboard, source):
+    res = _add(client, user, dashboard["id"],
+               [_widget("x", "Secrets", "SELECT * FROM salaries", "table")], source)
+    assert res.status_code == 400
+    assert "can't be added" in res.json()["detail"]
+
+
+def test_only_someone_who_can_edit_the_report_may_add_to_it(client, manager, dashboard, source):
+    """The dashboard belongs to the demo user; another plain user can't add to it."""
+    email = f"other-{uuid.uuid4().hex[:6]}@example.com"
+    client.post("/api/users", headers=manager, json={
+        "email": email, "full_name": "Other", "password": "Other@12345", "role": "user"})
+    token = client.post("/api/auth/login", json={"email": email, "password": "Other@12345"}).json()["access_token"]
+    res = _add(client, {"Authorization": f"Bearer {token}"}, dashboard["id"],
+               [_widget("x", "Nope", TOTAL, "kpi")], source)
+    assert res.status_code in (403, 404)

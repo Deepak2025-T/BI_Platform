@@ -1,4 +1,5 @@
 import re
+import uuid
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -13,8 +14,9 @@ from ..datasources import QueryFailed, SourceError, get_source, list_sources, ru
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import AIModel, Report, User
+from ..prompt_ideas import ideas_for
 from ..excel_export import dashboard_workbook
-from ..schemas import (ChatIn, DashboardDataIn, DashboardIn, DrillIn, FilterMapIn, ReportOut,
+from ..schemas import (AddWidgetsIn, ChatIn, DashboardDataIn, DashboardIn, DrillIn, FilterMapIn, ReportOut,
                        SaveDashboardIn, SourceOut, WidgetIn)
 from ..refresh import RefreshFailed, as_utc, latest_snapshot, refresh_report, snapshot_matches
 from ..report_data import active_filters, run_widgets
@@ -61,6 +63,12 @@ def sources(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
                       builtin=s.id is None) for s in list_sources(db)]
 
 
+@router.get("/api/assistant/prompt-ideas")
+def prompt_ideas(source_id: int | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Questions worth asking of one database, from its own columns. No AI model is used."""
+    return {"ideas": ideas_for(_source(db, source_id))}
+
+
 @router.post("/api/assistant/chat")
 def chat_message(body: ChatIn, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     model, spec = _model(db, body.model_id)
@@ -101,6 +109,38 @@ def save_dashboard(body: SaveDashboardIn, db: Session = Depends(get_db), user: U
         widgets.append(new_widget(w.title, w.question, w.sql, w.chart,
                                   {"style": w.style, "size": w.size, "visual": w.visual}))
     return _save(db, user, title=body.title, prompt=body.prompt, source=source, widgets=widgets, extra={})
+
+
+@router.post("/api/reports/{report_id}/widgets", response_model=ReportOut)
+def add_widgets(report_id: int, body: AddWidgetsIn, db: Session = Depends(get_db),
+                user: User = Depends(get_current_user)):
+    """Adds charts to a dashboard that already exists — from a chat answer, or from the chart
+    builder — instead of starting another report for them.
+
+    Every query is checked against the tables shared now, and the report has to read the same
+    database: its filters, refresh and export all assume one connection."""
+    report, source = _dashboard(db, report_id, user)
+    check_can_edit(report, user)
+    if body.source_id != report.config.get("source_id"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"{report.title} reads {source.name}. A chart from another database can't be added to it.")
+    widgets = list(report.config.get("widgets") or [])
+    taken = {w.get("id") for w in widgets}
+    for w in body.widgets:
+        try:
+            check_query(source, w.sql)
+        except UnsafeSQL as err:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f'"{w.title}" can\'t be added: {err}')
+        added = new_widget(w.title, w.question, w.sql, w.chart,
+                           {"style": w.style, "size": w.size, "visual": w.visual})
+        while added["id"] in taken:          # ids only have to be unique within one report
+            added["id"] = uuid.uuid4().hex[:8]
+        taken.add(added["id"])
+        widgets.append(added)
+    # Reassigning makes SQLAlchemy notice the change; editing the list in place would not.
+    report.config = {**report.config, "widgets": widgets}
+    db.commit()
+    return to_out(get_visible(db, report.id, user))
 
 
 @router.post("/api/reports/{report_id}/data")

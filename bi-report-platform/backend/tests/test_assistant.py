@@ -205,6 +205,54 @@ def test_other_users_drafts_stay_private(client, manager, user, source_id):
     assert client.post(f"/api/reports/{report['id']}/data", headers=user).status_code == 404
 
 
+def test_only_the_chart_shapes_asked_for_reach_the_model(monkeypatch, source_id):
+    """Asking for particular charts narrows both the instruction and the schema, so a model that
+    ignores the words still can't answer with a shape nobody asked for."""
+    from app.ai import assistant
+    from app.database import SessionLocal
+    from app.datasources import get_source
+
+    seen = {}
+
+    def capture(spec, system, user, schema):
+        seen["system"], seen["schema"] = system, schema
+        return {"title": "Nothing", "widgets": []}
+
+    monkeypatch.setattr(assistant, "complete_json", capture)
+    db = SessionLocal()
+    try:
+        source = get_source(db, source_id)
+        with pytest.raises(assistant.AssistantError):   # no widgets came back
+            assistant.plan_dashboard(assistant.ModelSpec(provider="ollama", model="x"), source,
+                                     "Orders dashboard", {"charts": ["kpi", "bar"]})
+    finally:
+        db.close()
+    allowed = seen["schema"]["properties"]["widgets"]["items"]["properties"]["chart"]["properties"]["type"]["enum"]
+    assert allowed == ["kpi", "bar"]
+    assert "Use only these chart types" in seen["system"]
+    assert '"pie"' not in seen["system"]
+
+
+def test_asking_for_no_particular_chart_leaves_every_shape_open(monkeypatch, source_id):
+    from app.ai import assistant
+    from app.database import SessionLocal
+    from app.datasources import get_source
+
+    seen = {}
+    monkeypatch.setattr(assistant, "complete_json",
+                        lambda spec, system, user, schema: seen.update(system=system, schema=schema)
+                        or {"title": "Nothing", "widgets": []})
+    db = SessionLocal()
+    try:
+        with pytest.raises(assistant.AssistantError):
+            assistant.plan_dashboard(assistant.ModelSpec(provider="ollama", model="x"),
+                                     get_source(db, source_id), "Orders dashboard", {})
+    finally:
+        db.close()
+    allowed = seen["schema"]["properties"]["widgets"]["items"]["properties"]["chart"]["properties"]["type"]["enum"]
+    assert allowed == assistant.CHART_TYPES
+
+
 def test_an_answer_cut_off_by_the_context_says_so(client, user, model_id, source_id):
     """Half a JSON object is not a model that can't write JSON: it is one that ran out of room,
     and the fix is a bigger window, not a bigger model."""

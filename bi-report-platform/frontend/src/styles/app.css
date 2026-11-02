@@ -769,3 +769,7 @@ a.media-body:hover .media-img, a.media-body:hover .media-icon { opacity: .85; }
 .join-row > *:first-child { grid-column: 1 / -1; }
 .join-row select { min-width: 0; }
 .join-op { font-size: 11px; }
+
+/* The Ask page: choosing chart shapes beside the other parameters. */
+.chip-row.tight { gap: 4px; margin: 2px 0; flex-wrap: wrap; }
+.ask-params .field > span:first-child { font-size: 12px; }

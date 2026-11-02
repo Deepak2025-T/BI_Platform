@@ -399,6 +399,8 @@ class DashboardParams(BaseModel):
     date_from: date | None = None
     date_to: date | None = None
     filters: str = Field(default="", max_length=300)
+    # Chart shapes to use, when the person asked for particular ones. Empty means any.
+    charts: list[Literal["kpi", "bar", "line", "area", "pie", "table"]] = Field(default_factory=list, max_length=6)
 
 
 class DashboardIn(BaseModel):
@@ -419,6 +421,14 @@ class Widget(BaseModel):
     size: str | None = Field(default=None, max_length=20)
     # Charts from the visual builder: the fields they were built from, so they can be reopened there.
     visual: dict | None = None
+
+
+class AddWidgetsIn(BaseModel):
+    """Charts to append to a dashboard that already exists. The database has to be the same one,
+    so a chart never ends up on a report whose filters and refresh read somewhere else."""
+
+    source_id: int | None = None
+    widgets: list[Widget] = Field(min_length=1, max_length=12)
 
 
 class SaveDashboardIn(BaseModel):

@@ -514,7 +514,12 @@ export interface DashboardParameters {
   date_from: string | null;
   date_to: string | null;
   filters: string;
+  /** Chart shapes the person asked for. Empty means the model picks whatever fits. */
+  charts?: PlannedChart[];
 }
+
+/** The chart shapes an AI-planned dashboard can use. */
+export type PlannedChart = "kpi" | "bar" | "line" | "area" | "pie" | "table";
 
 /** A report built by an AI model: charts, each with its own saved SQL. */
 export interface DashboardConfig {

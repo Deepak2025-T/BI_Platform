@@ -45,7 +45,7 @@ export const templatesApi = {
     api.put<ReportTemplate>(`/api/templates/${id}`, body).then((r) => r.data),
   remove: (id: number) => api.delete(`/api/templates/${id}`),
   /** Dashboard templates: builds a draft dashboard on a connection. Charts that can't run there are skipped. */
-  build: (id: number, sourceId: number) =>
+  build: (id: number, sourceId: number | null) =>
     api.post<{ report: Report; skipped: { title: string; reason: string }[] }>(`/api/templates/${id}/build`,
       { source_id: sourceId }, { timeout: 180000 }).then((r) => r.data),
 };
@@ -88,6 +88,10 @@ export const aiModelsApi = {
 /** AI chat with a database, and AI-built dashboards. Model calls can be slow, so allow a few minutes. */
 export const assistantApi = {
   sources: () => api.get<DataSourceInfo[]>("/api/sources").then((r) => r.data),
+  /** Questions worth asking of one database, worked out from its columns. No AI model is used. */
+  promptIdeas: (sourceId: number | null) =>
+    api.get<{ ideas: string[] }>("/api/assistant/prompt-ideas", { params: { source_id: sourceId } })
+      .then((r) => r.data.ideas),
   chat: (body: { source_id: number | null; model_id: number; question: string;
                  history: { question: string; reply: string; sql: string }[] }) =>
     api.post<ChatResult>("/api/assistant/chat", body, { timeout: AI_WAIT }).then((r) => r.data),
@@ -98,6 +102,9 @@ export const assistantApi = {
       .then((r) => r.data),
   save: (body: { source_id: number | null; title: string; prompt: string; widgets: Widget[] }) =>
     api.post<Report>("/api/assistant/save", body).then((r) => r.data),
+  /** Adds charts to a dashboard that already exists, on the same database. */
+  addWidgets: (reportId: number, body: { source_id: number | null; widgets: Widget[] }) =>
+    api.post<Report>(`/api/reports/${reportId}/widgets`, body, { timeout: 60000 }).then((r) => r.data),
   data: (reportId: number, body: DashboardDataRequest = { filters: {} }) =>
     api.post<{ source: string; widgets: WidgetData[]; snapshot_at: string | null }>(`/api/reports/${reportId}/data`, body, { timeout: 120000 }).then((r) => r.data),
   /**

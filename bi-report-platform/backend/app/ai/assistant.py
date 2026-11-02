@@ -9,6 +9,7 @@ What the model sees: the question, recent conversation turns, the chosen tables'
 values of low-cardinality text columns), and, to explain an answer, at most 20 result rows.
 """
 
+import copy
 import datetime as dt
 import json
 import time
@@ -81,9 +82,27 @@ _PLAN_SCHEMA = {
     "additionalProperties": False,
 }
 
-_CHART_RULES = """Chart types: "kpi" for one number; "line" or "area" for a value over time; "bar" to compare
-categories; "pie" for shares of a whole with at most 8 parts; "table" for detailed rows. "x" is the
-column holding categories or dates (empty for kpi), "y" lists the numeric columns to plot."""
+_CHART_MEANINGS = {
+    "kpi": '"kpi" for one number',
+    "line": '"line" for a value over time',
+    "area": '"area" for a value over time, filled in',
+    "bar": '"bar" to compare categories',
+    "pie": '"pie" for shares of a whole with at most 8 parts',
+    "table": '"table" for detailed rows',
+}
+_CHART_AXES = ('"x" is the column holding categories or dates (empty for kpi), '
+               '"y" lists the numeric columns to plot.')
+
+
+def _chart_rules(types: list[str] | None = None) -> str:
+    """What each chart shape is for. A shorter list means the person asked for only those."""
+    wanted = types or CHART_TYPES
+    kinds = "; ".join(_CHART_MEANINGS[t] for t in wanted if t in _CHART_MEANINGS)
+    lead = "Chart types" if wanted == CHART_TYPES else "Use only these chart types, nothing else"
+    return f"{lead}: {kinds}. {_CHART_AXES}"
+
+
+_CHART_RULES = _chart_rules()
 
 
 def _sql_rules(source: DataSource) -> str:
@@ -251,6 +270,13 @@ def _history_text(history: list[dict]) -> str:
 def plan_dashboard(spec: ModelSpec, source: DataSource, prompt: str, parameters: dict) -> dict:
     """Plans and runs a dashboard. Returns {"title", "widgets": [...], "failed": [...]}."""
     params_text = _parameters_text(parameters)
+    # Asked for particular shapes: the model is told, and the schema only allows those, so a
+    # model that ignores the instruction still can't answer with anything else.
+    wanted = [c for c in (parameters.get("charts") or []) if c in CHART_TYPES] or CHART_TYPES
+    plan_schema = _PLAN_SCHEMA
+    if wanted != CHART_TYPES:
+        plan_schema = copy.deepcopy(_PLAN_SCHEMA)
+        plan_schema["properties"]["widgets"]["items"]["properties"]["chart"]["properties"]["type"]["enum"] = wanted
     system = f"""You design BI dashboards. Turn the request into 4 to 6 charts that answer it well.
 Start with 1 to 3 "kpi" charts for the headline numbers, then charts that break them down
 (over time, by category, top items).
@@ -259,8 +285,8 @@ Start with 1 to 3 "kpi" charts for the headline numbers, then charts that break 
 
 Each chart needs a title, a one-line question it answers, one SQL query, and a chart.
 {params_text}
-{_CHART_RULES}"""
-    plan = complete_json(spec, system, f"Dashboard request: {prompt}", _PLAN_SCHEMA)
+{_chart_rules(wanted)}"""
+    plan = complete_json(spec, system, f"Dashboard request: {prompt}", plan_schema)
     plan["widgets"] = [_normalize(w) for w in plan.get("widgets") or [] if isinstance(w, dict)]
     widgets, failed = [], []
     for item in (plan.get("widgets") or [])[:8]:
