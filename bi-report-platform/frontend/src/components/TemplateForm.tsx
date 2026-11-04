@@ -3,13 +3,17 @@ import { errorMessage } from "../api/client";
 import { templatesApi } from "../api/endpoints";
 import type { ChartKind, NumberFormat, PaletteId, ReportTemplate, SectionId, TemplateCategory, TemplateInput, TemplateLayout } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
-import { ALL_SECTIONS, CATEGORY_BLURBS, DEFAULT_LAYOUT, PALETTES, SECTION_LABELS, TEMPLATE_CATEGORIES } from "../lib/report";
+import {
+  ALL_SECTIONS, CATEGORY_BLURBS, DEFAULT_LAYOUT, MODULE_LABELS, PALETTES, SECTION_LABELS,
+  TEMPLATE_CATEGORIES, TEMPLATE_MODULES,
+} from "../lib/report";
 import { ColorPicker, Group, SWATCH_COLORS, Seg } from "./Controls";
 import Modal from "./Modal";
+import PalettePicker from "./PalettePicker";
 import TemplateCard from "./TemplateCard";
 
 const EMPTY: TemplateInput = { name: "", description: "", prompt: "", color: SWATCH_COLORS[0],
-                              category: "Uncategorised", layout: {}, visibility: "private" };
+                              category: "Uncategorised", module: "", layout: {}, visibility: "private" };
 
 interface Props {
   /** Template to edit. Leave out to create a new one. */
@@ -25,7 +29,8 @@ export default function TemplateForm({ template, initial, onClose, onSaved }: Pr
   const [form, setForm] = useState<TemplateInput>(() =>
     template
       ? { name: template.name, description: template.description, prompt: template.prompt, color: template.color,
-          category: template.category, layout: template.layout, visibility: template.visibility }
+          category: template.category, module: template.module ?? "", layout: template.layout,
+            visibility: template.visibility }
       : { ...EMPTY, ...initial });
   const [customLayout, setCustomLayout] = useState(Object.keys(form.layout).length > 0);
   const isDashboard = form.layout.kind === "dashboard";
@@ -96,6 +101,19 @@ export default function TemplateForm({ template, initial, onClose, onSaved }: Pr
         </fieldset>
 
         <fieldset className="group">
+          <legend>Folder</legend>
+          <div className="seg-row wide">
+            <Seg on={!form.module} onClick={() => set("module", "")}>None</Seg>
+            {TEMPLATE_MODULES.map((m) => (
+              <Seg key={m} on={form.module === m} onClick={() => set("module", m)}>{m}</Seg>
+            ))}
+          </div>
+          <span className="hint">
+            {form.module ? MODULE_LABELS[form.module] : `Filed directly under ${form.category}`}
+          </span>
+        </fieldset>
+
+        <fieldset className="group">
           <legend>Who can use it</legend>
           <div className="seg-row">
             <Seg on={form.visibility === "private"} onClick={() => set("visibility", "private")}>Only me</Seg>
@@ -138,6 +156,8 @@ export default function TemplateForm({ template, initial, onClose, onSaved }: Pr
                   </Seg>
                 ))}
               </Group>
+              <PalettePicker value={layout.chartPalette} onChange={(chartPalette) => setLayout("chartPalette", chartPalette)}
+                label="Chart colours" hint="Copied onto every chart when a report is built from this template." />
               <div className="form-grid">
                 <Group label="Numbers">
                   {([["short", "$1.3M"], ["full", "$1,286,000"]] as [NumberFormat, string][]).map(([k, l]) => (

@@ -30,19 +30,20 @@ def _reply(system: str, user: str) -> dict:
     if "explain query results" in system:
         return {"answer": "North leads with the highest total."}
     if "design BI dashboards" in system:
+        # An outline: titles, questions and chart shapes, no SQL. Each chart's query is asked for
+        # separately, below, so one slow generation doesn't have to produce the whole dashboard.
         return {"title": "Orders overview", "widgets": [
-            {"title": "Total orders", "question": "How much in total?", "sql": "SELECT SUM(amount) AS total FROM orders",
-             "chart": {"type": "kpi", "x": "", "y": ["total"]}},
-            {"title": "By region", "question": "Total by region", "sql": GOOD_SQL,
-             "chart": {"type": "bar", "x": "region", "y": ["total"]}},
-            {"title": "Secret", "question": "Salaries", "sql": "SELECT * FROM salaries",
-             "chart": {"type": "table", "x": "", "y": []}},
+            {"title": "Total orders", "question": "How much in total?", "chart": "kpi"},
+            {"title": "By region", "question": "Total by region", "chart": "bar"},
+            {"title": "Secret", "question": "Salaries", "chart": "table"},
         ]}
     query = lambda sql, chart=None: {"action": "query", "reply": "", "title": "Orders by region", "sql": sql,  # noqa: E731
                                      "chart": chart or {"type": "bar", "x": "region", "y": ["total"]}}
     if "Chart request" in user:
         if "salar" in user.lower():
             return query("SELECT * FROM salaries")
+        if "in total" in user.lower():
+            return query("SELECT SUM(amount) AS total FROM orders", {"type": "kpi", "x": "", "y": ["total"]})
         return query(GOOD_SQL)
     question = user.rsplit("Question:", 1)[-1].lower()
     if "which tables" in question:
@@ -227,7 +228,7 @@ def test_only_the_chart_shapes_asked_for_reach_the_model(monkeypatch, source_id)
                                      "Orders dashboard", {"charts": ["kpi", "bar"]})
     finally:
         db.close()
-    allowed = seen["schema"]["properties"]["widgets"]["items"]["properties"]["chart"]["properties"]["type"]["enum"]
+    allowed = seen["schema"]["properties"]["widgets"]["items"]["properties"]["chart"]["enum"]
     assert allowed == ["kpi", "bar"]
     assert "Use only these chart types" in seen["system"]
     assert '"pie"' not in seen["system"]
@@ -249,7 +250,7 @@ def test_asking_for_no_particular_chart_leaves_every_shape_open(monkeypatch, sou
                                      get_source(db, source_id), "Orders dashboard", {})
     finally:
         db.close()
-    allowed = seen["schema"]["properties"]["widgets"]["items"]["properties"]["chart"]["properties"]["type"]["enum"]
+    allowed = seen["schema"]["properties"]["widgets"]["items"]["properties"]["chart"]["enum"]
     assert allowed == assistant.CHART_TYPES
 
 
@@ -291,3 +292,72 @@ def test_ollama_is_told_how_much_room_to_use(monkeypatch):
     providers._ollama(providers.ModelSpec(provider="ollama", model="m", base_url="http://x"),
                       "system", "user", {"type": "object"})
     assert sent["options"]["num_ctx"] == providers.OLLAMA_NUM_CTX
+
+
+def test_a_long_request_is_one_small_call_per_chart(monkeypatch, source_id):
+    """The planning call must not write SQL: that is what made one long generation, and a slow
+    local model never finished it. The outline comes back first, then a call for each chart."""
+    from app.ai import assistant
+    from app.database import SessionLocal
+    from app.datasources import get_source
+
+    calls = []
+
+    def spy(spec, system, user, schema):
+        calls.append(system)
+        return _reply(system, user)
+
+    monkeypatch.setattr(assistant, "complete_json", spy)
+    db = SessionLocal()
+    try:
+        plan = assistant.plan_dashboard(assistant.ModelSpec(provider="ollama", model="x"),
+                                        get_source(db, source_id), "Orders dashboard", {})
+    finally:
+        db.close()
+    planning = [c for c in calls if "design BI dashboards" in c]
+    assert len(planning) == 1 and "Do NOT write any SQL here" in planning[0]
+    # Then one call per chart, each writing a single query (the refused one is retried, so at least
+    # one per chart). No single call has to produce the whole dashboard.
+    assert len([c for c in calls if "one SQL query for one chart" in c]) >= 3
+    assert [w["title"] for w in plan["widgets"]] == ["Total orders", "By region"]
+
+
+def test_charts_left_over_when_the_budget_runs_out_are_reported(monkeypatch, source_id):
+    """A model too slow to finish every chart gives back the ones it did build, not an error:
+    a partial dashboard is worth far more than five minutes and nothing."""
+    from app.ai import assistant
+    from app.database import SessionLocal
+    from app.datasources import get_source
+
+    monkeypatch.setattr(assistant, "complete_json",
+                        lambda spec, system, user, schema: _reply(system, user))
+    # The clock jumps past the deadline once the first chart has been written.
+    ticks = iter([0, 0] + [10_000] * 50)
+    monkeypatch.setattr(assistant.time, "monotonic", lambda: next(ticks))
+    db = SessionLocal()
+    try:
+        plan = assistant.plan_dashboard(assistant.ModelSpec(provider="ollama", model="x"),
+                                        get_source(db, source_id), "Orders dashboard", {},
+                                        budget_seconds=10, max_parallel=1)
+    finally:
+        db.close()
+    assert [w["title"] for w in plan["widgets"]] == ["Total orders"]
+    assert [f["title"] for f in plan["failed"]] == ["By region", "Secret"]
+    assert all("ran out of time" in f["error"] for f in plan["failed"])
+
+
+def test_a_dashboard_that_builds_nothing_still_says_why(monkeypatch, source_id):
+    from app.ai import assistant
+    from app.database import SessionLocal
+    from app.datasources import get_source
+
+    monkeypatch.setattr(assistant, "complete_json",
+                        lambda spec, system, user, schema: _reply(system, user))
+    db = SessionLocal()
+    try:
+        with pytest.raises(assistant.AssistantError, match="ran out of time"):
+            assistant.plan_dashboard(assistant.ModelSpec(provider="ollama", model="x"),
+                                     get_source(db, source_id), "Orders dashboard", {},
+                                     budget_seconds=-1, max_parallel=1)
+    finally:
+        db.close()

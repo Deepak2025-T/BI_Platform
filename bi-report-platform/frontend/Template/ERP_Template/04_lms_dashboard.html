@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LMS Analytics · Odoo Power BI</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+  :root{
+    --bg:#FAF9FF;--s1:#FFFFFF;--s2:#F5F3FF;--s3:#EDE9FE;
+    --violet:#7C3AED;--vi2:#6D28D9;--vi3:#5B21B6;
+    --violet-light:rgba(124,58,237,.1);
+    --indigo:#4338CA;--sky:#0EA5E9;--emerald:#10B981;
+    --amber:#F59E0B;--rose:#F43F5E;
+    --text:#1E1B4B;--muted:#6B7280;--border:#E5E7EB;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+  .shell{display:grid;grid-template-rows:auto 1fr auto;min-height:100vh}
+
+  header{background:var(--violet);padding:16px 28px;display:flex;align-items:center;justify-content:space-between}
+  .hbrand{display:flex;align-items:center;gap:12px;color:#fff}
+  .hmark{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+  .htitle{font-size:15px;font-weight:600}
+  .hsub{font-size:11px;opacity:.7;margin-top:1px}
+  .hright{display:flex;align-items:center;gap:12px}
+  .hpill{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:6px 12px;font-size:12px;color:#fff;cursor:pointer}
+  .hpill:hover{background:rgba(255,255,255,.25)}
+
+  main{padding:22px 28px;display:flex;flex-direction:column;gap:18px}
+
+  /* KPI row */
+  .kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+  .kpi{background:var(--s1);border:1px solid var(--border);border-radius:12px;padding:16px;position:relative;overflow:hidden;cursor:pointer;transition:box-shadow .2s}
+  .kpi:hover{box-shadow:0 6px 24px rgba(124,58,237,.12)}
+  .kpi-icon-wrap{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:10px}
+  .kpi-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:4px}
+  .kpi-val{font-size:26px;font-weight:700;font-family:'Space Mono',monospace;line-height:1}
+  .kpi-sub{font-size:11px;margin-top:5px;display:flex;align-items:center;gap:3px}
+  .kpi-line{position:absolute;bottom:0;left:0;right:0;height:3px}
+
+  /* Layout rows */
+  .row2{display:grid;grid-template-columns:1.5fr 1fr;gap:16px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+  .card{background:var(--s1);border:1px solid var(--border);border-radius:12px;padding:18px}
+  .card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .card-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .card-action{font-size:11px;color:var(--violet);cursor:pointer;font-weight:500}
+
+  /* Course table */
+  .course-table{width:100%;border-collapse:collapse}
+  .course-table th{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;text-align:left;padding:6px 8px;border-bottom:1px solid var(--border)}
+  .course-table td{padding:10px 8px;font-size:12px;border-bottom:1px solid #F9FAFB}
+  .course-table tr:last-child td{border:none}
+  .course-table tr:hover td{background:var(--s2);cursor:pointer}
+  .diff{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:500}
+  .diff-beg{background:#F0FDF4;color:#15803D}
+  .diff-int{background:#EFF6FF;color:#1D4ED8}
+  .diff-adv{background:#FDF4FF;color:#7E22CE}
+  .comp-bar{height:6px;background:var(--s3);border-radius:3px;margin-top:4px;overflow:hidden}
+  .comp-fill{height:100%;background:var(--violet);border-radius:3px}
+  .cert-tag{font-size:10px;background:rgba(245,158,11,.15);color:var(--amber);padding:2px 6px;border-radius:4px}
+
+  /* Learner progress rings */
+  .prog-rings{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:8px}
+  .prog-ring-item{text-align:center}
+  .prog-label{font-size:10px;color:var(--muted);margin-top:4px}
+  .prog-val{font-size:12px;font-weight:600;color:var(--violet);font-family:'Space Mono',monospace}
+
+  /* Activity heatmap rows */
+  .heatmap{display:flex;flex-direction:column;gap:4px}
+  .hm-row{display:flex;align-items:center;gap:4px}
+  .hm-day{font-size:10px;color:var(--muted);min-width:26px}
+  .hm-cells{display:flex;gap:3px}
+  .hm-cell{width:14px;height:14px;border-radius:3px;cursor:pointer;transition:transform .1s}
+  .hm-cell:hover{transform:scale(1.2)}
+
+  /* Learner list */
+  .learner-list{display:flex;flex-direction:column;gap:8px}
+  .learner-row{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;background:var(--s2);cursor:pointer;transition:background .15s}
+  .learner-row:hover{background:var(--s3)}
+  .l-ava{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
+  .l-info{flex:1}
+  .l-name{font-size:12px;font-weight:500}
+  .l-course{font-size:10px;color:var(--muted)}
+  .l-prog{text-align:right}
+  .l-pct{font-size:13px;font-weight:600;color:var(--violet);font-family:'Space Mono',monospace}
+  .l-status{font-size:10px;color:var(--muted)}
+
+  /* Skill matrix */
+  .skill-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .skill-card{background:var(--s2);border-radius:8px;padding:10px}
+  .skill-name{font-size:11px;font-weight:600;margin-bottom:6px;color:var(--text)}
+  .skill-bar-wrap{height:6px;background:#E5E7EB;border-radius:3px;overflow:hidden}
+  .skill-bar{height:100%;border-radius:3px}
+  .skill-stats{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px}
+
+  footer{padding:12px 28px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:10px;color:var(--muted);background:var(--s1)}
+  .o-tag{background:var(--violet-light);color:var(--violet);padding:3px 10px;border-radius:20px;font-size:10px;font-weight:500;border:1px solid rgba(124,58,237,.2)}
+</style>
+</head>
+<body>
+<div class="shell">
+<header>
+  <div class="hbrand">
+    <div class="hmark">LMS</div>
+    <div><div class="htitle">Learning Management System</div><div class="hsub">Odoo eLearning · Power BI Analytics</div></div>
+  </div>
+  <div class="hright">
+    <button class="hpill">📅 Last 30 days</button>
+    <button class="hpill">👥 All Learners</button>
+    <button class="hpill">📚 All Courses</button>
+  </div>
+</header>
+
+<main>
+  <!-- KPIs -->
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="kpi-icon-wrap" style="background:var(--violet-light)">📚</div>
+      <div class="kpi-label">Active Learners</div>
+      <div class="kpi-val" style="color:var(--violet)">3,842</div>
+      <div class="kpi-sub" style="color:var(--emerald)">↑ +284 this month</div>
+      <div class="kpi-line" style="background:var(--violet)"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon-wrap" style="background:rgba(16,185,129,.1)">🎓</div>
+      <div class="kpi-label">Completions</div>
+      <div class="kpi-val" style="color:var(--emerald)">1,204</div>
+      <div class="kpi-sub" style="color:var(--emerald)">↑ +18% vs last month</div>
+      <div class="kpi-line" style="background:var(--emerald)"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon-wrap" style="background:rgba(245,158,11,.1)">⏱</div>
+      <div class="kpi-label">Avg Time / Course</div>
+      <div class="kpi-val" style="color:var(--amber)">6.4h</div>
+      <div class="kpi-sub" style="color:var(--muted)">Target: 8h</div>
+      <div class="kpi-line" style="background:var(--amber)"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon-wrap" style="background:rgba(14,165,233,.1)">🏆</div>
+      <div class="kpi-label">Certifications</div>
+      <div class="kpi-val" style="color:var(--sky)">847</div>
+      <div class="kpi-sub" style="color:var(--emerald)">↑ +62 issued</div>
+      <div class="kpi-line" style="background:var(--sky)"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon-wrap" style="background:rgba(244,63,94,.1)">📊</div>
+      <div class="kpi-label">Avg Quiz Score</div>
+      <div class="kpi-val" style="color:var(--rose)">74.2%</div>
+      <div class="kpi-sub" style="color:var(--muted)">Pass rate: 88%</div>
+      <div class="kpi-line" style="background:var(--rose)"></div>
+    </div>
+  </div>
+
+  <!-- Row 2: Enrollment trend + Course table -->
+  <div class="row2">
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Top Courses — Enrollment &amp; Completion</span><span class="card-action">All courses ↗</span></div>
+      <table class="course-table">
+        <thead><tr><th>Course</th><th>Enrolled</th><th>Completion</th><th>Avg Score</th><th>Level</th><th>Cert.</th></tr></thead>
+        <tbody id="courseBody"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Enrollment Trend</span></div>
+      <div style="height:180px;position:relative"><canvas id="enrollChart" role="img" aria-label="Enrollment trend line chart"></canvas></div>
+      <div class="prog-rings">
+        <div class="prog-ring-item">
+          <div style="position:relative;width:60px;height:60px;margin:0 auto">
+            <canvas id="pr1" width="60" height="60" role="img" aria-label="Completion rate 68%"></canvas>
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--violet);font-family:'Space Mono',monospace">68%</div>
+          </div>
+          <div class="prog-label">Completion</div>
+        </div>
+        <div class="prog-ring-item">
+          <div style="position:relative;width:60px;height:60px;margin:0 auto">
+            <canvas id="pr2" width="60" height="60" role="img" aria-label="Drop-off rate 22%"></canvas>
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--rose);font-family:'Space Mono',monospace">22%</div>
+          </div>
+          <div class="prog-label">Drop-off</div>
+        </div>
+        <div class="prog-ring-item">
+          <div style="position:relative;width:60px;height:60px;margin:0 auto">
+            <canvas id="pr3" width="60" height="60" role="img" aria-label="Certification rate 82%"></canvas>
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--sky);font-family:'Space Mono',monospace">82%</div>
+          </div>
+          <div class="prog-label">Cert. Rate</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 3: Learners + Activity + Skills -->
+  <div class="row3">
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Top Learners</span><span class="card-action">Leaderboard ↗</span></div>
+      <div class="learner-list" id="learnerList"></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Learning Activity Heatmap</span></div>
+      <div class="heatmap" id="heatmap"></div>
+      <div style="display:flex;gap:4px;align-items:center;margin-top:10px;font-size:10px;color:var(--muted)">
+        <span>Less</span>
+        <div style="display:flex;gap:3px">${[1,2,3,4,5].map(i=>`<div style="width:12px;height:12px;border-radius:2px;background:${['#EDE9FE','#C4B5FD','#A78BFA','#7C3AED','#5B21B6'][i-1]}"></div>`).join('')}</div>
+        <span>More</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Skills Completion</span></div>
+      <div class="skill-grid" id="skillGrid"></div>
+    </div>
+  </div>
+
+  <!-- Quiz performance -->
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Quiz Score Distribution &amp; Weekly Learning Hours</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+      <div style="height:160px;position:relative"><canvas id="quizChart" role="img" aria-label="Quiz score distribution bar chart"></canvas></div>
+      <div style="height:160px;position:relative"><canvas id="hoursChart" role="img" aria-label="Weekly learning hours chart"></canvas></div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span>Source: Odoo eLearning module · PostgreSQL · Last refresh: 1 min ago</span>
+  <span class="o-tag">⬡ Odoo 17 · Power BI Embedded</span>
+</footer>
+</div>
+
+<script>
+const grid='rgba(0,0,0,.05)';
+
+/* Courses */
+const courses=[
+  {name:'Odoo ERP Fundamentals',     enrolled:842, comp:78, score:82, level:'Beginner',     lc:'diff-beg',cert:true},
+  {name:'Power BI for Finance',       enrolled:621, comp:65, score:76, level:'Intermediate', lc:'diff-int',cert:true},
+  {name:'Advanced Python Automation', enrolled:418, comp:52, score:71, level:'Advanced',     lc:'diff-adv',cert:false},
+  {name:'Data Analytics Bootcamp',    enrolled:384, comp:61, score:79, level:'Intermediate', lc:'diff-int',cert:true},
+  {name:'AI for Business Leaders',    enrolled:310, comp:84, score:88, level:'Beginner',     lc:'diff-beg',cert:false},
+  {name:'Supply Chain with Odoo',     enrolled:248, comp:43, score:68, level:'Intermediate', lc:'diff-int',cert:true},
+];
+const cb=document.getElementById('courseBody');
+courses.forEach(c=>{
+  cb.innerHTML+=`<tr>
+    <td style="font-weight:500;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</td>
+    <td style="font-family:'Space Mono',monospace;font-size:11px">${c.enrolled.toLocaleString()}</td>
+    <td><div style="font-size:11px;font-weight:500;color:var(--violet)">${c.comp}%</div><div class="comp-bar"><div class="comp-fill" style="width:${c.comp}%"></div></div></td>
+    <td style="font-family:'Space Mono',monospace;font-size:11px;color:${c.score>=80?'var(--emerald)':c.score>=70?'var(--amber)':'var(--rose)'}">${c.score}%</td>
+    <td><span class="diff ${c.lc}">${c.level}</span></td>
+    <td>${c.cert?'<span class="cert-tag">✓ Cert</span>':'—'}</td>
+  </tr>`;
+});
+
+/* Enrollment chart */
+const months=['Jan','Feb','Mar','Apr','May','Jun'];
+new Chart(document.getElementById('enrollChart'),{
+  type:'line',
+  data:{labels:months,datasets:[
+    {label:'Enrolled',data:[2800,3050,3200,3480,3700,3842],borderColor:'#7C3AED',backgroundColor:'rgba(124,58,237,.08)',fill:true,tension:.4,pointRadius:4,pointBackgroundColor:'#7C3AED'},
+    {label:'Completed',data:[680,740,820,940,1080,1204],borderColor:'#10B981',backgroundColor:'rgba(16,185,129,.06)',fill:true,tension:.4,pointRadius:4,pointBackgroundColor:'#10B981'},
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#6B7280',font:{size:10},boxWidth:10}}},scales:{x:{grid:{color:grid},ticks:{color:'#6B7280',font:{size:10}}},y:{grid:{color:grid},ticks:{color:'#6B7280',font:{size:10}}}}}
+});
+
+/* Progress rings */
+[[68,'#7C3AED','pr1'],[22,'#F43F5E','pr2'],[82,'#0EA5E9','pr3']].forEach(([v,c,id])=>{
+  setTimeout(()=>{new Chart(document.getElementById(id),{type:'doughnut',data:{datasets:[{data:[v,100-v],backgroundColor:[c,'#EDE9FE'],borderWidth:0,cutout:'72%'}]},options:{plugins:{legend:{display:false}},responsive:false,maintainAspectRatio:true}});},100);
+});
+
+/* Learners */
+const learners=[
+  {init:'AK',name:'Anika Kumar',   course:'Odoo ERP Fundamentals',pct:96,bg:'rgba(124,58,237,.15)',tc:'#7C3AED'},
+  {init:'RM',name:'Rahul Mehta',   course:'Power BI for Finance',   pct:91,bg:'rgba(14,165,233,.15)',tc:'#0EA5E9'},
+  {init:'SP',name:'Sana Patel',    course:'Data Analytics Bootcamp',pct:88,bg:'rgba(16,185,129,.15)',tc:'#10B981'},
+  {init:'JT',name:'James Torres',  course:'AI for Business',        pct:84,bg:'rgba(245,158,11,.15)',tc:'#F59E0B'},
+  {init:'LW',name:'Li Wei',        course:'Python Automation',      pct:79,bg:'rgba(244,63,94,.15)', tc:'#F43F5E'},
+];
+const lL=document.getElementById('learnerList');
+learners.forEach(l=>{lL.innerHTML+=`<div class="learner-row"><div class="l-ava" style="background:${l.bg};color:${l.tc}">${l.init}</div><div class="l-info"><div class="l-name">${l.name}</div><div class="l-course">${l.course}</div></div><div class="l-prog"><div class="l-pct">${l.pct}%</div><div class="l-status">progress</div></div></div>`;});
+
+/* Heatmap */
+const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const levels=['#EDE9FE','#C4B5FD','#A78BFA','#7C3AED','#5B21B6'];
+const hm=document.getElementById('heatmap');
+days.forEach(d=>{
+  const cells=Array.from({length:12},()=>levels[Math.floor(Math.random()*5)]).map(c=>`<div class="hm-cell" style="background:${c}" title="Activity"></div>`).join('');
+  hm.innerHTML+=`<div class="hm-row"><span class="hm-day">${d}</span><div class="hm-cells">${cells}</div></div>`;
+});
+
+/* Skills */
+const skills=[
+  {name:'Odoo ERP',     pct:82,color:'#7C3AED',enrolled:1240},
+  {name:'Data Analysis',pct:67,color:'#0EA5E9',enrolled:890},
+  {name:'Python',       pct:54,color:'#10B981',enrolled:618},
+  {name:'Power BI',     pct:71,color:'#F59E0B',enrolled:742},
+  {name:'AI / ML',      pct:43,color:'#F43F5E',enrolled:410},
+  {name:'Finance',      pct:78,color:'#6D28D9',enrolled:960},
+];
+const sg=document.getElementById('skillGrid');
+skills.forEach(s=>{sg.innerHTML+=`<div class="skill-card"><div class="skill-name">${s.name}</div><div class="skill-bar-wrap"><div class="skill-bar" style="width:${s.pct}%;background:${s.color}"></div></div><div class="skill-stats"><span>${s.enrolled} enrolled</span><span style="color:${s.color};font-weight:600">${s.pct}%</span></div></div>`;});
+
+/* Quiz distribution */
+new Chart(document.getElementById('quizChart'),{
+  type:'bar',
+  data:{labels:['<50','50-60','60-70','70-80','80-90','90-100'],datasets:[{label:'Learners',data:[48,120,280,420,310,220],backgroundColor:['#F43F5E','#F97316','#F59E0B','#22C55E','#0EA5E9','#7C3AED'],borderRadius:5}]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:'#6B7280',font:{size:10}}},y:{grid:{color:grid},ticks:{color:'#6B7280',font:{size:10}}}}}
+});
+
+new Chart(document.getElementById('hoursChart'),{
+  type:'line',
+  data:{labels:['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],datasets:[
+    {label:'Learning Hours',data:[2.1,3.4,4.2,3.8,5.1,7.2,4.8],borderColor:'#7C3AED',backgroundColor:'rgba(124,58,237,.1)',fill:true,tension:.4,pointRadius:4,pointBackgroundColor:'#7C3AED'},
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:'#6B7280',font:{size:10}}},y:{grid:{color:grid},ticks:{color:'#6B7280',font:{size:10},callback:v=>v+'h'}}}}
+});
+</script>
+</body>
+</html>

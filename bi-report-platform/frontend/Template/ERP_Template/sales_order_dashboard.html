@@ -1,0 +1,389 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+.db{padding:12px;background:var(--color-background-tertiary);min-height:100vh}
+.topbar{display:flex;align-items:center;justify-content:space-between;background:#1a3a5c;border-radius:var(--border-radius-md);padding:10px 16px;margin-bottom:10px}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-box{background:#e8a020;border-radius:4px;padding:4px 8px;font-size:13px;font-weight:500;color:#fff;letter-spacing:.5px}
+.logo-text{font-size:14px;font-weight:500;color:#fff;opacity:.9}
+.topbar-right{display:flex;align-items:center;gap:8px}
+.cur-btn{padding:4px 12px;border-radius:20px;border:1px solid rgba(255,255,255,.3);font-size:11px;cursor:pointer;background:transparent;color:#fff;transition:background .2s}
+.cur-btn.active{background:#e8a020;border-color:#e8a020;color:#fff}
+.filter-bar{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px}
+.flt{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:6px 10px}
+.flt label{font-size:10px;color:var(--color-text-secondary);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px}
+.flt select{width:100%;border:none;background:transparent;font-size:12px;color:var(--color-text-primary);outline:none;cursor:pointer}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
+.kpi{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 14px;position:relative;overflow:hidden}
+.kpi-accent{position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:3px 0 0 3px}
+.kpi label{font-size:10px;color:var(--color-text-secondary);display:block;margin-bottom:4px;letter-spacing:.3px}
+.kpi .val{font-size:20px;font-weight:500;color:var(--color-text-primary);line-height:1.1}
+.kpi .sub{font-size:10px;color:var(--color-text-secondary);margin-top:3px}
+.kpi .badge{display:inline-block;padding:2px 6px;border-radius:10px;font-size:9px;font-weight:500;margin-top:4px}
+.badge-g{background:#eaf3de;color:#3b6d11}
+.badge-a{background:#faeeda;color:#854f0b}
+.badge-r{background:#fcebeb;color:#a32d2d}
+.charts-row{display:grid;grid-template-columns:1.4fr 1fr;gap:8px;margin-bottom:10px}
+.charts-row2{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px}
+.card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:12px}
+.card-title{font-size:11px;font-weight:500;color:var(--color-text-secondary);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;text-transform:uppercase;letter-spacing:.4px}
+.chart-type-btns{display:flex;gap:4px}
+.ctb{padding:2px 7px;border-radius:10px;border:0.5px solid var(--color-border-secondary);font-size:9px;cursor:pointer;background:transparent;color:var(--color-text-secondary)}
+.ctb.active{background:#1a3a5c;color:#fff;border-color:#1a3a5c}
+.bottom-row{display:grid;grid-template-columns:1fr 1.6fr;gap:8px}
+.tag{display:inline-block;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:500;margin:2px}
+.agency-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+.ag-item{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:6px 8px;text-align:center}
+.ag-item .ag-name{font-size:9px;color:var(--color-text-secondary);display:block}
+.ag-item .ag-val{font-size:12px;font-weight:500;color:var(--color-text-primary)}
+.ag-item .ag-bar{height:3px;border-radius:2px;margin-top:4px;background:#e8a020}
+.tbl{width:100%;font-size:11px;border-collapse:collapse}
+.tbl th{text-align:left;padding:4px 6px;color:var(--color-text-secondary);font-weight:500;border-bottom:0.5px solid var(--color-border-tertiary);font-size:10px}
+.tbl td{padding:4px 6px;color:var(--color-text-primary);border-bottom:0.5px solid var(--color-border-tertiary)}
+.tbl tr:last-child td{border-bottom:none}
+.prog{height:4px;background:var(--color-background-secondary);border-radius:2px;margin-top:2px}
+.prog-fill{height:4px;border-radius:2px}
+</style>
+
+<div class="db">
+
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-box">GKW</div>
+    <div class="logo-text">Sales Order Dashboard — Power BI Design</div>
+  </div>
+  <div class="topbar-right">
+    <span style="font-size:10px;color:rgba(255,255,255,.6)">Currency:</span>
+    <button class="cur-btn active" id="btnINR" onclick="setCur('INR')">INR Crore</button>
+    <button class="cur-btn" id="btnEUR" onclick="setCur('EUR')">Million EUR</button>
+    <span style="font-size:10px;color:rgba(255,255,255,.4);margin-left:8px">As of May 2026</span>
+  </div>
+</div>
+
+<div class="filter-bar">
+  <div class="flt"><label>Funding Agency</label><select><option>All Agencies</option><option>ADB</option><option>WB</option><option>JICA</option><option>AFD</option><option>KFW</option><option>GIZ</option><option>GOI</option><option>NDB</option><option>Private</option></select></div>
+  <div class="flt"><label>Region</label><select><option>All Regions</option><option>South Asia</option><option>Southeast Asia</option><option>East Asia</option><option>Central Asia</option><option>Middle East</option></select></div>
+  <div class="flt"><label>Department</label><select><option>All Departments</option><option>PMU-1</option><option>PMU-2</option><option>GDC</option><option>HO</option></select></div>
+  <div class="flt"><label>Country</label><select><option>All Countries</option><option>India</option><option>Bangladesh</option><option>Nepal</option><option>Sri Lanka</option><option>Vietnam</option></select></div>
+  <div class="flt"><label>Contract Status</label><select><option>All</option><option>Active</option><option>Expiring Soon</option><option>Expired</option><option>No End Date</option></select></div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi">
+    <div class="kpi-accent" style="background:#1a3a5c"></div>
+    <label>Total Sales Order</label>
+    <div class="val" id="kpi1">₹ 148.7 Cr</div>
+    <div class="sub">24 contracts · 12 customers</div>
+    <span class="badge badge-g">↑ 18% YoY</span>
+  </div>
+  <div class="kpi">
+    <div class="kpi-accent" style="background:#e8a020"></div>
+    <label>Total Order Stock</label>
+    <div class="val" id="kpi2">₹ 96.3 Cr</div>
+    <div class="sub">Remaining backlog value</div>
+    <span class="badge badge-a">64.8% of contract</span>
+  </div>
+  <div class="kpi">
+    <div class="kpi-accent" style="background:#3b6d11"></div>
+    <label>Total Invoiced</label>
+    <div class="val" id="kpi3">₹ 42.1 Cr</div>
+    <div class="sub">Posted invoices only</div>
+    <span class="badge badge-g">28.3% collected</span>
+  </div>
+  <div class="kpi">
+    <div class="kpi-accent" style="background:#a32d2d"></div>
+    <label>Outstanding</label>
+    <div class="val" id="kpi4">₹ 106.6 Cr</div>
+    <div class="sub">3 contracts expiring soon</div>
+    <span class="badge badge-r">3 expiring ≤90 days</span>
+  </div>
+</div>
+
+<div class="charts-row">
+  <div class="card">
+    <div class="card-title">
+      Top sales orders — bar chart
+      <div class="chart-type-btns">
+        <button class="ctb active" onclick="switchBar('bar',this)">Bar</button>
+        <button class="ctb" onclick="switchBar('horizontalBar',this)">H-Bar</button>
+      </div>
+    </div>
+    <div style="position:relative;height:220px"><canvas id="barChart" role="img" aria-label="Top sales orders by contract value in crore INR">Bar chart of top sales orders.</canvas></div>
+    <div id="barLegend" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;font-size:10px;color:var(--color-text-secondary)"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">
+      Order stock distribution
+      <div class="chart-type-btns">
+        <button class="ctb active" onclick="switchDoughnut('doughnut',this)">Donut</button>
+        <button class="ctb" onclick="switchDoughnut('pie',this)">Pie</button>
+      </div>
+    </div>
+    <div style="position:relative;height:180px"><canvas id="donutChart" role="img" aria-label="Order stock distribution by customer">Donut chart of order stock.</canvas></div>
+    <div id="donutLegend" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;font-size:10px;color:var(--color-text-secondary)"></div>
+  </div>
+</div>
+
+<div class="charts-row2">
+  <div class="card">
+    <div class="card-title">Sales order vs time (contract periods)</div>
+    <div style="position:relative;height:160px"><canvas id="timeChart" role="img" aria-label="Active contract value over time by year">Line chart of contract values over time.</canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">
+      Allocation of total sales order
+      <div class="chart-type-btns">
+        <button class="ctb active">By Agency</button>
+      </div>
+    </div>
+    <div style="position:relative;height:160px"><canvas id="allocChart" role="img" aria-label="Allocation of total sales order by funding agency">Stacked bar of sales order by funding agency.</canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Order stock by funding agency</div>
+    <div style="position:relative;height:160px"><canvas id="agencyStockChart" role="img" aria-label="Order stock value by funding agency">Bar chart of order stock per agency.</canvas></div>
+  </div>
+</div>
+
+<div class="bottom-row">
+  <div class="card">
+    <div class="card-title">Funding agency overview</div>
+    <div class="agency-grid" id="agGrid"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">
+      Customer list — sales order &amp; stock
+      <span style="font-size:9px;background:var(--color-background-secondary);padding:2px 7px;border-radius:10px;color:var(--color-text-secondary)">Top 8</span>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Customer</th><th>Agency</th><th>Contract Value</th><th>Order Stock</th><th>Stock %</th></tr></thead>
+      <tbody id="custTable"></tbody>
+    </table>
+  </div>
+</div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const NAVY='#1a3a5c', AMBER='#e8a020', TEAL='#1d9e75', CORAL='#d85a30', PURPLE='#7f77dd', GREEN='#639922', GRAY='#888780', PINK='#d4537e', BLUE='#378add';
+const PALETTE=[NAVY,AMBER,TEAL,CORAL,PURPLE,GREEN,PINK,BLUE,GRAY];
+
+const customers=[
+  {name:'31390 LISU Kerala',      agency:'WB',   so:35.36, stock:28.28},
+  {name:'30400 KfW Uttarakhand',  agency:'KFW',  so:17.36, stock:22.90},
+  {name:'30530 AFD Puducherry',   agency:'AFD',  so:16.08, stock:9.53},
+  {name:'30830 AFD H.Pradesh',    agency:'AFD',  so:15.00, stock:5.77},
+  {name:'30402 KfW AMC',          agency:'KFW',  so:15.92, stock:0},
+  {name:'31580 NDB Dhaka',        agency:'NDB',  so:4.38,  stock:3.41},
+  {name:'31160 GIZ Project',      agency:'GIZ',  so:8.20,  stock:6.10},
+  {name:'31270 PMCS Chttgrm',     agency:'ADB',  so:6.50,  stock:4.20},
+];
+
+const agencies=[
+  {code:'WB',   val:35.36, stock:28.28},
+  {code:'KFW',  val:33.28, stock:22.90},
+  {code:'AFD',  val:31.08, stock:15.30},
+  {code:'NDB',  val:4.38,  stock:3.41},
+  {code:'GIZ',  val:8.20,  stock:6.10},
+  {code:'ADB',  val:6.50,  stock:4.20},
+  {code:'GOI',  val:5.20,  stock:3.00},
+  {code:'PVT',  val:5.00,  stock:2.80},
+];
+
+const maxSO=Math.max(...agencies.map(a=>a.val));
+let curMode='INR';
+let barChartInst,donutInst,timeInst,allocInst,agStockInst;
+
+function fmt(v){return curMode==='INR'?'₹'+v.toFixed(1)+' Cr':''+(v/10).toFixed(2)+' MEUR';}
+function fmtNum(v){return curMode==='INR'?v.toFixed(2):(v/10).toFixed(3);}
+function suffix(){return curMode==='INR'?' Cr INR':' M EUR';}
+
+function setCur(mode){
+  curMode=mode;
+  document.getElementById('btnINR').classList.toggle('active',mode==='INR');
+  document.getElementById('btnEUR').classList.toggle('active',mode==='EUR');
+  updateKPIs();updateBarChart();updateDonut();updateAlloc();updateAgStock();updateCustTable();
+}
+
+function updateKPIs(){
+  const tot=customers.reduce((s,c)=>s+c.so,0);
+  const stk=customers.reduce((s,c)=>s+c.stock,0);
+  const inv=tot*0.283;
+  document.getElementById('kpi1').textContent=fmt(tot);
+  document.getElementById('kpi2').textContent=fmt(stk);
+  document.getElementById('kpi3').textContent=fmt(inv);
+  document.getElementById('kpi4').textContent=fmt(tot-inv);
+}
+
+function makeBarChart(){
+  const ctx=document.getElementById('barChart');
+  const labs=customers.map(c=>c.name.substring(0,16));
+  const soData=customers.map(c=>curMode==='INR'?c.so:+(c.so/10).toFixed(3));
+  const stData=customers.map(c=>curMode==='INR'?c.stock:+(c.stock/10).toFixed(3));
+  barChartInst=new Chart(ctx,{
+    type:'bar',
+    data:{labels:labs,datasets:[
+      {label:'Contract Value',data:soData,backgroundColor:NAVY+'cc',borderColor:NAVY,borderWidth:1},
+      {label:'Order Stock',  data:stData,backgroundColor:AMBER+'cc',borderColor:AMBER,borderWidth:1}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{ticks:{font:{size:9},maxRotation:35,autoSkip:false}},
+              y:{ticks:{font:{size:9},callback:v=>v+suffix()}}}}
+  });
+  renderLegend('barLegend',[{c:NAVY,l:'Contract Value'},{c:AMBER,l:'Order Stock'}]);
+}
+
+function updateBarChart(){
+  if(!barChartInst)return;
+  barChartInst.data.datasets[0].data=customers.map(c=>curMode==='INR'?c.so:+(c.so/10).toFixed(3));
+  barChartInst.data.datasets[1].data=customers.map(c=>curMode==='INR'?c.stock:+(c.stock/10).toFixed(3));
+  barChartInst.options.scales.y.ticks.callback=v=>v+suffix();
+  barChartInst.update();
+}
+
+function switchBar(type,btn){
+  document.querySelectorAll('#barChart').forEach(()=>{});
+  document.querySelectorAll('.chart-type-btns .ctb').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  if(barChartInst){barChartInst.destroy();}
+  barChartInst=null;
+  if(type==='horizontalBar'){
+    const ctx=document.getElementById('barChart');
+    const labs=customers.map(c=>c.name.substring(0,16));
+    const soData=customers.map(c=>curMode==='INR'?c.so:+(c.so/10).toFixed(3));
+    const stData=customers.map(c=>curMode==='INR'?c.stock:+(c.stock/10).toFixed(3));
+    barChartInst=new Chart(ctx,{type:'bar',data:{labels:labs,datasets:[
+      {label:'Contract Value',data:soData,backgroundColor:NAVY+'cc',borderColor:NAVY,borderWidth:1},
+      {label:'Order Stock',data:stData,backgroundColor:AMBER+'cc',borderColor:AMBER,borderWidth:1}
+    ]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{ticks:{font:{size:9},callback:v=>v+suffix()}},y:{ticks:{font:{size:9}}}}}});
+  } else { makeBarChart(); }
+}
+
+function makeDonut(){
+  const ctx=document.getElementById('donutChart');
+  const labs=customers.filter(c=>c.stock>0).map(c=>c.name.substring(0,14));
+  const data=customers.filter(c=>c.stock>0).map(c=>curMode==='INR'?c.stock:+(c.stock/10).toFixed(3));
+  donutInst=new Chart(ctx,{
+    type:'doughnut',
+    data:{labels:labs,datasets:[{data,backgroundColor:PALETTE,borderWidth:1,borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:i=>i.label+': '+fmtNum(i.raw)+suffix()}}}}
+  });
+  renderLegend('donutLegend',labs.map((l,i)=>({c:PALETTE[i],l:l+' '+fmtNum(data[i])+suffix()})));
+}
+
+function updateDonut(){
+  if(!donutInst)return;
+  const filtered=customers.filter(c=>c.stock>0);
+  donutInst.data.datasets[0].data=filtered.map(c=>curMode==='INR'?c.stock:+(c.stock/10).toFixed(3));
+  donutInst.update();
+  const labs=filtered.map(c=>c.name.substring(0,14));
+  const data=filtered.map(c=>curMode==='INR'?c.stock:+(c.stock/10).toFixed(3));
+  renderLegend('donutLegend',labs.map((l,i)=>({c:PALETTE[i],l:l+' '+fmtNum(data[i])+suffix()})));
+}
+
+function switchDoughnut(type,btn){
+  btn.parentElement.querySelectorAll('.ctb').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  if(donutInst){donutInst.config.type=type;donutInst.config.options.cutout=type==='doughnut'?'60%':'0%';donutInst.update();}
+}
+
+function makeTimeChart(){
+  const ctx=document.getElementById('timeChart');
+  const years=['2021','2022','2023','2024','2025','2026','2027','2028','2029','2030','2031','2032'];
+  const active=[2,4,6,8,9,9,7,5,3,2,1,1];
+  const val=   [17,32,48,62,74,80,65,50,38,24,12,6];
+  timeInst=new Chart(ctx,{type:'line',data:{labels:years,datasets:[
+    {label:'Active contracts',data:active,borderColor:NAVY,backgroundColor:NAVY+'22',fill:true,tension:.4,pointRadius:3,yAxisID:'y1'},
+    {label:'Contract value',data:val,borderColor:AMBER,backgroundColor:'transparent',tension:.4,pointRadius:3,borderDash:[4,3],yAxisID:'y2'}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{x:{ticks:{font:{size:9}}},y1:{position:'left',ticks:{font:{size:9}}},y2:{position:'right',ticks:{font:{size:9},callback:v=>v+'Cr'}}}}});
+}
+
+function makeAllocChart(){
+  const ctx=document.getElementById('allocChart');
+  allocInst=new Chart(ctx,{type:'bar',data:{
+    labels:agencies.map(a=>a.code),
+    datasets:[{label:'Sales Order',data:agencies.map(a=>curMode==='INR'?a.val:+(a.val/10).toFixed(3)),backgroundColor:agencies.map((_,i)=>PALETTE[i%9]),borderWidth:0}]
+  },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{x:{ticks:{font:{size:9}}},y:{ticks:{font:{size:9},callback:v=>v+'Cr'}}}}});
+}
+
+function updateAlloc(){
+  if(!allocInst)return;
+  allocInst.data.datasets[0].data=agencies.map(a=>curMode==='INR'?a.val:+(a.val/10).toFixed(3));
+  allocInst.options.scales.y.ticks.callback=v=>v+suffix();
+  allocInst.update();
+}
+
+function makeAgStockChart(){
+  const ctx=document.getElementById('agencyStockChart');
+  agStockInst=new Chart(ctx,{type:'bar',data:{
+    labels:agencies.map(a=>a.code),
+    datasets:[
+      {label:'Contract',data:agencies.map(a=>curMode==='INR'?a.val:+(a.val/10).toFixed(3)),backgroundColor:NAVY+'88',borderWidth:0},
+      {label:'Stock',   data:agencies.map(a=>curMode==='INR'?a.stock:+(a.stock/10).toFixed(3)),backgroundColor:AMBER+'cc',borderWidth:0}
+    ]
+  },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{x:{ticks:{font:{size:9}}},y:{ticks:{font:{size:9},callback:v=>v+'Cr'}}}}});
+}
+
+function updateAgStock(){
+  if(!agStockInst)return;
+  agStockInst.data.datasets[0].data=agencies.map(a=>curMode==='INR'?a.val:+(a.val/10).toFixed(3));
+  agStockInst.data.datasets[1].data=agencies.map(a=>curMode==='INR'?a.stock:+(a.stock/10).toFixed(3));
+  agStockInst.options.scales.y.ticks.callback=v=>v+suffix();
+  agStockInst.update();
+}
+
+function buildAgGrid(){
+  const g=document.getElementById('agGrid');
+  g.innerHTML='';
+  agencies.forEach((a,i)=>{
+    const pct=Math.round(a.val/maxSO*100);
+    g.innerHTML+=`<div class="ag-item">
+      <span class="ag-name">${a.code}</span>
+      <span class="ag-val">${fmt(a.val)}</span>
+      <div class="prog"><div class="prog-fill" style="width:${pct}%;background:${PALETTE[i%9]}"></div></div>
+    </div>`;
+  });
+}
+
+function updateCustTable(){
+  const tb=document.getElementById('custTable');
+  tb.innerHTML='';
+  customers.forEach(c=>{
+    const pct=c.so>0?Math.round(c.stock/c.so*100):0;
+    const col=pct>70?CORAL:pct>40?AMBER:TEAL;
+    tb.innerHTML+=`<tr>
+      <td style="font-size:10px">${c.name.substring(0,22)}</td>
+      <td><span class="tag" style="background:${NAVY}22;color:${NAVY}">${c.agency}</span></td>
+      <td style="font-size:11px;font-weight:500">${fmtNum(c.so)}</td>
+      <td style="font-size:11px;font-weight:500">${fmtNum(c.stock)}</td>
+      <td><div style="display:flex;align-items:center;gap:4px">
+        <div class="prog" style="width:48px"><div class="prog-fill" style="width:${pct}%;background:${col}"></div></div>
+        <span style="font-size:9px;color:var(--color-text-secondary)">${pct}%</span>
+      </div></td>
+    </tr>`;
+  });
+}
+
+function renderLegend(id,items){
+  const el=document.getElementById(id);
+  if(!el)return;
+  el.innerHTML=items.map(i=>`<span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:${i.c};flex-shrink:0"></span><span style="font-size:9px;color:var(--color-text-secondary)">${i.l}</span></span>`).join('');
+}
+
+updateKPIs();
+buildAgGrid();
+updateCustTable();
+setTimeout(()=>{
+  makeBarChart();
+  makeDonut();
+  makeTimeChart();
+  makeAllocChart();
+  makeAgStockChart();
+},100);
+</script>

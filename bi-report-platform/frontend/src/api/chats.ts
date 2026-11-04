@@ -9,6 +9,8 @@ export interface ChatSummary {
   source_id: number | null;
   source_name: string;
   model_id: number | null;
+  /** The OpenPages object model this chat is held to; empty means every shared type. */
+  data_model: string;
   message_count: number;
   created_at: string;
   updated_at: string;
@@ -32,7 +34,7 @@ export interface SavedChat extends ChatSummary {
 export const chatsApi = {
   list: () => api.get<ChatSummary[]>("/api/chats").then((r) => r.data),
   get: (id: number) => api.get<SavedChat>(`/api/chats/${id}`).then((r) => r.data),
-  start: (body: { source_id: number | null; model_id: number | null }) =>
+  start: (body: { source_id: number | null; model_id: number | null; data_model?: string | null }) =>
     api.post<SavedChat>("/api/chats", body).then((r) => r.data),
   update: (id: number, body: { title?: string; model_id?: number | null }) =>
     api.patch<ChatSummary>(`/api/chats/${id}`, body).then((r) => r.data),

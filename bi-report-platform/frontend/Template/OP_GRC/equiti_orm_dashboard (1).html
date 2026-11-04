@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Equiti ORM Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+<style>
+/* Cognos-feasible styling only: solid fills, 1px borders, no gradients / shadows / radius */
+:root{
+  --teal:#00AFAB; --teal2:#2ECECB; --teal4:#95E7E5; --teal5:#C4ECEB; --teal6:#E0F4F4; --neon:#03F9EC;
+  --red:#E40000; --amber:#FF8F2E; --yellow:#FBDA21; --mint:#63D2CE; --coral:#FF5532;
+  --sky:#009FDC; --blue:#3F8EF9; --cobalt:#0057CE; --navy:#0D0D76; --ink:#020204; --muted:#5B6180;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#FFFFFF;font-family:"IBM Plex Sans",Arial,sans-serif;color:var(--ink);font-size:13px}
+.page{max-width:1200px;margin:0 auto;padding:16px}
+
+/* Header */
+.hdr{display:flex;align-items:stretch;border:1px solid var(--teal)}
+.hdr .logo{width:150px;background:#FFFFFF;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:22px;letter-spacing:.12em;color:var(--teal)}
+.hdr .logo img{max-height:34px}
+.hdr .band{flex:1;background:var(--teal);color:#FFFFFF;padding:10px 14px;display:flex;align-items:center}
+.hdr .band h1{margin:0;font-size:20px;font-weight:700}
+.hdr .band p{margin:2px 0 0;font-size:13px;font-weight:600}
+.hdr .meta{margin-left:auto;font-size:12px;text-align:right;line-height:1.6}
+.hdr .meta b{color:var(--teal6);font-weight:600;margin-right:4px}
+.ctx{display:flex;gap:40px;padding:6px 4px;font-size:11px;color:var(--muted)}
+.ctx b{font-weight:600;margin-right:6px}
+
+/* Container */
+.body{background:var(--teal6);padding:10px}
+.prompts{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;background:#FFFFFF;border:1px solid var(--teal5);padding:8px 10px;margin-bottom:10px}
+.prompts label{font-size:11px;font-weight:600;color:var(--navy);display:flex;flex-direction:column;gap:3px}
+.prompts select{font-family:inherit;font-size:12px;padding:4px 6px;border:1px solid var(--teal);background:#FFFFFF;color:var(--ink)}
+.secband{background:var(--teal);color:#FFFFFF;font-size:19px;font-weight:700;padding:7px 12px;margin:0 0 10px}
+.panel{background:#FFFFFF;border:1px solid var(--teal5);padding:12px;margin-bottom:10px}
+.panel h3{margin:0 0 10px;font-size:15px;font-weight:700;text-align:center;color:var(--ink)}
+.row{display:grid;gap:10px}
+.r2{grid-template-columns:1fr 1fr}
+.r3{grid-template-columns:repeat(3,1fr)}
+.r-l2{grid-template-columns:1.15fr 1fr}
+.chart{position:relative;height:300px}
+.chart.sm{height:260px}
+.chart.lg{height:360px}
+
+/* KPI */
+.kpi{background:#FFFFFF;border:1px solid #BFBFBF;border-left:5px solid var(--navy);padding:10px 14px}
+.kpi.red{border-left-color:var(--red)} .kpi.amber{border-left-color:var(--amber)}
+.kpi .l{font-size:14px;font-weight:600;color:var(--muted)}
+.kpi .v{font-size:30px;font-weight:600;text-decoration:underline;color:var(--ink);margin:6px 0 2px}
+.kpi .v.link{color:var(--cobalt)}
+.kpi .f{font-size:11px;color:var(--muted)}
+.kpi .f .d{color:var(--red);font-weight:600}
+
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--teal5);color:var(--navy);font-weight:700;font-size:11.5px;padding:7px 6px;border:1px solid #FFFFFF;text-align:center}
+th:first-child{text-align:left}
+th.R{background:var(--red);color:#FFFFFF} th.A{background:var(--amber);color:#FFFFFF} th.G{background:var(--teal);color:#FFFFFF}
+td{padding:6px;border-bottom:1px solid var(--teal5);text-align:center}
+td:first-child{text-align:left}
+td a{color:var(--cobalt);text-decoration:underline}
+td.st{color:#FFFFFF;font-weight:700;font-size:11.5px;width:110px;border-bottom:1px solid #FFFFFF}
+td.st.Red{background:var(--red)} td.st.Amber{background:var(--amber)} td.st.Green{background:var(--teal)}
+td.st.ND{background:var(--teal6);color:var(--ink)}
+td.tr{color:var(--teal);font-weight:700}
+td.tr.na{color:var(--muted)}
+.tbl-inc th{background:var(--teal);color:#FFFFFF;font-size:11px}
+.tbl-inc td{font-size:11px}
+.tbl-inc td.st{width:auto}
+td.st.Open{background:var(--cobalt)} td.st.Closed{background:var(--teal)}
+.dept{max-width:460px;margin:0 auto}
+
+/* Score bars */
+.score{display:grid;grid-template-columns:28px 1fr 70px;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--teal6)}
+.score .n{font-size:17px;font-weight:700;color:var(--muted)}
+.score .nm{font-weight:700;font-size:13px}
+.score .tags{font-size:10.5px;font-weight:700;margin:2px 0 4px}
+.score .tags .r{background:#FFE0E0;color:var(--red);padding:0 4px;margin-right:4px}
+.score .tags .a{background:#FFE9D6;color:#C25E00;padding:0 4px}
+.score .tags .c{color:var(--muted);font-weight:600}
+.bar{display:flex;height:16px;background:#BFBFBF}
+.bar span{display:block;height:100%}
+.score .val{text-align:center}
+.score .val b{display:block;font-size:18px}
+.score .val small{font-size:10px;color:var(--muted)}
+.nodata{font-size:11px;color:var(--muted)}
+
+/* Heat map */
+.heat{width:100%;border-collapse:collapse}
+.heat td{border:2px solid #FFFFFF;height:40px;font-weight:700;font-size:13px}
+.heat td a{color:inherit}
+.heat td.lab{background:#FFFFFF;font-size:11.5px;font-weight:700;text-align:right;padding-right:8px;color:var(--ink)}
+.heat td.xl{background:#FFFFFF;height:auto;font-size:11.5px}
+.heat td.ax{background:#FFFFFF;height:auto;font-size:12px;font-weight:700}
+
+@media (max-width:860px){.r2,.r3,.r-l2,.prompts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ===== Header (repeated per page in Cognos) ===== -->
+  <div class="hdr">
+    <div class="logo"><img src="equiti-logo.svg" alt="Equiti" onerror="this.outerHTML='EQUITI'"></div>
+    <div class="band">
+      <div><h1>Equiti Group — Operational Risk Management</h1><p>Consolidated Risk Dashboard</p></div>
+      <div class="meta"><div><b>User:</b>ORM Analyst</div><div><b>Last refreshed:</b>09-Oct-2026 20:00</div></div>
+    </div>
+  </div>
+  <div class="ctx"><span><b>Entity:</b>All</span><span><b>Territory:</b>All</span></div>
+
+  <!-- ===================== KRI OVERVIEW ===================== -->
+  <div class="body">
+    <div class="prompts">
+      <label>Level 1:<select><option>All</option></select></label>
+      <label>Level 2:<select><option>All</option></select></label>
+      <label>Status:<select><option>All</option></select></label>
+      <label>Month:<select><option>All</option></select></label>
+      <label>Year:<select><option>All</option></select></label>
+    </div>
+    <div class="secband">KRI Overview &amp; Status</div>
+
+    <div class="row r3" style="margin-bottom:10px">
+      <div class="kpi"><div class="l">Total KRIs Tracked</div><div class="v">309</div><div class="f">Across selected entities and territories</div></div>
+      <div class="kpi red"><div class="l">KRIs in Red</div><div class="v">67</div><div class="f"><span class="d">0</span> vs last period</div></div>
+      <div class="kpi amber"><div class="l">KRIs in Amber</div><div class="v">70</div><div class="f"><span class="d" style="color:#C25E00">0</span> vs last period</div></div>
+    </div>
+
+    <div class="panel"><h3>Breakdown of KRI by Indicator Status</h3><div class="chart"><canvas id="kriDonut"></canvas></div></div>
+
+    <div class="panel"><h3>KRI Breakdown by Level 1 Risk Taxonomy — Status &amp; Trend</h3><table id="l1"></table></div>
+
+    <div class="panel"><h3>Amber &amp; Red KRI Breaches — Monthly Trend (12 Months)</h3><div class="chart"><canvas id="breach"></canvas></div></div>
+
+    <!-- Level 2 page -->
+    <div class="row r-l2">
+      <div class="panel"><h3>KRI Breakdown by Level 2 Risk Taxonomy — Status &amp; Trend</h3><table id="l2"></table></div>
+      <div class="panel" style="align-self:start"><h3>Risk Categories — Count by Taxonomy Level1</h3><div class="chart lg"><canvas id="cat"></canvas></div></div>
+    </div>
+
+    <!-- KRI Score page -->
+    <div class="panel"><h3 style="text-align:left">KRI Score</h3><div id="kriScore"></div></div>
+  </div>
+
+  <!-- ===================== RCSA ===================== -->
+  <div class="body" style="margin-top:16px">
+    <div class="prompts">
+      <label>Level 1:<select><option>All</option></select></label>
+      <label>Level 2:<select><option>All</option></select></label>
+      <label>Status:<select><option>All</option></select></label>
+      <label>Month:<select><option>All</option></select></label>
+      <label>Year:<select><option>All</option></select></label>
+    </div>
+    <div class="secband">Risk Register &amp; Control Assessment (RCSA)</div>
+
+    <div class="row r3" style="margin-bottom:10px">
+      <div class="kpi"><div class="l">Total Risks</div><div class="v">512</div></div>
+      <div class="kpi red"><div class="l">Total Major Tickets</div><div class="v">2</div></div>
+      <div class="kpi amber"><div class="l">Total Significant Tickets</div><div class="v">2</div></div>
+    </div>
+
+    <div class="panel"><h3>Inherent vs Residual Risk Ratings</h3><div class="chart"><canvas id="inhRes"></canvas></div></div>
+
+    <div class="row r2">
+      <div class="panel"><h3>Risk Distribution by Territory</h3><div class="chart sm"><canvas id="terr"></canvas></div></div>
+      <div class="panel"><h3>Residual Risk Heat Map (5×5 Matrix)</h3><table class="heat" id="heat"></table></div>
+    </div>
+
+    <div class="panel"><h3>Risk Breakdown by Rating</h3><div class="chart"><canvas id="rating"></canvas></div></div>
+
+    <div class="row r2">
+      <div class="panel"><h3>Risk Breakdown by Taxonomy L2</h3><div class="chart sm"><canvas id="taxL2"></canvas></div></div>
+      <div class="panel"><h3>Controls by Method</h3><div class="chart sm"><canvas id="ctrl"></canvas></div></div>
+    </div>
+
+    <div class="panel"><h3>Risk Register &amp; Control Assessment (RCSA) — Department Summary</h3>
+      <table class="dept"><thead><tr><th>Departments</th><th># of Major Risks</th><th># of Significant Risks</th></tr></thead><tbody id="dept"></tbody></table>
+    </div>
+  </div>
+
+  <!-- ===================== RISK INCIDENTS ===================== -->
+  <div class="body" style="margin-top:16px">
+    <div class="prompts">
+      <label>Status:<select><option>All</option></select></label>
+      <label>Risk Rating:<select><option>All</option></select></label>
+      <label>Theme:<select><option>All</option></select></label>
+      <label>Month:<select><option>All</option></select></label>
+      <label>Year:<select><option>All</option></select></label>
+    </div>
+    <div class="secband">Risk Incidents Overview</div>
+
+    <div class="row r3" style="margin-bottom:10px">
+      <div class="kpi"><div class="l">Net Financial Impact (YTD)</div><div class="v link">5,331,225.67</div></div>
+      <div class="kpi amber"><div class="l">Open Incidents</div><div class="v link">1709</div></div>
+      <div class="kpi red"><div class="l">Major Incidents (YTD)</div><div class="v link">39</div></div>
+    </div>
+
+    <div class="row r3">
+      <div class="panel"><h3>Breakdown of Risk Incident by Status</h3><div class="chart sm"><canvas id="incStatus"></canvas></div></div>
+      <div class="panel"><h3>Breakdown of Risk Incident by Theme</h3><div class="chart sm"><canvas id="incTheme"></canvas></div></div>
+      <div class="panel"><h3>Breakdown of Risk Incident by Risk Rating</h3><div class="chart sm"><canvas id="incRating"></canvas></div></div>
+    </div>
+
+    <div class="row r2">
+      <div class="panel"><h3>Risk Incidents Expected to Close by Month</h3><div class="chart sm"><canvas id="close"></canvas></div></div>
+      <div class="panel"><h3>Major Risk Incidents Expected to Close by Month</h3><div class="chart sm"><canvas id="closeMaj"></canvas></div></div>
+    </div>
+
+    <div class="panel"><h3>Financial Impact by Theme — Trend</h3><div class="chart lg"><canvas id="fin"></canvas></div></div>
+
+    <div class="panel"><h3>Recent &amp; Open Incidents — Top 10 Major</h3>
+      <table class="tbl-inc"><thead><tr><th>Risk Incident Name</th><th>Risk Incident Title</th><th>Risk Incident Themes</th><th>Risk Incident Rating</th><th>Occurrence Start Date</th><th>Net Loss_BA</th><th>Status</th></tr></thead><tbody id="top10"></tbody></table>
+    </div>
+
+    <div class="panel"><h3>Risk Incident Score</h3><div id="incScore"></div></div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+var P={teal:'#00AFAB',teal2:'#2ECECB',teal4:'#95E7E5',teal5:'#C4ECEB',teal6:'#E0F4F4',rust:'#C43B18',red:'#E40000',pink:'#FE027D',coral:'#FF5532',amber:'#FF8F2E',gold:'#D8A300',yellow:'#FBDA21',mint:'#63D2CE',cyan:'#00ACC9',sky:'#009FDC',blue:'#3F8EF9',royal:'#0069FD',cobalt:'#0057CE',navy:'#0D0D76',grey:'#BFBFBF'};
+function $(id){return document.getElementById(id);}
+function a(v){return '<a href="#" onclick="return false">'+v+'</a>';}
+function money(n){return '$'+n.toLocaleString('en-US',{maximumFractionDigits:2});}
+var ND='Not Determined';
+
+/* ---- Data (from PDF) ---- */
+var L1=[['Financial Crime Risk',5,5,47,47,'Red','Red',0],['Clients, Products and Business Practices',0,0,0,1,'ND','ND',null],['Conduct and Compliance Risk',11,15,79,83,'Red','Red',0],['Operational Risk',28,31,85,93,'Red','Red',0],['Internal Fraud',0,0,0,1,'ND','ND',null],['Strategic Risk',18,10,24,30,'Red','Red',0],['Financial Risk',5,9,47,48,'Red','Red',0]];
+var L2=[['Physical Security and Safety Risk',0,0,12,12,'Green','Green',0],['Sanctions Risk',1,0,6,6,'Amber','Amber',0],['Execution Risk',0,1,3,3,'Red','Red',0],['Product Design and Delivery Risk',0,2,8,8,'Red','Red',0],['Strategic Execution Risk',5,2,4,7,'Red','Red',0],['Tax Risk',0,0,4,4,'Green','Green',0],['Sales and Marketing Risk',0,0,6,6,'Green','Green',0],['Conflict of Interest Risk',0,0,6,6,'Green','Green',0],['Anti-Bribery and Corruption Risk',0,0,9,9,'Green','Green',0],['Regulatory Compliance and Reporting Risk',4,6,14,15,'Red','Red',0],['Market Abuse Risk',1,2,6,6,'Red','Red',0],['Retail Credit Risk',0,0,6,6,'Green','Green',0],['Information Security Risk',12,9,12,15,'Red','Red',0],['Theft and Fraud',0,0,0,1,'ND','ND',null],['People Risk',9,14,31,34,'Red','Red',0],['Change Management Risk',2,3,10,10,'Red','Red',0],['Data Protection and Privacy Risk',0,0,10,10,'Green','Green',0],['Capital Risk',3,4,13,14,'Red','Red',0],['Strategic Positioning Risk',13,8,12,15,'Red','Red',0],['Selection, Sponsorship and Exposure',0,0,0,1,'ND','ND',null],['Operational Resilience Risk',1,1,2,2,'Red','Red',0],['Post-Sales Conduct Risk',6,5,26,29,'Red','Red',0],['Market Risk',1,3,11,11,'Red','Red',0],['Wholesale Credit Risk',0,1,6,6,'Amber','Amber',0],['External Fraud Risk',0,1,11,11,'Amber','Amber',0],['Internal Fraud Risk',0,0,5,5,'Green','Green',0],['Record Management Risk',0,0,3,3,'Green','Green',0],['Legal Risk',4,3,10,12,'Red','Red',0],['Funding and Liquidity Risk',1,1,7,7,'Red','Red',0],['Anti-Money Laundering and Counter-Terrorism Financing Risk',4,4,21,21,'Red','Red',0],['Strategic Consequence Risk',0,0,8,8,'Green','Green',0]];
+var breach={m:['Jan-2026','Nov-2025','Oct-2025','Sep-2025','Aug-2025','Jul-2025','Jun-2025','May-2025','Apr-2025','Mar-2025','Feb-2025','Jan-2025'],r:[1,15,17,19,30,32,22,31,34,29,23,18],a:[1,21,17,17,22,25,11,14,11,19,18,14]};
+var cat=[['Financial Crime Risk',47],['Strategic Risk',30],['Internal Fraud',1],['Clients, Products and Business Practices',1],['Financial Risk',48],['Conduct and Compliance Risk',83],['Operational Risk',99]];
+var kriScore=[['Operational Risk',28,31,87],['Strategic Risk',18,10,46],['Conduct and Compliance Risk',11,15,37],['Financial Risk',5,9,19],['Financial Crime Risk',5,5,15],['Internal Fraud',0,0,0],['Clients, Products and Business Practices',0,0,0]];
+var dept=[['Client Support',1,0],['Finance',1,0],['Group Functions',0,0],['Partner Support',0,1]];
+var themeCol={'Human Error':P.navy,'Technology & System Failures':P.teal,'Vendor Failures':P.gold,'Regulatory, Compliance & Legal Risks':P.pink,'Fraud & Misconduct':P.rust,'External Events':P.coral,'Other':P.blue};
+var themes=Object.keys(themeCol);
+var themeCnt={'Human Error':682,'Technology & System Failures':706,'Vendor Failures':566,'Regulatory, Compliance & Legal Risks':556,'Fraud & Misconduct':588,'External Events':562,'Other':563};
+var top10=[['RI-58','Indirect Business internal process/procedure breach','Fraud & Misconduct','Jan 1, 2023 12:00:00 AM',531000,'Closed'],['RI-228','MT5 Leverage Changes','Technology & System Failures','Aug 12, 2025 12:00:00 AM',693000,'Closed'],['RI-401','BSO Network Interruption – Trading Infrastructure Connectivity Loss MT4/MT5','Vendor Failures','Nov 3, 2025 12:00:00 AM',192808.96,'Open'],['RI - 523 - Camms','Transfer from Offline reports - Internal Suspicious Activity','Fraud & Misconduct','Aug 6, 2024 12:00:00 AM',252000,'Closed'],['RI-422','Critical System Disruption Caused by Cloudflare Issue_18/11/2025','Technology & System Failures','Nov 18, 2025 12:00:00 AM',411,'Open'],['RI - 263 - Camms','Compromised Workstation','Technology & System Failures','Jun 26, 2024 12:00:00 AM',78000,'Open'],['RI-204','Wrong Symbol Configuration','Human Error','Aug 19, 2025 12:00:00 AM',90000,'Open'],['RI-60','MAM Discrepancy','Technology & System Failures','Jun 30, 2025 12:00:00 AM',4032,'Closed'],['RI - 519 - Camms','Transfer from Old Excel - Loss of Credit','Fraud & Misconduct','Dec 4, 2024 12:00:00 AM',600000,'Closed'],['RI - 524 - Camms','Confidential Risk Incident - Internal Fraud','Fraud & Misconduct','Sep 25, 2024 12:00:00 AM',208000,'Closed']];
+var incScore=[['Vendor Failures',566,70],['Technology & System Failures',706,432],['External Events',562,12],['',50,null],['Other',563,null],['Regulatory, Compliance & Legal Risks',556,23],['Human Error',682,320],['Fraud & Misconduct',588,50]];
+
+/* ---- Tables ---- */
+function rag(id,rows,lbl){
+  var h='<thead><tr><th>'+lbl+'</th><th class="R">R</th><th class="A">A</th><th class="G">G</th><th>Not Determined</th><th>Previous</th><th>Current</th><th>Trend</th><th>Change</th></tr></thead><tbody>';
+  rows.forEach(function(r){
+    h+='<tr><td>'+r[0]+'</td><td>'+a(r[1])+'</td><td>'+a(r[2])+'</td><td>'+a(r[3])+'</td><td>'+a(r[4])+'</td>'+
+      '<td class="st '+r[5]+'">'+(r[5]=='ND'?ND:r[5])+'</td><td class="st '+r[6]+'">'+(r[6]=='ND'?ND:r[6])+'</td>'+
+      (r[7]===null?'<td class="tr na">–</td><td>–</td>':'<td class="tr">▬</td><td>'+r[7].toFixed(2)+'</td>')+'</tr>';
+  });
+  $(id).innerHTML=h+'</tbody>';
+}
+rag('l1',L1,'KRI Level 1');
+rag('l2',L2,'KRI Level 2');
+$('dept').innerHTML=dept.map(function(d){return '<tr><td>'+d[0]+'</td><td>'+d[1]+'</td><td>'+d[2]+'</td></tr>';}).join('');
+$('top10').innerHTML=top10.map(function(r){return '<tr><td>'+a(r[0])+'</td><td><b>'+r[1]+'</b></td><td>'+r[2]+'</td><td>Major</td><td><b>'+r[3]+'</b></td><td><b>'+money(r[4])+'</b></td><td class="st '+r[5]+'">'+r[5]+'</td></tr>';}).join('');
+
+/* ---- Score bars ---- */
+$('kriScore').innerHTML=kriScore.map(function(k,i){
+  return '<div class="score"><div class="n">'+(i+1)+'</div><div><div class="nm">'+k[0]+'</div><div class="tags"><span class="r">'+k[1]+' Red</span><span class="a">'+k[2]+' Amber</span></div>'+
+  '<div class="bar"><span style="width:'+k[2]+'%;background:'+P.amber+'"></span><span style="width:'+(2*k[1])+'%;background:'+P.red+'"></span></div></div>'+
+  '<div class="val"><b>'+k[3]+'</b><small>Score</small></div></div>';
+}).join('');
+$('incScore').innerHTML=incScore.map(function(k,i){
+  var bar=k[2]===null?'<div class="nodata">No Data Available</div>':'<div class="bar"><span style="width:'+(k[2]/450*100)+'%;background:'+P.red+'"></span></div>';
+  return '<div class="score"><div class="n">'+(i+1)+'</div><div><div class="nm">'+k[0]+'</div><div class="tags"><span class="c">'+k[1]+' Risk Incident</span></div>'+bar+'</div>'+
+  '<div class="val">'+(k[2]===null?'':'<b>'+k[2]+'</b><small>Score</small>')+'</div></div>';
+}).join('');
+
+/* ---- Heat map ---- */
+var L=['Expected','Probable','Possible','Unlikely','Rare'],I=['Insignificant','Minor','Moderate','Significant','Major'];
+var H=[[2,0,0,0,0],[0,0,1,1,0],[0,0,0,1,0],[0,0,250,2,0],[0,0,1,2,2]];
+function hc(li,ii){var s=(5-li)*(ii+1);return s>=15?[P.red,'#fff']:s>=10?[P.coral,'#fff']:s>=6?[P.amber,'#fff']:s>=3?[P.yellow,'#020204']:[P.mint,'#020204'];}
+var hh='';
+L.forEach(function(l,li){
+  hh+='<tr>'+(li==0?'<td class="ax" rowspan="5" style="width:70px">Likelihood</td>':'')+'<td class="lab">'+l+'</td>';
+  H[li].forEach(function(v,ii){var c=hc(li,ii);hh+='<td style="background:'+c[0]+';color:'+c[1]+'">'+a(v)+'</td>';});
+  hh+='</tr>';
+});
+hh+='<tr><td class="xl"></td><td class="xl"></td>'+I.map(function(x){return '<td class="xl"><b>'+x+'</b></td>';}).join('')+'</tr><tr><td class="xl"></td><td class="xl"></td><td class="ax" colspan="5">Impact</td></tr>';
+$('heat').innerHTML=hh;
+
+/* ---- Charts (flat, Cognos-style) ---- */
+if(typeof Chart==='undefined')return;
+if(window.ChartDataLabels)Chart.register(ChartDataLabels);
+Chart.defaults.font.family='"IBM Plex Sans", Arial, sans-serif';
+Chart.defaults.font.size=11;
+Chart.defaults.color='#020204';
+Chart.defaults.maintainAspectRatio=false;
+Chart.defaults.animation=false;
+Chart.defaults.set('plugins.datalabels',{display:false});
+var gridC={color:'#E0E0E0'};
+var outLbl={display:function(c){return c.dataset.data[c.dataIndex]>0;},color:'#020204',anchor:'end',align:'end',offset:4,font:{size:11}};
+var sliceLbl={display:function(c){var d=c.dataset.data,t=d.reduce(function(x,y){return x+y;},0);return d[c.dataIndex]/t>0.04;},color:'#FFFFFF',font:{weight:'700',size:11}};
+
+function circle(id,type,labels,data,cols,legendPos){
+  new Chart($(id),{type:type,data:{labels:labels,datasets:[{data:data,backgroundColor:cols,borderColor:'#FFFFFF',borderWidth:1}]},
+    options:{cutout:type=='doughnut'?'50%':0,plugins:{legend:{position:legendPos||'right',labels:{boxWidth:11,boxHeight:11}},datalabels:sliceLbl}}});
+}
+function bars(id,labels,sets,opt){
+  opt=opt||{};
+  new Chart($(id),{type:'bar',data:{labels:labels,datasets:sets.map(function(s){return {label:s[0],data:s[1],backgroundColor:s[2],borderColor:opt.border||s[2],borderWidth:opt.border?1:0,stack:opt.stack?'s':undefined,maxBarThickness:opt.thick||60};})},
+    options:{indexAxis:opt.horiz?'y':'x',layout:{padding:{top:18,right:opt.horiz?40:0}},
+      plugins:{legend:{display:sets.length>1,position:opt.legend||'top',labels:{boxWidth:11,boxHeight:11}},datalabels:opt.stack?{display:function(c){return c.dataset.data[c.dataIndex]>=5;},color:'#fff',font:{weight:'700'}}:outLbl},
+      scales:{x:{stacked:!!opt.stack,grid:opt.horiz?gridC:{display:false},title:{display:!!opt.xt,text:opt.xt},ticks:{maxRotation:opt.rot||0,minRotation:opt.rot||0}},
+              y:{stacked:!!opt.stack,grid:opt.horiz?{display:false}:gridC,beginAtZero:true,title:{display:!!opt.yt,text:opt.yt}}}}});
+}
+
+// KRI
+circle('kriDonut','doughnut',['Red','Amber','Green','Not Determined'],[67,70,282,303],[P.red,P.amber,P.teal,P.blue],'top');
+bars('breach',breach.m,[['Red Breaches',breach.r,P.red],['Amber Breaches',breach.a,P.amber]],{stack:1,rot:30});
+bars('cat',cat.map(function(c){return c[0];}),[['Risks',cat.map(function(c){return c[1];}),P.teal]],{rot:35,thick:40});
+
+// RCSA
+var rt=['Major','Significant','Moderate','Minor','Insignificant','Not Determined'];
+bars('inhRes',rt,[['Inherent',[0,255,0,0,0,0],P.blue],['Residual',[2,2,506,1,1,0],P.red]],{});
+circle('terr','pie',['Cyprus','Seychelles','Jordan','(Blank)','Group','UK','All'],[1,1,252,1,2,2,253],[P.sky,P.teal,P.yellow,P.amber,P.pink,P.red,P.cobalt],'bottom');
+circle('rating','doughnut',['Major','Significant','Moderate','Minor','Insignificant'],[2,2,506,1,1],[P.red,P.pink,P.amber,P.blue,'#8C8C8C']);
+bars('taxL2',['No Value','Systems Security'],[['Risks',[462,50],P.teal]],{horiz:1,thick:45});
+circle('ctrl','pie',['Automated','Partially Automated','Manual'],[3,1,2],[P.teal,P.blue,P.yellow],'bottom');
+
+// Incidents
+circle('incStatus','doughnut',['Open','Closed','Draft'],[1709,1018,1546],[P.blue,P.teal,P.yellow],'top');
+circle('incTheme','pie',themes,themes.map(function(t){return themeCnt[t];}),themes.map(function(t){return themeCol[t];}),'bottom');
+circle('incRating','pie',['Major','Significant','Moderate','Minor','Insignificant'],[39,26,68,70,71],[P.red,P.amber,P.yellow,P.teal,P.blue],'bottom');
+bars('close',['Jan-26','Feb-26','Mar-26','Apr-26','May-26','Jun-26','Jul-26','Aug-26','Sep-26'],[['Risk Incident',[50,50,50,100,200,52,50,1,1],P.teal]],{xt:'Expected Closure Date',yt:'Risk Incident',border:P.navy});
+bars('closeMaj',['Jun-26','Aug-26','Sep-26'],[['Risk Incident',[2,1,1],P.teal]],{xt:'Expected Closure Date',yt:'Risk Incident',border:P.navy,thick:90});
+
+var fm=['Jan-23','Jun-23','Jun-24','Aug-24','Sep-24','Feb-25','Mar-25','Apr-25','May-25','Jun-25','Jul-25','Aug-25','Sep-25','Oct-25','Nov-25'];
+var fs={'Other':[0,13032,0,0,0,10168.08,0,0,0,0,0,0,0,0,0],'Regulatory, Compliance & Legal Risks':[0,0,0,0,0,0,0,0,24819,0,0,0,0,0,70061.17],'External Events':[0,0,0,0,0,0,0,0,0,4887.36,169645.23,0,0,0,0],'Technology & System Failures':[0,0,78000,0,0,0,0,320000,0,377087.21,150000,710085,0,404544.25,0],'Fraud & Misconduct':[531000,0,0,252000,208000,0,0,0,0,0,0,0,144865.08,0,0],'Vendor Failures':[0,0,0,0,0,0,102000,0,0,0,0,0,35080.07,0,197092.96],'Human Error':[0,0,0,0,0,0,0,0,0,0,9364.74,184316.49,0,547902.34,0]};
+new Chart($('fin'),{type:'bar',data:{labels:fm,datasets:Object.keys(fs).map(function(k){return {label:k,data:fs[k],backgroundColor:themeCol[k],borderColor:'#020204',borderWidth:1};})},
+  options:{layout:{padding:{top:20}},plugins:{legend:{position:'right',title:{display:true,text:'Risk Incident Themes',font:{weight:'700'}},labels:{boxWidth:11,boxHeight:11}},
+    datalabels:{display:function(c){return c.dataset.data[c.dataIndex]>0;},anchor:'end',align:'end',rotation:-90,offset:2,color:'#020204',font:{size:9},formatter:function(v){return v.toLocaleString('en-US');}}},
+    scales:{x:{grid:{display:false},title:{display:true,text:'Occurrence Date'},ticks:{maxRotation:35,minRotation:35}},y:{grid:gridC,beginAtZero:true,title:{display:true,text:'Financial Impact'},ticks:{callback:function(v){return v.toLocaleString('en-US');}}}}}});
+})();
+</script>
+</body>
+</html>

@@ -14,12 +14,13 @@ import re
 import threading
 import time
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from sqlalchemy import Engine, MetaData, Table, distinct, func, inspect, select
 from sqlalchemy.orm import Session
 
+from . import openpages_model
 from .connections import connection_spec, openpages, openpages_spec
 from .connections.engines import DB_TYPES, friendly_error, get_engine
 from .database import engine as app_engine
@@ -108,16 +109,43 @@ def get_source(db: Session, source_id: int | None) -> DataSource:
                       engine=get_engine(c.id, version, spec))
 
 
+def narrow(source: DataSource, data_model: str | None) -> DataSource:
+    """The same source seen through one OpenPages data model: only that model's object types, and
+    its relationships passed on to whoever writes the SQL.
+
+    Narrowing the table list is the whole mechanism. `allowed` and `op_type` are both derived from
+    it, so the SQL guard refuses a type outside the model without knowing models exist, and the
+    schema description shrinks to what the model covers - which is the point, since a model is how
+    someone says "this report is about audits, not vendors".
+    """
+    model = openpages_model.get(data_model)
+    if model is None or not source.is_openpages:
+        return source
+    want = {e.lower() for e in model.entities}
+    tables = [t for t in source.tables if t.split(".", 1)[-1].lower() in want]
+    if not tables:
+        raise SourceError(f"None of the object types in {model.name} are shared from {source.name}. "
+                          "Choose another data model, or ask a manager to share those types on the "
+                          "Connections page.")
+    return replace(source, tables=tables, options={**source.options, "data_model": model.key})
+
+
 # ---------- Describing the tables for the model ----------
 
 _schema_cache: dict[tuple, tuple[float, str]] = {}
+
+
+def forget_schema(connection_id: int | None = None):
+    """Drops cached schema descriptions so the next one is read from the database again."""
+    for key in [k for k in _schema_cache if connection_id is None or k[0] == connection_id]:
+        del _schema_cache[key]
 
 
 def describe(source: DataSource) -> str:
     """One block per table: columns with types, and the values of low-cardinality text columns
     (such as region or status) so the model can filter on them. High-cardinality columns such as
     names or emails are never sampled."""
-    key = (source.id, source.version)
+    key = (source.id, source.version, tuple(source.tables))
     cached = _schema_cache.get(key)
     if cached and time.time() - cached[0] < SCHEMA_CACHE_SECONDS:
         return cached[1]
@@ -164,6 +192,9 @@ def _describe_openpages(source: DataSource) -> str:
             lines.append(line)
         blocks.append(f"[{name}]\n" + "\n".join(lines))
     text = "\n\n".join(blocks) or "(no object types available)"
+    model = openpages_model.get(source.options.get("data_model"))
+    if model is not None:
+        text += "\n" + openpages_model.model_note(model)
     audit_id, audit_name = source.options.get("audit_id", ""), source.options.get("audit_name", "")
     if audit_id or audit_name:
         which = " and ".join(x for x in (f"Resource ID {audit_id}" if audit_id else "",

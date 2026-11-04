@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Odoo × Power BI — Executive Overview</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap');
+  :root{
+    --bg:#09090B;--s1:#111113;--s2:#18181B;--s3:#27272A;
+    --odoo:#714BC0;--odoo2:#8B5CF6;--odoo3:#A78BFA;
+    --pbi:#F2C811;--pbi2:#F59E0B;
+    --crm:#00D4AA;--hd:#DC2626;--sales:#22C55E;--lms:#A78BFA;
+    --text:#FAFAFA;--muted:#71717A;--border:rgba(255,255,255,.08);
+    --glow-odoo:rgba(113,75,192,.2);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+
+  /* Ambient glow */
+  body::before{content:'';position:fixed;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:600px;background:radial-gradient(ellipse,rgba(113,75,192,.12),transparent 70%);pointer-events:none;z-index:0}
+
+  .shell{position:relative;z-index:1;display:flex;flex-direction:column;min-height:100vh}
+
+  /* TOP NAV */
+  nav{padding:16px 32px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+  .nav-brand{display:flex;align-items:center;gap:10px}
+  .nav-logo{height:28px;width:28px;border-radius:8px;background:linear-gradient(135deg,var(--odoo),var(--odoo2));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
+  .nav-title{font-size:15px;font-weight:700;letter-spacing:-.3px}
+  .nav-sep{width:1px;height:18px;background:var(--border);margin:0 10px}
+  .nav-pbi{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--pbi);font-weight:600}
+  .nav-right{display:flex;align-items:center;gap:12px}
+  .nav-pill{font-size:11px;padding:5px 12px;border-radius:20px;border:1px solid var(--border);color:var(--muted);cursor:pointer;transition:all .2s}
+  .nav-pill:hover,.nav-pill.on{border-color:var(--odoo2);color:var(--odoo3);background:var(--glow-odoo)}
+  .event-tag{background:linear-gradient(135deg,var(--odoo),var(--odoo2));color:#fff;font-size:11px;font-weight:600;padding:5px 12px;border-radius:20px}
+
+  main{flex:1;padding:28px 32px;display:flex;flex-direction:column;gap:24px}
+
+  /* HERO */
+  .hero{text-align:center;padding:32px 0 16px}
+  .hero-eyebrow{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--odoo2);margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:8px}
+  .hero-eyebrow::before,.hero-eyebrow::after{content:'';flex:1;max-width:60px;height:1px;background:linear-gradient(90deg,transparent,var(--odoo2))}
+  .hero-eyebrow::after{background:linear-gradient(90deg,var(--odoo2),transparent)}
+  .hero-headline{font-size:42px;font-weight:800;letter-spacing:-1.5px;line-height:1.1;margin-bottom:12px}
+  .hero-headline span{background:linear-gradient(135deg,var(--odoo3),var(--pbi));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .hero-sub{font-size:16px;color:var(--muted);max-width:580px;margin:0 auto;line-height:1.6}
+  .hero-stats{display:flex;justify-content:center;gap:32px;margin-top:24px}
+  .hstat{text-align:center}
+  .hstat-val{font-size:32px;font-weight:800;font-family:'Fira Code',monospace;background:linear-gradient(135deg,var(--odoo3),var(--pbi));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .hstat-label{font-size:11px;color:var(--muted);margin-top:2px}
+  .hstat-div{width:1px;background:var(--border);align-self:stretch}
+
+  /* MODULE CARDS */
+  .modules{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .mod-card{
+    background:var(--s1);border:1px solid var(--border);border-radius:16px;
+    padding:20px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden;
+  }
+  .mod-card:hover{transform:translateY(-3px)}
+  .mod-card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .2s;border-radius:16px}
+  .mod-card:hover::before{opacity:1}
+  .mod-crm::before{background:radial-gradient(circle at top right,rgba(0,212,170,.08),transparent 60%)}
+  .mod-hd::before{background:radial-gradient(circle at top right,rgba(220,38,38,.08),transparent 60%)}
+  .mod-sales::before{background:radial-gradient(circle at top right,rgba(34,197,94,.08),transparent 60%)}
+  .mod-lms::before{background:radial-gradient(circle at top right,rgba(167,139,250,.08),transparent 60%)}
+  .mod-icon{font-size:28px;margin-bottom:12px}
+  .mod-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px}
+  .mod-name{font-size:18px;font-weight:700;letter-spacing:-.3px;margin-bottom:8px}
+  .mod-metrics{display:flex;flex-direction:column;gap:6px}
+  .mod-metric{display:flex;justify-content:space-between;font-size:12px}
+  .mod-metric-label{color:var(--muted)}
+  .mod-metric-val{font-weight:600;font-family:'Fira Code',monospace}
+  .mod-mini-chart{margin-top:14px;height:50px;position:relative}
+  .mod-footer{margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+  .mod-link{font-size:11px;cursor:pointer;font-weight:500}
+  .mod-status{font-size:10px;padding:2px 7px;border-radius:20px;font-weight:500}
+
+  /* INTEGRATION FLOW */
+  .flow-section{background:var(--s1);border:1px solid var(--border);border-radius:16px;padding:24px}
+  .flow-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:20px;text-align:center}
+  .flow-diagram{display:flex;align-items:center;justify-content:center;gap:0}
+  .flow-node{text-align:center;padding:0 20px}
+  .flow-node-box{border-radius:12px;padding:14px 20px;font-weight:600;font-size:14px;border:1px solid}
+  .flow-arrow{font-size:20px;color:var(--muted);padding:0 8px}
+  .flow-sub{font-size:10px;color:var(--muted);margin-top:6px}
+
+  /* COMBINED TREND */
+  .combined{background:var(--s1);border:1px solid var(--border);border-radius:16px;padding:20px}
+  .combined-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .combined-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .combined-legend{display:flex;gap:16px}
+  .cl-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+  .cl-dot{width:8px;height:8px;border-radius:50%}
+
+  /* BOTTOM STRIP */
+  .bottom-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .bs-card{background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center}
+  .bs-val{font-size:28px;font-weight:800;font-family:'Fira Code',monospace}
+  .bs-label{font-size:10px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.4px}
+  .bs-sub{font-size:11px;margin-top:6px;font-weight:500}
+
+  /* Footer */
+  footer{padding:14px 32px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;font-size:10px;color:var(--muted)}
+  .f-brand{display:flex;align-items:center;gap:6px}
+  .f-links{display:flex;gap:16px}
+</style>
+</head>
+<body>
+<div class="shell">
+<nav>
+  <div class="nav-brand">
+    <div class="nav-logo">⬡</div>
+    <span class="nav-title">Odoo ERP</span>
+    <div class="nav-sep"></div>
+    <div class="nav-pbi">⚡ Power BI</div>
+  </div>
+  <div class="nav-right">
+    <button class="nav-pill on">Executive Overview</button>
+    <button class="nav-pill" onclick="location.href='01_crm_dashboard.html'">CRM</button>
+    <button class="nav-pill" onclick="location.href='02_helpdesk_dashboard.html'">Helpdesk</button>
+    <button class="nav-pill" onclick="location.href='03_sales_dashboard.html'">Sales</button>
+    <button class="nav-pill" onclick="location.href='04_lms_dashboard.html'">LMS</button>
+    <div class="event-tag">🎤 Odoo Event 2026</div>
+  </div>
+</nav>
+
+<main>
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-eyebrow">Odoo ERP · Power BI Integration</div>
+    <div class="hero-headline">One ERP. <span>Four Modules.</span><br>Infinite Insight.</div>
+    <div class="hero-sub">Real-time analytics dashboards built on Odoo's PostgreSQL data layer — CRM, Helpdesk, Sales, and LMS unified in Power BI.</div>
+    <div class="hero-stats">
+      <div class="hstat"><div class="hstat-val">$4.26M</div><div class="hstat-label">Revenue YTD</div></div>
+      <div class="hstat-div"></div>
+      <div class="hstat"><div class="hstat-val">3,842</div><div class="hstat-label">Active Learners</div></div>
+      <div class="hstat-div"></div>
+      <div class="hstat"><div class="hstat-val">78.4%</div><div class="hstat-label">SLA Compliance</div></div>
+      <div class="hstat-div"></div>
+      <div class="hstat"><div class="hstat-val">38%</div><div class="hstat-label">CRM Win Rate</div></div>
+    </div>
+  </div>
+
+  <!-- Module Cards -->
+  <div class="modules">
+    <!-- CRM -->
+    <div class="mod-card mod-crm" onclick="location.href='01_crm_dashboard.html'">
+      <div class="mod-icon">🤝</div>
+      <div class="mod-label" style="color:var(--crm)">CRM</div>
+      <div class="mod-name">Customer Relations</div>
+      <div class="mod-metrics">
+        <div class="mod-metric"><span class="mod-metric-label">Pipeline</span><span class="mod-metric-val" style="color:var(--crm)">$4.7M</span></div>
+        <div class="mod-metric"><span class="mod-metric-label">Win Rate</span><span class="mod-metric-val" style="color:var(--crm)">38.2%</span></div>
+        <div class="mod-metric"><span class="mod-metric-label">Active Leads</span><span class="mod-metric-val">1,248</span></div>
+        <div class="mod-metric"><span class="mod-metric-label">Avg Deal</span><span class="mod-metric-val">$18.4K</span></div>
+      </div>
+      <div class="mod-mini-chart"><canvas id="crmMini" role="img" aria-label="CRM pipeline mini trend"></canvas></div>
+      <div class="mod-footer">
+        <span class="mod-link" style="color:var(--crm)">Open dashboard →</span>
+        <span class="mod-status" style="background:rgba(0,212,170,.15);color:var(--crm)">↑ 18.4%</span>
+      </div>
+    </div>
+    <!-- Helpdesk -->
+    <div class="mod-card mod-hd" onclick="location.href='02_helpdesk_dashboard.html'">
+      <div class="mod-icon">🎧</div>
+      <div class="mod-label" style="color:var(--hd)">Helpdesk</div>
+      <div class="mod-name">Support Operations</div>
+      <div class="mod-metrics">
+        <div class="mod-metric"><span class="mod-metric-label">Open Tickets</span><span class="mod-metric-val" style="color:var(--hd)">342</span></div>
+        <div class="mod-metric"><span class="mod-metric-label">SLA Compliance</span><span class="mod-metric-val" style="color:var(--pbi2)">78.4%</span></div>
+        <div class="mod-metric"><span class="mod-metric-label">CSAT Score</span><span class="mod-metric-val">4.3 / 5</span></div>
+        <div class="mod-metric"><span class="mod-metric-label">Avg Resolution</span><span class="mod-metric-val">8h 34m</span></div>
+      </div>
+      <div class="mod-mini-chart"><canvas id="hdMini" role="img" aria-label="Helpdesk tickets mini trend"></canvas></div>
+      <div class="mod-footer">
+        <span class="mod-link" style="color:var(--hd)">Open dashboard →</span>
+        <span class="mod-status" style="background:rgba(220,38,38,.15);color:var(--hd)">⚠ SLA Alert</span>
+      </div>
+    </div>
+    <!-- Sales -->
+    <div class="mod-card mod-sales" onclick="location.href='03_sales_dashboard.html'">
+      <div class="mod-icon">💰</div>
+      <div class="mod-label" style="color:var(--sales)">Sales</div>
+      <div class="mod-name">Revenue Operations</div>
+      <div class="mod-metrics">
+        <div class="mod-metric"><span class="mod-metric-label">Revenue YTD</span><span class="mod-metric-val" style="color:var(--sales)">$4.26M</span></div>
+        <div class="mod-metric"><span class="mod-metric-label">Quota Attained</span><span class="mod-metric-val" style="color:var(--sales)">82%</span></div>
+        <div class="mod-metric"><span class="mod-metric-label">Orders</span><span class="mod-metric-val">2,841</span></div>
+        <div class="mod-metric"><span class="mod-metric-label">Avg Order</span><span class="mod-metric-val">$1,499</span></div>
+      </div>
+      <div class="mod-mini-chart"><canvas id="salesMini" role="img" aria-label="Sales revenue mini trend"></canvas></div>
+      <div class="mod-footer">
+        <span class="mod-link" style="color:var(--sales)">Open dashboard →</span>
+        <span class="mod-status" style="background:rgba(34,197,94,.15);color:var(--sales)">↑ 14.2%</span>
+      </div>
+    </div>
+    <!-- LMS -->
+    <div class="mod-card mod-lms" onclick="location.href='04_lms_dashboard.html'">
+      <div class="mod-icon">🎓</div>
+      <div class="mod-label" style="color:var(--lms)">eLearning</div>
+      <div class="mod-name">Learning Management</div>
+      <div class="mod-metrics">
+        <div class="mod-metric"><span class="mod-metric-label">Active Learners</span><span class="mod-metric-val" style="color:var(--lms)">3,842</span></div>
+        <div class="mod-metric"><span class="mod-metric-label">Completion Rate</span><span class="mod-metric-val" style="color:var(--lms)">68%</span></div>
+        <div class="mod-metric"><span class="mod-metric-label">Certifications</span><span class="mod-metric-val">847</span></div>
+        <div class="mod-metric"><span class="mod-metric-label">Avg Score</span><span class="mod-metric-val">74.2%</span></div>
+      </div>
+      <div class="mod-mini-chart"><canvas id="lmsMini" role="img" aria-label="LMS enrollment mini trend"></canvas></div>
+      <div class="mod-footer">
+        <span class="mod-link" style="color:var(--lms)">Open dashboard →</span>
+        <span class="mod-status" style="background:rgba(167,139,250,.15);color:var(--lms)">↑ 18% completions</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Integration flow -->
+  <div class="flow-section">
+    <div class="flow-title">How it works — Odoo → Power BI data pipeline</div>
+    <div class="flow-diagram">
+      <div class="flow-node">
+        <div class="flow-node-box" style="background:rgba(113,75,192,.15);border-color:rgba(113,75,192,.4);color:#A78BFA">⬡ Odoo 17</div>
+        <div class="flow-sub">CRM · Sales · Helpdesk · LMS</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">
+        <div class="flow-node-box" style="background:rgba(59,130,246,.1);border-color:rgba(59,130,246,.3);color:#93C5FD">🐘 PostgreSQL</div>
+        <div class="flow-sub">Native Odoo database</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">
+        <div class="flow-node-box" style="background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.3);color:#86EFAC">🔌 Direct Query</div>
+        <div class="flow-sub">Power BI connector</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">
+        <div class="flow-node-box" style="background:rgba(242,200,17,.1);border-color:rgba(242,200,17,.3);color:#FCD34D">⚡ Power BI</div>
+        <div class="flow-sub">DAX measures · Reports</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">
+        <div class="flow-node-box" style="background:rgba(244,63,94,.1);border-color:rgba(244,63,94,.3);color:#FDA4AF">📊 Embedded</div>
+        <div class="flow-sub">In Odoo · Web · Mobile</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Combined trend -->
+  <div class="combined">
+    <div class="combined-hdr">
+      <span class="combined-title">All modules — monthly KPI trend (Jan–Jun 2026)</span>
+      <div class="combined-legend">
+        <div class="cl-item"><div class="cl-dot" style="background:var(--crm)"></div>CRM Pipeline</div>
+        <div class="cl-item"><div class="cl-dot" style="background:var(--sales)"></div>Sales Revenue</div>
+        <div class="cl-item"><div class="cl-dot" style="background:var(--lms)"></div>LMS Learners</div>
+        <div class="cl-item"><div class="cl-dot" style="background:var(--hd)"></div>HD Tickets</div>
+      </div>
+    </div>
+    <div style="height:180px;position:relative"><canvas id="combinedChart" role="img" aria-label="Combined KPI trend chart for all modules"></canvas></div>
+  </div>
+
+  <!-- Bottom strip -->
+  <div class="bottom-strip">
+    <div class="bs-card">
+      <div class="bs-val" style="color:var(--crm)">1,248</div>
+      <div class="bs-label">Active Leads</div>
+      <div class="bs-sub" style="color:var(--crm)">↑ 312 new this month</div>
+    </div>
+    <div class="bs-card">
+      <div class="bs-val" style="color:var(--hd)">14</div>
+      <div class="bs-label">SLA Breaches</div>
+      <div class="bs-sub" style="color:var(--hd)">⚠ Needs attention</div>
+    </div>
+    <div class="bs-card">
+      <div class="bs-val" style="color:var(--sales)">82%</div>
+      <div class="bs-label">Sales Quota</div>
+      <div class="bs-sub" style="color:var(--sales)">$940K to target</div>
+    </div>
+    <div class="bs-card">
+      <div class="bs-val" style="color:var(--lms)">847</div>
+      <div class="bs-label">Certifications Issued</div>
+      <div class="bs-sub" style="color:var(--lms)">↑ 62 this month</div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="f-brand">
+    <div style="width:18px;height:18px;border-radius:5px;background:linear-gradient(135deg,var(--odoo),var(--odoo2));display:flex;align-items:center;justify-content:center;font-size:10px">⬡</div>
+    <span>Odoo 17 · Power BI Embedded · PostgreSQL Direct Query · Timus Consulting</span>
+  </div>
+  <div class="f-links">
+    <span>Presented at Odoo Event 2026</span>
+    <span>·</span>
+    <span>Built by: Deepak · Timus Consulting Services</span>
+  </div>
+</footer>
+</div>
+
+<script>
+const months=['Jan','Feb','Mar','Apr','May','Jun'];
+const grd='rgba(255,255,255,.05)';
+
+/* Mini charts */
+function mini(id, data, color){
+  new Chart(document.getElementById(id),{
+    type:'line',
+    data:{labels:months,datasets:[{data,borderColor:color,backgroundColor:color.replace(')',',0.1)').replace('rgb','rgba'),fill:true,tension:.4,pointRadius:0,borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}}
+  });
+}
+mini('crmMini',[3.8,3.2,4.1,4.5,4.2,4.7],'#00D4AA');
+mini('hdMini', [280,310,290,320,335,342],'#DC2626');
+mini('salesMini',[580,640,720,780,820,720],'#22C55E');
+mini('lmsMini',[2800,3050,3200,3480,3700,3842],'#A78BFA');
+
+/* Combined */
+new Chart(document.getElementById('combinedChart'),{
+  type:'line',
+  data:{labels:months,datasets:[
+    {label:'CRM Pipeline ($M)', data:[3.8,3.2,4.1,4.5,4.2,4.7],borderColor:'#00D4AA',tension:.4,pointRadius:4,pointBackgroundColor:'#00D4AA',fill:false,yAxisID:'y'},
+    {label:'Sales Revenue ($K)',data:[580,640,720,780,820,720],borderColor:'#22C55E',tension:.4,pointRadius:4,pointBackgroundColor:'#22C55E',fill:false,borderDash:[4,3],yAxisID:'y'},
+    {label:'LMS Learners',      data:[2800,3050,3200,3480,3700,3842],borderColor:'#A78BFA',tension:.4,pointRadius:4,pointBackgroundColor:'#A78BFA',fill:false,yAxisID:'y2'},
+    {label:'HD Tickets',        data:[280,310,290,320,335,342],borderColor:'#DC2626',tension:.4,pointRadius:4,pointBackgroundColor:'#DC2626',fill:false,borderDash:[2,4],yAxisID:'y2'},
+  ]},
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{grid:{color:grd},ticks:{color:'#71717A',font:{size:11}}},
+      y:{grid:{color:grd},ticks:{color:'#71717A',font:{size:10}},position:'left'},
+      y2:{grid:{display:false},ticks:{color:'#71717A',font:{size:10}},position:'right'},
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -9,14 +9,20 @@ from .. import dashboard_filters
 from ..database import get_db
 from ..datasources import QueryFailed, SourceError, get_source, run_sql
 from ..erp_templates import template_rows as erp_template_rows
+from ..openpages_modules import MODULES, module_template_rows
 from ..openpages_templates import template_rows as openpages_template_rows
 from ..sql_guard import UnsafeSQL
 from ..deps import get_current_user
+from ..ai.colors import apply_color_rules, color_rules_from_prompt, normalize_hex
 from ..models import ReportTemplate, User
 from ..schemas import TemplateIn, TemplateOut, TemplateUpdate
 from ..template_data import BUILTIN_TEMPLATES, REPLACED_BUILTINS
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
+
+# Name prefixes that say which folder a template sits in, not what the report is about, so they come
+# off the report title: "ORM: Loss events" builds a report called "Loss events".
+TITLE_PREFIXES = {"OpenPages", "ERP", *MODULES}
 
 
 def builtin_fields(t: dict) -> dict:
@@ -35,7 +41,7 @@ def ensure_builtin_templates(db: Session):
             for field, value in builtin_fields(by_name[REPLACED_BUILTINS[row.name]]).items():
                 setattr(row, field, value)
     # Dashboard templates (OpenPages, then ERP) arrived later, and more are added over time.
-    rows = openpages_template_rows() + erp_template_rows()
+    rows = openpages_template_rows() + module_template_rows() + erp_template_rows()
     first_time = not any((row.layout or {}).get("kind") == "dashboard" for row in builtins)
     if first_time:
         db.add_all(ReportTemplate(**builtin_fields(t)) for t in rows)
@@ -49,11 +55,17 @@ def ensure_builtin_templates(db: Session):
         # the trade is that new ones reach existing installations at all.
         known = {row.name for row in builtins}
         db.add_all(ReportTemplate(**builtin_fields(t)) for t in rows if t["name"] not in known)
-    # Domains arrived after the templates did, so file the ones already here.
-    domains = {t["name"]: t["category"] for t in rows + BUILTIN_TEMPLATES}
+    # Domains, and later the module folders inside them, arrived after the templates did, so file
+    # the ones already here. Templates only move; none are renamed or removed.
+    filed = {t["name"]: t for t in rows + BUILTIN_TEMPLATES}
     for row in builtins:
-        if row.category != domains.get(row.name, row.category):
-            row.category = domains[row.name]
+        wanted = filed.get(row.name)
+        if not wanted:
+            continue
+        if row.category != wanted["category"]:
+            row.category = wanted["category"]
+        if (row.module or "") != wanted.get("module", ""):
+            row.module = wanted.get("module", "")
     db.commit()
 
 
@@ -72,7 +84,7 @@ def can_edit(t: ReportTemplate, user: User) -> bool:
 
 def to_out(t: ReportTemplate, user: User) -> TemplateOut:
     return TemplateOut(id=t.id, name=t.name, description=t.description, prompt=t.prompt, color=t.color,
-                       category=t.category or "Uncategorised",
+                       category=t.category or "Uncategorised", module=t.module or "",
                        layout=t.layout or {}, visibility=t.visibility, is_builtin=t.is_builtin,
                        owner_id=t.owner_id, owner_name=t.owner.full_name if t.owner else None,
                        can_edit=can_edit(t, user), created_at=t.created_at, updated_at=t.updated_at)
@@ -123,6 +135,14 @@ def build_dashboard(template_id: int, body: BuildIn, db: Session = Depends(get_d
             skipped.append({"title": w.get("title", ""), "reason": str(err)})
             continue
         widgets.append(widget)
+    # The template's palette is copied onto each chart, so the report keeps these colours even if
+    # the template is later changed. Colour rules in the template's prompt are read the same way.
+    palette = [c for c in (normalize_hex(x) for x in (layout.get("chartPalette") or [])) if c][:24]
+    if len(palette) >= 2:
+        for w in widgets:
+            if w.get("kind") != "text":
+                w["style"] = {**(w.get("style") or {}), "palette": palette}
+    apply_color_rules([w for w in widgets if w.get("kind") != "text"], color_rules_from_prompt(t.prompt))
     # Headings with no chart left under them go too.
     widgets = [w for i, w in enumerate(widgets)
                if w.get("kind") != "text" or any(x.get("kind") != "text" for x in widgets[i + 1:i + 2])]
@@ -131,16 +151,31 @@ def build_dashboard(template_id: int, body: BuildIn, db: Session = Depends(get_d
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"None of this template's charts can run on {source.name}: {reasons}")
     filters = []
     for f in layout.get("filters") or []:
+        # type "*" means "whatever object type this chart reads", so one filter can cover a whole
+        # dashboard on a field every type has, such as [Location] — the business entity path an
+        # object hangs under. Named types still only reach the charts that read them.
+        charts = [w for w in widgets if w.get("kind") != "text"]
+        if source.is_openpages and f.get("type") == "*":
+            picks = {}
+            for w in charts:
+                read = dashboard_filters.query_tables(w["sql"], source)
+                if read:
+                    picks[w["id"]] = {"table": read[0], "column": f.get("field", "")}
+            built = dashboard_filters.make_filter(source, f.get("label", "Filter"), f.get("kind", "category"),
+                                                  widgets, picks) if picks else None
+            if built and built["columns"]:
+                filters.append(built)
+            continue
         table = f"openpages.{f.get('type', '')}".lower() if source.is_openpages else str(f.get("table", "")).lower()
-        picks = {w["id"]: {"table": table, "column": f.get("field", "")} for w in widgets
-                 if w.get("kind") != "text" and table in dashboard_filters.query_tables(w["sql"], source)}
+        picks = {w["id"]: {"table": table, "column": f.get("field", "")} for w in charts
+                 if table in dashboard_filters.query_tables(w["sql"], source)}
         if picks:
             built = dashboard_filters.make_filter(source, f.get("label", "Filter"), f.get("kind", "category"), widgets, picks)
             if built["columns"]:
                 filters.append(built)
     # "OpenPages: Controls effectiveness" becomes "Controls effectiveness": the domain belongs on
     # the template, not on every report built from it.
-    title = t.name.split(": ", 1)[-1] if t.name.split(": ", 1)[0] in ("OpenPages", "ERP") else t.name
+    title = t.name.split(": ", 1)[-1] if t.name.split(": ", 1)[0] in TITLE_PREFIXES else t.name
     report = _save(db, user, title=title, prompt=t.prompt, source=source, widgets=widgets,
                    extra={"filters": filters, "template": t.name})
     return {"report": report, "skipped": skipped}

@@ -10,8 +10,10 @@ import { ColorPicker, Seg } from "./Controls";
 import { HEIGHT, HEIGHTS, WIDTHS, clampHeight, hasHeight } from "../lib/tileSize";
 import { cardLook } from "../lib/cardColors";
 import { CardColorFields } from "./CardColors";
+import ColorRules from "./ColorRules";
 import DataChart from "./DataChart";
 import Modal from "./Modal";
+import PalettePicker from "./PalettePicker";
 import ResultTable from "./ResultTable";
 
 const SIZES: [WidgetSize, string][] = [["auto", "Auto"], ...WIDTHS.map((x) => [x.size, x.label] as [WidgetSize, string])];
@@ -68,6 +70,11 @@ export default function ChartEditor({ reportId, widget, data, onClose, onSave, o
   const numeric = columns.filter((_, i) => rows.length > 0 && rows.every((r) => r[i] === null || typeof r[i] === "number"));
   const sqlChanged = sql.trim() !== ranSql.trim();
   const setChart = (patch: Partial<Widget["chart"]>) => setDraft((d) => ({ ...d, chart: { ...d.chart, ...patch } }));
+  // The categories this chart draws, for the colour rules below. Capped: the list is there to save
+  // typing a name, and a hundred one-click buttons would save nobody anything.
+  const xIndex = columns.indexOf(draft.chart.x);
+  const categoryLabels = xIndex < 0 ? []
+    : [...new Set(rows.map((r) => String(r[xIndex] ?? "")).filter(Boolean))].slice(0, 40);
   const style = draft.style ?? {};
   const setStyle = (patch: Partial<WidgetStyle>) => setDraft((d) => ({ ...d, style: { ...d.style, ...patch } }));
   const isChart = ["bar", "line", "area", "pie"].includes(draft.chart.type);
@@ -225,6 +232,9 @@ export default function ChartEditor({ reportId, widget, data, onClose, onSave, o
                 <button type="button" className="link-btn" onClick={() => onApplyColorToAll(style.color!)}>Use this colour for every chart</button>
               )}
             </div>
+            <PalettePicker value={style.palette} onChange={(palette) => setStyle({ palette })}
+              label="Colour palette" hint="The colours this chart cycles, after the chart colour above." />
+            <ColorRules style={style} onChange={setStyle} labels={categoryLabels} />
             <div className="box stack-sm">
               <div className="strong small">Card</div>
               <CardColorFields style={style} onChange={setStyle} />

@@ -42,6 +42,33 @@ export const CATEGORY_BLURBS: Record<TemplateCategory, string> = {
   Uncategorised: "Not filed under a domain yet",
 };
 
+/** OpenPages solutions, in the order their folders appear under GRC. */
+export const TEMPLATE_MODULES: string[] = ["ORM", "PCM", "MRG", "IAM", "ITG", "FCM", "BCM", "DPM", "ESG", "TPRM"];
+
+export const MODULE_LABELS: Record<string, string> = {
+  ORM: "Operational Risk Management",
+  PCM: "Policy and Compliance Management",
+  MRG: "Model Risk Governance",
+  IAM: "Internal Audit Management",
+  ITG: "IT Governance",
+  FCM: "Financial Controls Management",
+  BCM: "Business Continuity Management",
+  DPM: "Data Privacy Management",
+  ESG: "Risk Management for ESG",
+  TPRM: "Third Party Risk Management",
+};
+
+/** Splits a domain's templates into its module folders, then the ones filed directly under it.
+ * Folders keep the order above; anything with an unknown module follows, alphabetically. */
+export function moduleGroups<T extends { module?: string }>(list: T[]): [string, T[]][] {
+  const seen = Array.from(new Set(list.map((t) => t.module || ""))).filter(Boolean);
+  const order = [...TEMPLATE_MODULES.filter((m) => seen.includes(m)),
+                 ...seen.filter((m) => !TEMPLATE_MODULES.includes(m)).sort()];
+  const groups: [string, T[]][] = order.map((m) => [m, list.filter((t) => t.module === m)]);
+  const loose = list.filter((t) => !t.module);
+  return loose.length ? [...groups, ["", loose] as [string, T[]]] : groups;
+}
+
 export const ALL_SECTIONS: SectionId[] = ["kpis", "revenue", "products", "insights"];
 
 /** The standard layout. A template's layout is applied on top of it. */

@@ -129,6 +129,8 @@ export type ClassicLayout = Partial<Pick<ReportConfig, "sections" | "chart" | "p
 export type TemplateLayout = ClassicLayout & {
   /** Dashboard templates: ready-written charts, built on a connection you choose. */
   kind?: "dashboard";
+  /** Chart colours copied onto every chart when the template is built. */
+  chartPalette?: string[];
   /** Which connections fit, e.g. "openpages". */
   source_type?: DbType;
   widgets?: Omit<Widget, "id">[];
@@ -145,6 +147,8 @@ export interface ReportTemplate {
   prompt: string;
   color: string;
   category: TemplateCategory;
+  /** A folder inside the category, e.g. the OpenPages solution ("ORM"). Empty for none. */
+  module: string;
   layout: TemplateLayout;
   visibility: TemplateVisibility;
   is_builtin: boolean;
@@ -161,8 +165,27 @@ export interface TemplateInput {
   prompt: string;
   color: string;
   category: TemplateCategory;
+  module?: string;
   layout: TemplateLayout;
   visibility: TemplateVisibility;
+}
+
+/** A saved list of chart colours. The built-in palettes live in lib/palettes.ts, not here. */
+export interface ColorPalette {
+  id: number;
+  name: string;
+  colors: string[];
+  /** Shared palettes are offered to everyone; only a manager can share one. */
+  is_shared: boolean;
+  owner_id: number | null;
+  owner_name: string;
+  can_edit: boolean;
+}
+
+export interface PaletteInput {
+  name: string;
+  colors: string[];
+  is_shared?: boolean;
 }
 
 export type DbType = "postgresql" | "mysql" | "mssql" | "sqlite" | "openpages";
@@ -177,6 +200,8 @@ export interface ConnectionOptions {
   auth_type?: OpenPagesAuth;
   token_url?: string;
   client_id?: string;
+  /** OAuth 2.0: only when the provider insists on a scope. */
+  scope?: string;
   client_cert?: string;
   /** Whether a private key is saved (mutual TLS); the key itself is never sent back. */
   has_client_key?: boolean;
@@ -297,6 +322,53 @@ export interface DataSourceInfo {
   type_label: string;
   table_count: number;
   builtin: boolean;
+}
+
+/** One IBM OpenPages object model, as listed for picking. */
+export interface DataModelSummary {
+  key: string;
+  name: string;
+  solution: string;
+  namespace: string;
+  is_default: boolean;
+  entity_count: number;
+  relationship_count: number;
+}
+
+export interface ModelField {
+  name: string;
+  type: string;
+  values: string[];
+}
+
+export interface ModelEntity {
+  name: string;
+  /** How far below a root the entity sits; the diagram lays rows out by this. */
+  depth: number;
+  /** Whether the object type is installed, and whether it is shared with this app. Both are null
+   * when no connection was chosen, because then nothing has been checked. */
+  exists: boolean | null;
+  shared: boolean | null;
+  /** The type nests under itself, like a business entity tree. */
+  self_nesting: boolean;
+  parents: string[];
+  children: string[];
+  fields: ModelField[];
+}
+
+export interface ModelRelationship {
+  parent: string;
+  child: string;
+  self: boolean;
+}
+
+export interface DataModelDetail extends DataModelSummary {
+  connection: { id: number; name: string } | null;
+  /** True once real fields have been read from the connection. */
+  live: boolean;
+  note: string;
+  entities: ModelEntity[];
+  relationships: ModelRelationship[];
 }
 
 /**
@@ -489,6 +561,20 @@ export type WidgetSize = "auto" | "quarter" | "third" | "half" | "twothird" | "f
 export interface WidgetStyle {
   /** Main colour (first series, KPI number). */
   color?: string;
+  /** The colours this chart cycles. Copied from a palette when one is applied, never referenced,
+   *  so deleting a palette never repaints a saved report. */
+  palette?: string[];
+  /**
+   * How a one-series chart colours its categories.
+   * - "auto" (the default): by what the names mean, e.g. Major red and Minor green, falling back
+   *   to one colour when the names mean nothing in particular.
+   * - "single": every category in `color`, the way it was before meanings were read.
+   * - "palette": cycle the palette, a different colour per category.
+   * - "rules": only `colorRules` decide; anything unmatched uses `color`.
+   */
+  colorMode?: "auto" | "single" | "palette" | "rules";
+  /** Colours for named categories, tried in order and before the meanings. */
+  colorRules?: { match: string; color: string }[];
   showValues?: boolean;
   /** Show the legend when there are several series or a pie (default true). */
   legend?: boolean;
@@ -530,6 +616,8 @@ export interface DashboardConfig {
   /** A logo above the title, shown to viewers and in the printed and exported copies. */
   logo?: { url: string; height?: number; link?: string };
   parameters?: DashboardParameters;
+  /** The palette new and unstyled charts on this dashboard use. A chart's own `style.palette` wins. */
+  palette?: string[];
   model?: string;
   filters?: DashboardFilter[];
 }

@@ -14,13 +14,20 @@ import datetime as dt
 import json
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
+from ..config import settings
 from ..datasources import DataSource, QueryFailed, describe, run_sql
 from ..sql_guard import UnsafeSQL
+from .colors import apply_color_rules, color_rules_from_prompt
 from .providers import ModelSpec, complete_json
 
 MAX_ATTEMPTS = 3
 ROWS_SHOWN_TO_MODEL = 20
+# A dashboard is planned as an outline first, then one small call per chart, because one call that
+# writes every chart's SQL at once is a single long generation: a slow local model runs out of time
+# part-way and nothing at all comes back. Small calls also let the slow ones run side by side.
+MAX_WIDGETS = 12
 CHART_TYPES = ["kpi", "bar", "line", "area", "pie", "table"]
 
 _DIALECT_TIPS = {
@@ -63,7 +70,9 @@ _EXPLAIN_SCHEMA = {
     "additionalProperties": False,
 }
 
-_PLAN_SCHEMA = {
+# The plan call asks only for titles, questions and chart shapes. Writing the SQL is a separate
+# call per chart, so no single generation has to produce thousands of tokens.
+_OUTLINE_SCHEMA = {
     "type": "object",
     "properties": {
         "title": {"type": "string"},
@@ -72,8 +81,8 @@ _PLAN_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {"title": {"type": "string"}, "question": {"type": "string"},
-                               "sql": {"type": "string"}, "chart": _CHART_SCHEMA},
-                "required": ["title", "question", "sql", "chart"],
+                               "chart": {"type": "string", "enum": CHART_TYPES}},
+                "required": ["title", "question", "chart"],
                 "additionalProperties": False,
             },
         },
@@ -267,47 +276,91 @@ def _history_text(history: list[dict]) -> str:
 
 # ---------- Dashboards ----------
 
-def plan_dashboard(spec: ModelSpec, source: DataSource, prompt: str, parameters: dict) -> dict:
-    """Plans and runs a dashboard. Returns {"title", "widgets": [...], "failed": [...]}."""
+def plan_dashboard(spec: ModelSpec, source: DataSource, prompt: str, parameters: dict,
+                   budget_seconds: float | None = None, max_parallel: int | None = None) -> dict:
+    """Plans and runs a dashboard. Returns {"title", "widgets": [...], "failed": [...]}.
+
+    Two stages, so a long request doesn't become one long generation:
+      1. one small call for the outline (titles, questions, chart shapes - no SQL);
+      2. one call per chart to write and run its SQL, several at a time.
+    Charts that don't finish inside the budget are reported in "failed" and the rest are kept, so a
+    slow model gives a partial dashboard instead of nothing."""
+    budget = settings.ai_dashboard_budget_seconds if budget_seconds is None else budget_seconds
+    workers = settings.ai_max_parallel if max_parallel is None else max_parallel
+    deadline = time.monotonic() + budget
     params_text = _parameters_text(parameters)
     # Asked for particular shapes: the model is told, and the schema only allows those, so a
     # model that ignores the instruction still can't answer with anything else.
     wanted = [c for c in (parameters.get("charts") or []) if c in CHART_TYPES] or CHART_TYPES
-    plan_schema = _PLAN_SCHEMA
+    outline_schema = _OUTLINE_SCHEMA
     if wanted != CHART_TYPES:
-        plan_schema = copy.deepcopy(_PLAN_SCHEMA)
-        plan_schema["properties"]["widgets"]["items"]["properties"]["chart"]["properties"]["type"]["enum"] = wanted
-    system = f"""You design BI dashboards. Turn the request into 4 to 6 charts that answer it well.
-Start with 1 to 3 "kpi" charts for the headline numbers, then charts that break them down
-(over time, by category, top items).
+        outline_schema = copy.deepcopy(_OUTLINE_SCHEMA)
+        outline_schema["properties"]["widgets"]["items"]["properties"]["chart"]["enum"] = wanted
+    system = f"""You design BI dashboards. Turn the request into the charts that answer it.
+When the request lists the charts it wants, give exactly those, in that order; otherwise give 4 to 6.
+Never more than {MAX_WIDGETS}. Start with the headline numbers as "kpi" charts, then the breakdowns.
+
+Do NOT write any SQL here. For each chart give only a short title, the one-line question it answers,
+and which chart shape fits. The queries are written separately.
 
 {_sql_rules(source)}
-
-Each chart needs a title, a one-line question it answers, one SQL query, and a chart.
 {params_text}
 {_chart_rules(wanted)}"""
-    plan = complete_json(spec, system, f"Dashboard request: {prompt}", plan_schema)
-    plan["widgets"] = [_normalize(w) for w in plan.get("widgets") or [] if isinstance(w, dict)]
-    widgets, failed = [], []
-    for item in (plan.get("widgets") or [])[:8]:
-        title, question = str(item.get("title", "")).strip(), str(item.get("question", "")).strip()
-        try:
-            data = run_sql(source, str(item.get("sql", "")))
-            widgets.append(new_widget(title or question, question, data["sql"],
-                                      fit_chart(item.get("chart"), data["columns"], data["rows"])))
-        except (UnsafeSQL, QueryFailed) as err:
-            # One more try with the error, using the single-widget writer.
-            try:
-                fixed = write_widget(spec, source, f"{question or title}{' ' + params_text if params_text else ''}"
-                                                   f"\n(An earlier query for this failed: {err})")
-                fixed["widget"]["title"] = title or fixed["widget"]["title"]
-                widgets.append(fixed["widget"])
-            except Exception as err2:
-                failed.append({"title": title or question, "error": str(err2)[:300]})
-    if not widgets:
-        raise AssistantError("The model couldn't build any working charts for that request. "
+    outline = complete_json(spec, system, f"Dashboard request: {prompt}", outline_schema)
+    items = [_outline_item(w) for w in (outline.get("widgets") or []) if isinstance(w, dict)]
+    items = [i for i in items if i["question"] or i["title"]][:MAX_WIDGETS]
+    if not items:
+        raise AssistantError("The model couldn't plan any charts for that request. "
                              "Try naming the tables or measures you want.")
-    return {"title": str(plan.get("title", "")).strip() or prompt[:80], "widgets": widgets, "failed": failed}
+
+    def build(item: dict) -> dict:
+        """One chart, written and run on its own. Never raises: the caller reports the failures."""
+        ask = item["question"] or item["title"]
+        if params_text:
+            ask = f"{ask}\n{params_text}"
+        if item["chart"]:
+            ask = f'{ask}\nShow it as a "{item["chart"]}" chart.'
+        if time.monotonic() > deadline:
+            return {"error": "The dashboard ran out of time before this chart was written. "
+                             "Build it on its own, or raise AI_DASHBOARD_BUDGET_SECONDS in backend/.env."}
+        try:
+            written = write_widget(spec, source, ask)
+            written["widget"]["title"] = item["title"] or written["widget"]["title"]
+            written["widget"]["question"] = item["question"] or item["title"]
+            return {"widget": written["widget"]}
+        except Exception as err:  # AssistantError, a provider timeout, or a query that never worked
+            return {"error": str(err)[:300]}
+
+    # Side by side where the provider allows it. Ollama queues what it can't run at once, so this
+    # costs nothing there and saves a lot on a hosted model.
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(items)))) as pool:
+        results = list(pool.map(build, items))
+
+    widgets, failed = [], []
+    for item, result in zip(items, results):
+        if result.get("widget"):
+            widgets.append(result["widget"])
+        else:
+            failed.append({"title": item["title"] or item["question"], "error": result["error"]})
+    if not widgets:
+        reasons = "; ".join(sorted({f["error"] for f in failed}))[:300]
+        raise AssistantError("The model couldn't build any working charts for that request. "
+                             f"Try naming the tables or measures you want. ({reasons})")
+    # Colours named in the request ("Major - Red") are read here rather than asked of the model,
+    # so every model honours them and none of them has to copy a hex code correctly.
+    apply_color_rules(widgets, color_rules_from_prompt(prompt))
+    return {"title": str(outline.get("title", "")).strip() or prompt[:80], "widgets": widgets, "failed": failed}
+
+
+def _outline_item(w: dict) -> dict:
+    """One planned chart, before its query is written. Accepts a chart given as a bare string or as
+    the full {"type": ...} object, which models that don't enforce the schema sometimes send."""
+    chart = w.get("chart")
+    if isinstance(chart, dict):
+        chart = chart.get("type")
+    return {"title": str(w.get("title", "")).strip()[:120],
+            "question": str(w.get("question", "")).strip()[:500],
+            "chart": chart if chart in CHART_TYPES else ""}
 
 
 def _parameters_text(parameters: dict) -> str:

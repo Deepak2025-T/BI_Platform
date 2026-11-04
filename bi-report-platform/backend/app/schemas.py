@@ -1,7 +1,9 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from .ai.colors import normalize_hex
 
 Role = Literal["user", "manager"]
 
@@ -131,6 +133,8 @@ class TemplateIn(BaseModel):
     prompt: str = Field(min_length=3, max_length=2000)
     color: str = Field(default="#00B4D8", pattern=r"^#[0-9A-Fa-f]{6}$")
     category: TemplateCategory = "Uncategorised"
+    # A folder inside the category, e.g. "ORM" for an OpenPages Operational Risk template.
+    module: str = Field(default="", max_length=40)
     layout: TemplateLayout = TemplateLayout()
     visibility: Visibility = "private"
 
@@ -141,6 +145,7 @@ class TemplateUpdate(BaseModel):
     prompt: str | None = Field(default=None, min_length=3, max_length=2000)
     color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     category: TemplateCategory | None = None
+    module: str | None = Field(default=None, max_length=40)
     layout: TemplateLayout | None = None
     visibility: Visibility | None = None
 
@@ -152,6 +157,7 @@ class TemplateOut(BaseModel):
     prompt: str
     color: str
     category: str
+    module: str
     layout: dict
     visibility: Visibility
     is_builtin: bool
@@ -183,6 +189,48 @@ class CategoryOut(BaseModel):
     can_edit: bool
 
 
+# A palette needs at least two colours to be a palette, and a chart that needs more than 24 is a
+# table in disguise.
+PaletteColors = Annotated[list[str], Field(min_length=2, max_length=24)]
+
+
+class PaletteIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    colors: PaletteColors
+    is_shared: bool = False
+
+    @field_validator("colors")
+    @classmethod
+    def _hex_only(cls, colors: list[str]) -> list[str]:
+        """Stores #RRGGBB. People type rgb() and colour names too, but one shape is kept so the
+        pickers, the charts and the exports never have to guess."""
+        out = []
+        for c in colors:
+            hex_color = normalize_hex(c)
+            if not hex_color:
+                raise ValueError(f"{c!r} is not a colour. Use #RRGGBB, rgb(r, g, b) or a colour name.")
+            out.append(hex_color)
+        return out
+
+
+class PaletteUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=60)
+    colors: PaletteColors | None = None
+    is_shared: bool | None = None
+
+    _hex_only = field_validator("colors")(PaletteIn._hex_only.__func__)
+
+
+class PaletteOut(BaseModel):
+    id: int
+    name: str
+    colors: list[str]
+    is_shared: bool
+    owner_id: int | None
+    owner_name: str
+    can_edit: bool
+
+
 DbType = Literal["postgresql", "mysql", "mssql", "sqlite", "openpages"]
 OpenPagesAuth = Literal["basic", "oauth2", "mpjwt", "iam", "mtls"]
 
@@ -194,6 +242,7 @@ class ConnectionOptions(BaseModel):
     auth_type: OpenPagesAuth = "basic"
     token_url: str = Field(default="", max_length=500)  # OAuth 2.0; IBM Cloud IAM (blank = iam.cloud.ibm.com)
     client_id: str = Field(default="", max_length=200)  # OAuth 2.0
+    scope: str = Field(default="", max_length=200)  # OAuth 2.0: only if the provider requires one
     client_cert: str = Field(default="", max_length=20000)  # mutual TLS: the certificate (PEM), not secret
     has_client_key: bool = False  # mutual TLS: whether a private key is saved; the key is never returned
     audit_id: str = Field(default="", max_length=40)  # optional: the audit questions are usually about
@@ -387,12 +436,14 @@ class ChatIn(BaseModel):
     model_id: int
     question: str = Field(min_length=2, max_length=2000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=20)
+    data_model: str | None = Field(default=None, max_length=120)
 
 
 class WidgetIn(BaseModel):
     source_id: int | None = None
     model_id: int
     question: str = Field(min_length=2, max_length=1000)
+    data_model: str | None = Field(default=None, max_length=120)
 
 
 class DashboardParams(BaseModel):
@@ -408,6 +459,7 @@ class DashboardIn(BaseModel):
     model_id: int
     prompt: str = Field(min_length=3, max_length=2000)
     parameters: DashboardParams = DashboardParams()
+    data_model: str | None = Field(default=None, max_length=120)
 
 
 class Widget(BaseModel):

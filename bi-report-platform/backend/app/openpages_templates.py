@@ -63,10 +63,15 @@ def _filter(label: str, type_name: str, field: str, kind: str = "category") -> d
 
 CTL, ISS, FND, AUD, RSK, KRI, POL, OBL = ("SOXControl", "SOXIssue", "Finding", "AuditProgram", "SOXRisk",
                                           "KeyRiskIndicator", "Policy", "Obligation")
-# Used by the templates below. LossImpact and LossRecovery are children of LossEvent; BusinessEntity
-# carries the geography fields. Installations rename or drop some of these, and any chart whose type
-# or field is missing is left out when the dashboard is built.
-LOSS, LIMP, LREC, ACT, ENT = "LossEvent", "LossImpact", "LossRecovery", "ActionItem", "BusinessEntity"
+# Used by the templates below. LossImpact and LossRecovery are children of LossEvent; SOXBusEntity
+# is the root of every OpenPages object model (see Openpages_model/Model_name_space.txt), so it
+# carries the entity and geography fields. Installations rename or drop some of these, and any
+# chart whose type or field is missing is left out when the dashboard is built.
+LOSS, LIMP, LREC, ACT, ENT = "LossEvent", "LossImpact", "LossRecovery", "ActionItem", "SOXBusEntity"
+
+# Public names for the builders above, used by openpages_modules.
+count_by, count_by_two, total, table_of, heading, filter_on = (_count_by, _count_by_two, _total, _list,
+                                                               _heading, _filter)
 
 OPENPAGES_TEMPLATES = [
     {
@@ -341,10 +346,27 @@ OPENPAGES_TEMPLATES = [
 ]
 
 
+# The OpenPages solution each of the templates above belongs to, so they sit in the same folders as
+# the module templates in openpages_modules. Nothing is renamed or dropped: they only move.
+TEMPLATE_MODULES = {
+    "OpenPages: Controls effectiveness": "FCM",
+    "OpenPages: Issues and remediation": "ORM",
+    "OpenPages: Audit findings": "IAM",
+    "OpenPages: Audit programme": "IAM",
+    "OpenPages: Risk and KRI monitor": "ORM",
+    "OpenPages: Policies and obligations": "PCM",
+    "OpenPages: Loss events": "ORM",
+    "OpenPages: Action item monitoring": "ORM",
+    "OpenPages: Risk assessment overview": "ORM",
+    "OpenPages: Audit coverage by geography": "IAM",
+    "OpenPages: Compliance findings": "PCM",
+}
+
+
 def template_rows() -> list[dict]:
     """The templates as rows for report_templates (layout holds the dashboard)."""
     return [{"name": t["name"], "description": t["description"], "color": t["color"], "prompt": t["prompt"],
-             "category": "GRC",
+             "category": "GRC", "module": TEMPLATE_MODULES.get(t["name"], ""),
              "layout": {"kind": "dashboard", "source_type": "openpages", "widgets": t["widgets"],
                         "filters": t["filters"]}}
             for t in OPENPAGES_TEMPLATES]

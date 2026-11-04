@@ -7,8 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .database import SessionLocal, schema_missing_message
 from .refresh import scheduler
-from .routers import (admin, ai_models, assistant, auth, categories, chats, connections, query, report_tools, reports,
-                      schedules, templates, uploads, users, visuals)
+from .routers import (admin, ai_models, assistant, auth, categories, chats, connections, data_models, query,
+                      report_tools, reports, palettes, schedules, templates, uploads, users, visuals)
 
 for warning in settings.setup_warnings():
     logging.getLogger("uvicorn.error").warning("Setup: %s", warning)
@@ -46,7 +46,9 @@ app.include_router(query.router)
 app.include_router(reports.router)
 app.include_router(templates.router)
 app.include_router(categories.router)
+app.include_router(palettes.router)
 app.include_router(connections.router)
+app.include_router(data_models.router)
 app.include_router(ai_models.router)
 app.include_router(assistant.router)
 app.include_router(chats.router)

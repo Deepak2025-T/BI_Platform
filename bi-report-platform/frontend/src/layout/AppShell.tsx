@@ -23,6 +23,7 @@ export default function AppShell() {
         <NavLink to="/build-chart" className={navClass}><Icon name="grid" />Build a chart</NavLink>
         <NavLink to="/reports" className={navClass}><Icon name="reports" />Reports</NavLink>
         <NavLink to="/templates" className={navClass}><Icon name="template" />Templates</NavLink>
+        <NavLink to="/data-model" className={navClass}><Icon name="layers" />Data model</NavLink>
 
         {isManager && (
           <>

@@ -29,6 +29,7 @@ class ChatCreate(BaseModel):
     source_id: int | None = None
     model_id: int | None = None
     title: str = Field(default=NEW_TITLE, min_length=1, max_length=120)
+    data_model: str | None = Field(default=None, max_length=120)
 
 
 class ChatUpdate(BaseModel):
@@ -58,6 +59,7 @@ class ChatSummary(BaseModel):
     source_id: int | None
     source_name: str
     model_id: int | None
+    data_model: str = ""
     message_count: int
     created_at: datetime
     updated_at: datetime
@@ -81,6 +83,7 @@ def _message_out(m: ChatMessage) -> MessageOut:
 
 def _out(c: ChatConversation) -> ChatOut:
     return ChatOut(id=c.id, title=c.title, source_id=c.source_id, source_name=c.source_name, model_id=c.model_id,
+                   data_model=c.data_model or "",
                    message_count=len(c.messages), created_at=c.created_at, updated_at=c.updated_at,
                    messages=[_message_out(m) for m in c.messages])
 
@@ -94,14 +97,17 @@ def list_chats(db: Session = Depends(get_db), user: User = Depends(get_current_u
                       .where(ChatConversation.user_id == user.id)
                       .order_by(ChatConversation.updated_at.desc()).limit(LIST_LIMIT)).all()
     return [ChatSummary(id=c.id, title=c.title, source_id=c.source_id, source_name=c.source_name, model_id=c.model_id,
-                        message_count=n, created_at=c.created_at, updated_at=c.updated_at) for c, n in rows]
+                        data_model=c.data_model or "", message_count=n, created_at=c.created_at,
+                        updated_at=c.updated_at) for c, n in rows]
 
 
 @router.post("", response_model=ChatOut, status_code=201)
 def start_chat(body: ChatCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    source = _source(db, body.source_id)  # checks the database can be used
+    # Narrowing here as well as on every question, so an impossible pairing of database and model
+    # is refused when the chat is started rather than on its first question.
+    source = _source(db, body.source_id, body.data_model)  # checks the database can be used
     c = ChatConversation(user_id=user.id, title=body.title.strip(), source_id=source.id, source_name=source.name,
-                         model_id=body.model_id)
+                         model_id=body.model_id, data_model=(body.data_model or ""))
     db.add(c)
     db.commit()
     return _out(c)
@@ -144,7 +150,7 @@ def send_message(chat_id: int, body: MessageIn, db: Session = Depends(get_db), u
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pick an AI model for this chat.")
         model, spec = _model(db, model_id)
         message.model_name = model.name
-        source = _source(db, c.source_id)
+        source = _source(db, c.source_id, c.data_model)
         result = _ai_call(chat, spec, source, message.question, history)
         message.result = {**result, "model": model.name, "source": source.name}
         c.model_id = model.id

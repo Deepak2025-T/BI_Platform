@@ -10,7 +10,7 @@ from .. import dashboard_filters
 from ..ai.assistant import AssistantError, chat, new_widget, plan_dashboard, write_widget
 from ..ai.providers import AIError, ModelSpec
 from ..connections import crypto
-from ..datasources import QueryFailed, SourceError, get_source, list_sources, run_sql
+from ..datasources import QueryFailed, SourceError, get_source, list_sources, narrow, run_sql
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import AIModel, Report, User
@@ -39,9 +39,11 @@ def _model(db: Session, model_id: int) -> tuple[AIModel, ModelSpec]:
     return m, ModelSpec(provider=m.provider, model=m.model, base_url=m.base_url, api_key=key)
 
 
-def _source(db: Session, source_id: int | None):
+def _source(db: Session, source_id: int | None, data_model: str | None = None):
+    """The database to query, seen through one OpenPages data model when one was chosen. The
+    model narrows which object types exist as far as everything downstream is concerned."""
     try:
-        return get_source(db, source_id)
+        return narrow(get_source(db, source_id), data_model)
     except SourceError as err:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(err))
 
@@ -72,7 +74,7 @@ def prompt_ideas(source_id: int | None = None, db: Session = Depends(get_db), _:
 @router.post("/api/assistant/chat")
 def chat_message(body: ChatIn, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     model, spec = _model(db, body.model_id)
-    source = _source(db, body.source_id)
+    source = _source(db, body.source_id, body.data_model)
     result = _ai_call(chat, spec, source, body.question, [t.model_dump() for t in body.history])
     return {**result, "model": model.name, "source": source.name}
 
@@ -81,18 +83,23 @@ def chat_message(body: ChatIn, db: Session = Depends(get_db), _: User = Depends(
 def widget_from_question(body: WidgetIn, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     """One chart for a dashboard, from a question. Nothing is saved."""
     _, spec = _model(db, body.model_id)
-    return _ai_call(write_widget, spec, _source(db, body.source_id), body.question)
+    return _ai_call(write_widget, spec, _source(db, body.source_id, body.data_model), body.question)
 
 
 @router.post("/api/assistant/dashboard", status_code=201)
 def build_dashboard(body: DashboardIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Plans a dashboard with the AI model, runs every chart, and saves it as a draft report."""
     model, spec = _model(db, body.model_id)
-    source = _source(db, body.source_id)
+    source = _source(db, body.source_id, body.data_model)
     params = body.parameters.model_dump(mode="json")
     plan = _ai_call(plan_dashboard, spec, source, body.prompt, params)
+    # The data model is kept on the report so a refresh, a drill or an added chart later on sees
+    # the same object types this dashboard was planned against.
+    extra = {"parameters": params, "model": model.name}
+    if body.data_model:
+        extra["data_model"] = body.data_model
     report = _save(db, user, title=plan["title"], prompt=body.prompt, source=source, widgets=plan["widgets"],
-                   extra={"parameters": params, "model": model.name})
+                   extra=extra)
     return {"report": report, "failed": plan["failed"]}
 
 

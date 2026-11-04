@@ -42,6 +42,26 @@ class ReportCategory(Base):
     reports: Mapped[list["Report"]] = relationship(back_populates="category")
 
 
+class ColorPalette(Base):
+    """A named list of chart colours, saved so it can be used across reports.
+
+    The built-in palettes live in the frontend, not here: they never change and shipping them as
+    rows would mean a migration every time one is adjusted. A row here is always someone's own,
+    whether typed from scratch or duplicated from a built-in one."""
+
+    __tablename__ = "color_palettes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(60))
+    # Upper-case #RRGGBB, in the order charts use them.
+    colors: Mapped[list] = mapped_column(JSON, default=list)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("app_users.id", ondelete="CASCADE"), nullable=True)
+    # Shared palettes are offered to everyone; a manager decides.
+    is_shared: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+
 class Report(Base):
     __tablename__ = "reports"
 
@@ -99,6 +119,9 @@ class ReportTemplate(Base):
     color: Mapped[str] = mapped_column(String(9), default="#00B4D8")
     # The domain this template belongs to: ERP, GRC, Common or Uncategorised (see template_data).
     category: Mapped[str] = mapped_column(String(40), default="Uncategorised", server_default="Uncategorised")
+    # A folder within the category, e.g. the OpenPages solution a GRC template is for ("ORM",
+    # "PCM", ...). Empty means the template sits directly under its category.
+    module: Mapped[str] = mapped_column(String(40), default="", server_default="")
     # Optional layout applied to reports built from this template (sections, chart, palette ...)
     layout: Mapped[dict] = mapped_column(JSON, default=dict)
     visibility: Mapped[str] = mapped_column(String(20), default="private")  # "private" | "shared"
@@ -170,6 +193,9 @@ class ChatConversation(Base):
     source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_name: Mapped[str] = mapped_column(String(80))  # kept so the list still reads well if the connection goes
     model_id: Mapped[int | None] = mapped_column(ForeignKey("ai_models.id", ondelete="SET NULL"), nullable=True)
+    # The OpenPages object model this chat is held to, if any. Kept per chat rather than per
+    # question so follow-ups stay inside the same model as the question that started it.
+    data_model: Mapped[str] = mapped_column(String(120), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
 

@@ -1,0 +1,497 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans,sans-serif);color:var(--text-primary)}
+.nav{display:flex;flex-wrap:wrap;gap:6px;padding:12px;background:var(--surface-1);border-bottom:0.5px solid var(--border)}
+.nav button{font-size:11px;padding:5px 10px;border:0.5px solid var(--border);border-radius:6px;background:var(--surface-2);color:var(--text-secondary);cursor:pointer;white-space:nowrap}
+.nav button.active{background:var(--bg-accent);color:var(--text-accent);border-color:var(--border-accent)}
+.report-area{padding:12px;display:none}
+.report-area.active{display:block}
+.report-tabs{display:flex;gap:8px;margin-bottom:12px}
+.report-tabs button{font-size:12px;padding:5px 14px;border:0.5px solid var(--border);border-radius:6px;background:var(--surface-2);color:var(--text-secondary);cursor:pointer}
+.report-tabs button.active{background:var(--surface-2);color:var(--text-primary);border-color:var(--border-strong);font-weight:500}
+.rpt{display:none}
+.rpt.active{display:block}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.kpi{background:var(--surface-1);border-radius:8px;padding:10px 12px}
+.kpi .lbl{font-size:11px;color:var(--text-secondary);margin-bottom:4px}
+.kpi .val{font-size:20px;font-weight:500;color:var(--text-primary)}
+.kpi .chg{font-size:11px;margin-top:2px}
+.up{color:var(--text-success)}.dn{color:var(--text-danger)}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.chart-box{background:var(--surface-1);border-radius:8px;padding:12px}
+.chart-box h4{font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:10px}
+.bar-chart{display:flex;flex-direction:column;gap:5px}
+.bar-row{display:flex;align-items:center;gap:6px;font-size:11px}
+.bar-row .lbl{width:90px;color:var(--text-secondary);text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-fill{height:16px;border-radius:3px;min-width:4px;transition:width 0.3s}
+.bar-row .bval{font-size:10px;color:var(--text-secondary);margin-left:4px;flex-shrink:0}
+.tbl{width:100%;border-collapse:collapse;font-size:11px}
+.tbl th{text-align:left;padding:6px 8px;border-bottom:0.5px solid var(--border);color:var(--text-secondary);font-weight:500;background:var(--surface-1)}
+.tbl td{padding:5px 8px;border-bottom:0.5px solid var(--border);color:var(--text-primary)}
+.tbl tr:hover td{background:var(--surface-1)}
+.badge{display:inline-block;font-size:10px;padding:2px 7px;border-radius:4px;font-weight:500}
+.b-g{background:#eaf3de;color:#27500a}.b-r{background:#fcebeb;color:#791f1f}.b-a{background:#faeeda;color:#633806}.b-b{background:#e6f1fb;color:#0c447c}
+.full-chart{background:var(--surface-1);border-radius:8px;padding:12px;margin-bottom:10px}
+.full-chart h4{font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:10px}
+.donut-row{display:flex;align-items:center;gap:16px}
+.legend{display:flex;flex-direction:column;gap:5px;font-size:11px}
+.legend-item{display:flex;align-items:center;gap:6px;color:var(--text-secondary)}
+.dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.filter-bar{display:flex;gap:8px;margin-bottom:10px;align-items:center}
+.filter-bar select{font-size:11px;padding:4px 8px;border:0.5px solid var(--border);border-radius:6px;background:var(--surface-2);color:var(--text-primary)}
+.filter-bar label{font-size:11px;color:var(--text-secondary)}
+.gauge-row{display:flex;gap:10px}
+.gauge{flex:1;background:var(--surface-1);border-radius:8px;padding:10px;text-align:center}
+.gauge .g-lbl{font-size:11px;color:var(--text-secondary);margin-bottom:6px}
+.gauge .g-val{font-size:22px;font-weight:500}
+.gauge .g-bar{height:6px;background:var(--border);border-radius:3px;margin-top:6px;overflow:hidden}
+.gauge .g-fill{height:100%;border-radius:3px}
+.module-title{font-size:13px;font-weight:500;color:var(--text-primary);margin-bottom:8px;padding-bottom:6px;border-bottom:0.5px solid var(--border)}
+</style>
+
+<h2 class="sr-only">Interactive Power BI report mockups for 9 Odoo modules, 2 reports each</h2>
+
+<div class="nav" id="modNav">
+<button class="active" onclick="switchMod('crm')"><i class="ti ti-users" aria-hidden="true"></i> CRM</button>
+<button onclick="switchMod('sales')"><i class="ti ti-shopping-cart" aria-hidden="true"></i> Sales</button>
+<button onclick="switchMod('accounting')"><i class="ti ti-report-money" aria-hidden="true"></i> Accounting</button>
+<button onclick="switchMod('inventory')"><i class="ti ti-building-warehouse" aria-hidden="true"></i> Inventory</button>
+<button onclick="switchMod('mrp')"><i class="ti ti-settings" aria-hidden="true"></i> MRP</button>
+<button onclick="switchMod('purchase')"><i class="ti ti-truck" aria-hidden="true"></i> Purchase</button>
+<button onclick="switchMod('hr')"><i class="ti ti-id-badge" aria-hidden="true"></i> HR</button>
+<button onclick="switchMod('project')"><i class="ti ti-clipboard-list" aria-hidden="true"></i> Project</button>
+<button onclick="switchMod('ecommerce')"><i class="ti ti-world" aria-hidden="true"></i> eCommerce</button>
+</div>
+
+<div id="crm" class="report-area active">
+<div class="module-title"><i class="ti ti-users" aria-hidden="true"></i> CRM module</div>
+<div class="report-tabs">
+<button class="active" onclick="switchRpt('crm',0)">Pipeline overview</button>
+<button onclick="switchRpt('crm',1)">Lead conversion analysis</button>
+</div>
+<div class="rpt active" id="crm-0">
+<div class="filter-bar"><label>Period:</label><select onchange="updateCRM(this)"><option>Q2 2026</option><option>Q1 2026</option><option>FY 2025</option></select><label>Sales rep:</label><select><option>All</option><option>Priya S</option><option>Rahul K</option><option>Amit D</option></select></div>
+<div class="kpis">
+<div class="kpi"><div class="lbl">Total leads</div><div class="val" id="c-leads">1,248</div><div class="chg up">+12% vs last period</div></div>
+<div class="kpi"><div class="lbl">Pipeline value</div><div class="val" id="c-pipe">₹4.2Cr</div><div class="chg up">+8% vs last period</div></div>
+<div class="kpi"><div class="lbl">Win rate</div><div class="val" id="c-win">34%</div><div class="chg dn">-2% vs last period</div></div>
+<div class="kpi"><div class="lbl">Avg deal size</div><div class="val">₹3.4L</div><div class="chg up">+5%</div></div>
+</div>
+<div class="charts">
+<div class="chart-box"><h4>Pipeline by stage</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">New</span><div class="bar-fill" style="width:90%;background:#378ADD"></div><span class="bval">412</span></div>
+<div class="bar-row"><span class="lbl">Qualified</span><div class="bar-fill" style="width:65%;background:#1D9E75"></div><span class="bval">298</span></div>
+<div class="bar-row"><span class="lbl">Proposition</span><div class="bar-fill" style="width:48%;background:#7F77DD"></div><span class="bval">219</span></div>
+<div class="bar-row"><span class="lbl">Won</span><div class="bar-fill" style="width:32%;background:#639922"></div><span class="bval">147</span></div>
+<div class="bar-row"><span class="lbl">Lost</span><div class="bar-fill" style="width:38%;background:#E24B4A"></div><span class="bval">172</span></div>
+</div></div>
+<div class="chart-box"><h4>Top opportunities</h4>
+<table class="tbl"><tr><th>Customer</th><th>Value</th><th>Stage</th></tr>
+<tr><td>Infosys Ltd</td><td>₹42L</td><td><span class="badge b-b">Proposition</span></td></tr>
+<tr><td>TCS Global</td><td>₹38L</td><td><span class="badge b-g">Won</span></td></tr>
+<tr><td>Wipro Tech</td><td>₹31L</td><td><span class="badge b-a">Qualified</span></td></tr>
+<tr><td>HCL Systems</td><td>₹28L</td><td><span class="badge b-b">Proposition</span></td></tr>
+<tr><td>Adani Ports</td><td>₹24L</td><td><span class="badge b-r">Lost</span></td></tr>
+</table></div>
+</div>
+</div>
+<div class="rpt" id="crm-1">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Leads this month</div><div class="val">318</div><div class="chg up">+18%</div></div>
+<div class="kpi"><div class="lbl">Converted</div><div class="val">108</div><div class="chg up">34% rate</div></div>
+<div class="kpi"><div class="lbl">Avg days to convert</div><div class="val">18d</div><div class="chg dn">+2d vs avg</div></div>
+<div class="kpi"><div class="lbl">Lost reasons</div><div class="val">72</div><div class="chg">tracked</div></div>
+</div>
+<div class="full-chart"><h4>Lead source performance</h4>
+<div class="bar-chart">
+<div class="bar-row"><span class="lbl">Website</span><div class="bar-fill" style="width:80%;background:#378ADD"></div><span class="bval">142 leads · 38% conv</span></div>
+<div class="bar-row"><span class="lbl">Cold call</span><div class="bar-fill" style="width:55%;background:#7F77DD"></div><span class="bval">98 leads · 22% conv</span></div>
+<div class="bar-row"><span class="lbl">Referral</span><div class="bar-fill" style="width:45%;background:#1D9E75"></div><span class="bval">48 leads · 52% conv</span></div>
+<div class="bar-row"><span class="lbl">Email campaign</span><div class="bar-fill" style="width:35%;background:#EF9F27"></div><span class="bval">30 leads · 27% conv</span></div>
+</div></div>
+<div class="chart-box" style="width:100%"><h4>Monthly trend — leads vs conversions</h4>
+<div class="bar-chart">
+<div class="bar-row"><span class="lbl">Jan 26</span><div class="bar-fill" style="width:55%;background:#85B7EB"></div><span class="bval">220 / 74</span></div>
+<div class="bar-row"><span class="lbl">Feb 26</span><div class="bar-fill" style="width:62%;background:#85B7EB"></div><span class="bval">248 / 82</span></div>
+<div class="bar-row"><span class="lbl">Mar 26</span><div class="bar-fill" style="width:70%;background:#85B7EB"></div><span class="bval">280 / 96</span></div>
+<div class="bar-row"><span class="lbl">Apr 26</span><div class="bar-fill" style="width:80%;background:#378ADD"></div><span class="bval">318 / 108</span></div>
+</div></div>
+</div>
+</div>
+
+<div id="sales" class="report-area">
+<div class="module-title"><i class="ti ti-shopping-cart" aria-hidden="true"></i> Sales module</div>
+<div class="report-tabs">
+<button class="active" onclick="switchRpt('sales',0)">Sales performance</button>
+<button onclick="switchRpt('sales',1)">Quotation tracker</button>
+</div>
+<div class="rpt active" id="sales-0">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Total revenue</div><div class="val">₹12.4Cr</div><div class="chg up">+22% YoY</div></div>
+<div class="kpi"><div class="lbl">Orders confirmed</div><div class="val">842</div><div class="chg up">+15%</div></div>
+<div class="kpi"><div class="lbl">Avg order value</div><div class="val">₹1.47L</div><div class="chg up">+6%</div></div>
+<div class="kpi"><div class="lbl">Return rate</div><div class="val">2.1%</div><div class="chg dn">+0.3%</div></div>
+</div>
+<div class="charts">
+<div class="chart-box"><h4>Revenue by product category</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">Consulting</span><div class="bar-fill" style="width:85%;background:#7F77DD"></div><span class="bval">₹4.8Cr</span></div>
+<div class="bar-row"><span class="lbl">Software</span><div class="bar-fill" style="width:65%;background:#378ADD"></div><span class="bval">₹3.6Cr</span></div>
+<div class="bar-row"><span class="lbl">Hardware</span><div class="bar-fill" style="width:40%;background:#1D9E75"></div><span class="bval">₹2.2Cr</span></div>
+<div class="bar-row"><span class="lbl">Support</span><div class="bar-fill" style="width:33%;background:#EF9F27"></div><span class="bval">₹1.8Cr</span></div>
+</div></div>
+<div class="chart-box"><h4>Top 5 customers by revenue</h4>
+<table class="tbl"><tr><th>Customer</th><th>Revenue</th><th>Orders</th></tr>
+<tr><td>Reliance Ind</td><td>₹1.8Cr</td><td>42</td></tr>
+<tr><td>HDFC Bank</td><td>₹1.4Cr</td><td>38</td></tr>
+<tr><td>Tata Steel</td><td>₹1.1Cr</td><td>29</td></tr>
+<tr><td>Mahindra</td><td>₹0.9Cr</td><td>24</td></tr>
+<tr><td>NTPC Ltd</td><td>₹0.7Cr</td><td>18</td></tr>
+</table></div>
+</div>
+</div>
+<div class="rpt" id="sales-1">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Quotations sent</div><div class="val">324</div><div class="chg up">this month</div></div>
+<div class="kpi"><div class="lbl">Confirmed</div><div class="val">198</div><div class="chg up">61% hit rate</div></div>
+<div class="kpi"><div class="lbl">Pending</div><div class="val">84</div><div class="chg">awaiting</div></div>
+<div class="kpi"><div class="lbl">Expired</div><div class="val">42</div><div class="chg dn">13%</div></div>
+</div>
+<div class="full-chart"><h4>Quotation status breakdown</h4>
+<table class="tbl"><tr><th>Quotation #</th><th>Customer</th><th>Value</th><th>Days open</th><th>Status</th></tr>
+<tr><td>SO/2026/0842</td><td>Infosys</td><td>₹18.4L</td><td>3</td><td><span class="badge b-b">Sent</span></td></tr>
+<tr><td>SO/2026/0841</td><td>Wipro</td><td>₹12.1L</td><td>1</td><td><span class="badge b-g">Confirmed</span></td></tr>
+<tr><td>SO/2026/0840</td><td>TCS</td><td>₹9.8L</td><td>7</td><td><span class="badge b-a">Pending</span></td></tr>
+<tr><td>SO/2026/0839</td><td>HCL</td><td>₹6.4L</td><td>14</td><td><span class="badge b-r">Expired</span></td></tr>
+<tr><td>SO/2026/0838</td><td>Adani</td><td>₹4.2L</td><td>2</td><td><span class="badge b-g">Confirmed</span></td></tr>
+</table></div>
+</div>
+</div>
+
+<div id="accounting" class="report-area">
+<div class="module-title"><i class="ti ti-report-money" aria-hidden="true"></i> Accounting & invoicing module</div>
+<div class="report-tabs">
+<button class="active" onclick="switchRpt('accounting',0)">Aged payable report</button>
+<button onclick="switchRpt('accounting',1)">P&L summary</button>
+</div>
+<div class="rpt active" id="accounting-0">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Total payable</div><div class="val">₹7.94Cr</div><div class="chg dn">+8% vs last month</div></div>
+<div class="kpi"><div class="lbl">Overdue (90d+)</div><div class="val">₹1.12Cr</div><div class="chg dn">critical</div></div>
+<div class="kpi"><div class="lbl">Vendors</div><div class="val">148</div><div class="chg">with balance</div></div>
+<div class="kpi"><div class="lbl">Avg days overdue</div><div class="val">42d</div><div class="chg dn">+4d</div></div>
+</div>
+<div class="full-chart"><h4>Aging buckets — payable</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">Not yet due</span><div class="bar-fill" style="width:40%;background:#639922"></div><span class="bval">₹3.45Cr</span></div>
+<div class="bar-row"><span class="lbl">1–30 days</span><div class="bar-fill" style="width:55%;background:#EF9F27"></div><span class="bval">₹2.18Cr</span></div>
+<div class="bar-row"><span class="lbl">31–60 days</span><div class="bar-fill" style="width:28%;background:#D85A30"></div><span class="bval">₹1.12Cr</span></div>
+<div class="bar-row"><span class="lbl">61–90 days</span><div class="bar-fill" style="width:18%;background:#A32D2D"></div><span class="bval">₹0.72Cr</span></div>
+<div class="bar-row"><span class="lbl">90+ days</span><div class="bar-fill" style="width:28%;background:#501313"></div><span class="bval">₹1.12Cr</span></div>
+</div></div>
+<div class="chart-box" style="width:100%"><h4>Top overdue vendors</h4>
+<table class="tbl"><tr><th>Vendor</th><th>Total due</th><th>90d+</th><th>Status</th></tr>
+<tr><td>VISION EIS Consulting</td><td>₹64.2L</td><td>₹38.4L</td><td><span class="badge b-r">Critical</span></td></tr>
+<tr><td>PSP Fintech</td><td>₹23.5L</td><td>₹16.6L</td><td><span class="badge b-r">Critical</span></td></tr>
+<tr><td>Almondz Global</td><td>₹18.6L</td><td>₹5.7L</td><td><span class="badge b-a">Watch</span></td></tr>
+<tr><td>Salary Payable PMU-1</td><td>₹13.7L</td><td>₹0</td><td><span class="badge b-g">Current</span></td></tr>
+</table></div>
+</div>
+<div class="rpt" id="accounting-1">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Total revenue</div><div class="val">₹18.6Cr</div><div class="chg up">+14% YoY</div></div>
+<div class="kpi"><div class="lbl">Total expenses</div><div class="val">₹13.2Cr</div><div class="chg dn">+9% YoY</div></div>
+<div class="kpi"><div class="lbl">Net profit</div><div class="val">₹5.4Cr</div><div class="chg up">+24% YoY</div></div>
+<div class="kpi"><div class="lbl">Margin</div><div class="val">29%</div><div class="chg up">+2.4pts</div></div>
+</div>
+<div class="full-chart"><h4>Monthly P&L trend</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">Jan 26</span><div class="bar-fill" style="width:60%;background:#1D9E75"></div><span class="bval">Rev ₹1.42Cr · Exp ₹0.98Cr · NP ₹0.44Cr</span></div>
+<div class="bar-row"><span class="lbl">Feb 26</span><div class="bar-fill" style="width:65%;background:#1D9E75"></div><span class="bval">Rev ₹1.58Cr · Exp ₹1.04Cr · NP ₹0.54Cr</span></div>
+<div class="bar-row"><span class="lbl">Mar 26</span><div class="bar-fill" style="width:72%;background:#1D9E75"></div><span class="bval">Rev ₹1.74Cr · Exp ₹1.12Cr · NP ₹0.62Cr</span></div>
+<div class="bar-row"><span class="lbl">Apr 26</span><div class="bar-fill" style="width:80%;background:#378ADD"></div><span class="bval">Rev ₹1.94Cr · Exp ₹1.18Cr · NP ₹0.76Cr</span></div>
+</div></div>
+</div>
+</div>
+
+<div id="inventory" class="report-area">
+<div class="module-title"><i class="ti ti-building-warehouse" aria-hidden="true"></i> Inventory module</div>
+<div class="report-tabs">
+<button class="active" onclick="switchRpt('inventory',0)">Stock overview</button>
+<button onclick="switchRpt('inventory',1)">Movement analysis</button>
+</div>
+<div class="rpt active" id="inventory-0">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Total SKUs</div><div class="val">2,841</div><div class="chg up">active</div></div>
+<div class="kpi"><div class="lbl">Stock value</div><div class="val">₹8.3Cr</div><div class="chg">on hand</div></div>
+<div class="kpi"><div class="lbl">Low stock alerts</div><div class="val">47</div><div class="chg dn">reorder needed</div></div>
+<div class="kpi"><div class="lbl">Out of stock</div><div class="val">12</div><div class="chg dn">critical</div></div>
+</div>
+<div class="charts">
+<div class="chart-box"><h4>Stock by warehouse</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">Kolkata HQ</span><div class="bar-fill" style="width:80%;background:#378ADD"></div><span class="bval">₹3.2Cr</span></div>
+<div class="bar-row"><span class="lbl">Mumbai</span><div class="bar-fill" style="width:58%;background:#7F77DD"></div><span class="bval">₹2.3Cr</span></div>
+<div class="bar-row"><span class="lbl">Delhi</span><div class="bar-fill" style="width:45%;background:#1D9E75"></div><span class="bval">₹1.8Cr</span></div>
+<div class="bar-row"><span class="lbl">Gujarat</span><div class="bar-fill" style="width:25%;background:#EF9F27"></div><span class="bval">₹1.0Cr</span></div>
+</div></div>
+<div class="chart-box"><h4>Low stock items</h4>
+<table class="tbl"><tr><th>SKU</th><th>Product</th><th>On hand</th><th>Reorder</th></tr>
+<tr><td>SKU-0042</td><td>Laptop stand</td><td>3</td><td><span class="badge b-r">Now</span></td></tr>
+<tr><td>SKU-0118</td><td>USB-C hub</td><td>8</td><td><span class="badge b-a">Soon</span></td></tr>
+<tr><td>SKU-0234</td><td>Printer toner</td><td>12</td><td><span class="badge b-a">Soon</span></td></tr>
+<tr><td>SKU-0301</td><td>A4 paper ream</td><td>22</td><td><span class="badge b-g">OK</span></td></tr>
+</table></div>
+</div>
+</div>
+<div class="rpt" id="inventory-1">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Receipts this month</div><div class="val">284</div><div class="chg up">+8%</div></div>
+<div class="kpi"><div class="lbl">Deliveries</div><div class="val">318</div><div class="chg up">+12%</div></div>
+<div class="kpi"><div class="lbl">Internal transfers</div><div class="val">64</div><div class="chg">cross-warehouse</div></div>
+<div class="kpi"><div class="lbl">Avg fulfill time</div><div class="val">1.8d</div><div class="chg up">-0.4d</div></div>
+</div>
+<div class="full-chart"><h4>Daily movement trend (receipts vs deliveries)</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">Week 1</span><div class="bar-fill" style="width:60%;background:#1D9E75"></div><span class="bval">In: 68 / Out: 74</span></div>
+<div class="bar-row"><span class="lbl">Week 2</span><div class="bar-fill" style="width:72%;background:#1D9E75"></div><span class="bval">In: 72 / Out: 82</span></div>
+<div class="bar-row"><span class="lbl">Week 3</span><div class="bar-fill" style="width:65%;background:#378ADD"></div><span class="bval">In: 80 / Out: 78</span></div>
+<div class="bar-row"><span class="lbl">Week 4</span><div class="bar-fill" style="width:80%;background:#378ADD"></div><span class="bval">In: 64 / Out: 84</span></div>
+</div></div>
+</div>
+</div>
+
+<div id="mrp" class="report-area">
+<div class="module-title"><i class="ti ti-settings" aria-hidden="true"></i> Manufacturing (MRP) module</div>
+<div class="report-tabs">
+<button class="active" onclick="switchRpt('mrp',0)">Production dashboard</button>
+<button onclick="switchRpt('mrp',1)">BoM & efficiency</button>
+</div>
+<div class="rpt active" id="mrp-0">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Orders in progress</div><div class="val">84</div><div class="chg up">on track</div></div>
+<div class="kpi"><div class="lbl">Completed today</div><div class="val">28</div><div class="chg up">+4 vs plan</div></div>
+<div class="kpi"><div class="lbl">Delayed orders</div><div class="val">9</div><div class="chg dn">-3d avg</div></div>
+<div class="kpi"><div class="lbl">OEE</div><div class="val">78%</div><div class="chg up">+3pts</div></div>
+</div>
+<div class="charts">
+<div class="chart-box"><h4>Production by workcenter</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">Assembly A</span><div class="bar-fill" style="width:88%;background:#7F77DD"></div><span class="bval">88% util</span></div>
+<div class="bar-row"><span class="lbl">Assembly B</span><div class="bar-fill" style="width:74%;background:#7F77DD"></div><span class="bval">74% util</span></div>
+<div class="bar-row"><span class="lbl">Packaging</span><div class="bar-fill" style="width:62%;background:#7F77DD"></div><span class="bval">62% util</span></div>
+<div class="bar-row"><span class="lbl">QC Station</span><div class="bar-fill" style="width:45%;background:#EF9F27"></div><span class="bval">45% util</span></div>
+</div></div>
+<div class="chart-box"><h4>Manufacturing orders</h4>
+<table class="tbl"><tr><th>MO #</th><th>Product</th><th>Qty</th><th>Status</th></tr>
+<tr><td>MO/026/0482</td><td>Product A</td><td>500</td><td><span class="badge b-b">In progress</span></td></tr>
+<tr><td>MO/026/0481</td><td>Product B</td><td>200</td><td><span class="badge b-g">Done</span></td></tr>
+<tr><td>MO/026/0480</td><td>Product C</td><td>150</td><td><span class="badge b-r">Delayed</span></td></tr>
+<tr><td>MO/026/0479</td><td>Product D</td><td>80</td><td><span class="badge b-a">Planned</span></td></tr>
+</table></div>
+</div>
+</div>
+<div class="rpt" id="mrp-1">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Active BoMs</div><div class="val">142</div><div class="chg">products</div></div>
+<div class="kpi"><div class="lbl">Material yield</div><div class="val">94.2%</div><div class="chg up">+1.1%</div></div>
+<div class="kpi"><div class="lbl">Scrap rate</div><div class="val">3.8%</div><div class="chg dn">-0.5%</div></div>
+<div class="kpi"><div class="lbl">Avg prod cost</div><div class="val">₹4,820</div><div class="chg up">-₹180</div></div>
+</div>
+<div class="full-chart"><h4>BoM efficiency by product line</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">Line A</span><div class="bar-fill" style="width:94%;background:#639922"></div><span class="bval">94% yield · 2.1% scrap</span></div>
+<div class="bar-row"><span class="lbl">Line B</span><div class="bar-fill" style="width:88%;background:#1D9E75"></div><span class="bval">88% yield · 4.8% scrap</span></div>
+<div class="bar-row"><span class="lbl">Line C</span><div class="bar-fill" style="width:78%;background:#EF9F27"></div><span class="bval">78% yield · 8.2% scrap</span></div>
+</div></div>
+</div>
+</div>
+
+<div id="purchase" class="report-area">
+<div class="module-title"><i class="ti ti-truck" aria-hidden="true"></i> Purchase module</div>
+<div class="report-tabs">
+<button class="active" onclick="switchRpt('purchase',0)">PO tracker</button>
+<button onclick="switchRpt('purchase',1)">Vendor performance</button>
+</div>
+<div class="rpt active" id="purchase-0">
+<div class="kpis">
+<div class="kpi"><div class="lbl">POs this month</div><div class="val">184</div><div class="chg up">+22%</div></div>
+<div class="kpi"><div class="lbl">Total PO value</div><div class="val">₹6.8Cr</div><div class="chg up">+18%</div></div>
+<div class="kpi"><div class="lbl">Pending receipt</div><div class="val">42</div><div class="chg">in transit</div></div>
+<div class="kpi"><div class="lbl">Overdue POs</div><div class="val">8</div><div class="chg dn">delayed</div></div>
+</div>
+<div class="full-chart"><h4>Purchase orders by status</h4>
+<table class="tbl"><tr><th>PO #</th><th>Vendor</th><th>Value</th><th>Expected</th><th>Status</th></tr>
+<tr><td>PO/26/0912</td><td>Tata Steel</td><td>₹48L</td><td>15 Jul</td><td><span class="badge b-b">In transit</span></td></tr>
+<tr><td>PO/26/0911</td><td>Reliance</td><td>₹32L</td><td>12 Jul</td><td><span class="badge b-g">Received</span></td></tr>
+<tr><td>PO/26/0910</td><td>Mahindra</td><td>₹28L</td><td>8 Jul</td><td><span class="badge b-r">Overdue</span></td></tr>
+<tr><td>PO/26/0909</td><td>HCL Tech</td><td>₹18L</td><td>20 Jul</td><td><span class="badge b-a">Confirmed</span></td></tr>
+</table></div>
+</div>
+<div class="rpt" id="purchase-1">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Active vendors</div><div class="val">68</div><div class="chg">approved</div></div>
+<div class="kpi"><div class="lbl">On-time delivery</div><div class="val">88%</div><div class="chg up">+3%</div></div>
+<div class="kpi"><div class="lbl">Avg lead time</div><div class="val">8.4d</div><div class="chg up">-1.2d</div></div>
+<div class="kpi"><div class="lbl">Quality rejects</div><div class="val">1.4%</div><div class="chg up">-0.3%</div></div>
+</div>
+<div class="full-chart"><h4>Vendor scoreboard</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">Tata Steel</span><div class="bar-fill" style="width:96%;background:#639922"></div><span class="bval">96% OTD · 4.8★</span></div>
+<div class="bar-row"><span class="lbl">Reliance</span><div class="bar-fill" style="width:92%;background:#1D9E75"></div><span class="bval">92% OTD · 4.6★</span></div>
+<div class="bar-row"><span class="lbl">HCL Tech</span><div class="bar-fill" style="width:84%;background:#EF9F27"></div><span class="bval">84% OTD · 4.2★</span></div>
+<div class="bar-row"><span class="lbl">Mahindra</span><div class="bar-fill" style="width:72%;background:#E24B4A"></div><span class="bval">72% OTD · 3.6★</span></div>
+</div></div>
+</div>
+</div>
+
+<div id="hr" class="report-area">
+<div class="module-title"><i class="ti ti-id-badge" aria-hidden="true"></i> Human resources module</div>
+<div class="report-tabs">
+<button class="active" onclick="switchRpt('hr',0)">Headcount & payroll</button>
+<button onclick="switchRpt('hr',1)">Attendance & leave</button>
+</div>
+<div class="rpt active" id="hr-0">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Total employees</div><div class="val">284</div><div class="chg up">+12 this quarter</div></div>
+<div class="kpi"><div class="lbl">Monthly payroll</div><div class="val">₹1.84Cr</div><div class="chg up">+4%</div></div>
+<div class="kpi"><div class="lbl">Open positions</div><div class="val">18</div><div class="chg">recruiting</div></div>
+<div class="kpi"><div class="lbl">Attrition rate</div><div class="val">6.2%</div><div class="chg dn">+0.8%</div></div>
+</div>
+<div class="charts">
+<div class="chart-box"><h4>Headcount by department</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">PMU-1</span><div class="bar-fill" style="width:80%;background:#7F77DD"></div><span class="bval">82</span></div>
+<div class="bar-row"><span class="lbl">PMU-2</span><div class="bar-fill" style="width:72%;background:#7F77DD"></div><span class="bval">74</span></div>
+<div class="bar-row"><span class="lbl">GDC</span><div class="bar-fill" style="width:55%;background:#378ADD"></div><span class="bval">56</span></div>
+<div class="bar-row"><span class="lbl">Finance</span><div class="bar-fill" style="width:28%;background:#1D9E75"></div><span class="bval">29</span></div>
+<div class="bar-row"><span class="lbl">Admin</span><div class="bar-fill" style="width:42%;background:#EF9F27"></div><span class="bval">43</span></div>
+</div></div>
+<div class="chart-box"><h4>Payroll summary</h4>
+<table class="tbl"><tr><th>Grade</th><th>Count</th><th>Avg salary</th><th>Total</th></tr>
+<tr><td>Senior</td><td>48</td><td>₹1.24L</td><td>₹59.5L</td></tr>
+<tr><td>Mid</td><td>126</td><td>₹72K</td><td>₹90.7L</td></tr>
+<tr><td>Junior</td><td>110</td><td>₹38K</td><td>₹41.8L</td></tr>
+</table></div>
+</div>
+</div>
+<div class="rpt" id="hr-1">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Avg attendance</div><div class="val">94.8%</div><div class="chg up">+0.4%</div></div>
+<div class="kpi"><div class="lbl">Leave requests</div><div class="val">84</div><div class="chg">this month</div></div>
+<div class="kpi"><div class="lbl">Approved</div><div class="val">72</div><div class="chg up">86%</div></div>
+<div class="kpi"><div class="lbl">Overtime hours</div><div class="val">1,248h</div><div class="chg dn">+8%</div></div>
+</div>
+<div class="full-chart"><h4>Leave by type — this month</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">Annual</span><div class="bar-fill" style="width:60%;background:#378ADD"></div><span class="bval">38 requests</span></div>
+<div class="bar-row"><span class="lbl">Sick</span><div class="bar-fill" style="width:35%;background:#E24B4A"></div><span class="bval">22 requests</span></div>
+<div class="bar-row"><span class="lbl">Comp off</span><div class="bar-fill" style="width:25%;background:#1D9E75"></div><span class="bval">16 requests</span></div>
+<div class="bar-row"><span class="lbl">Other</span><div class="bar-fill" style="width:13%;background:#EF9F27"></div><span class="bval">8 requests</span></div>
+</div></div>
+</div>
+</div>
+
+<div id="project" class="report-area">
+<div class="module-title"><i class="ti ti-clipboard-list" aria-hidden="true"></i> Project management module</div>
+<div class="report-tabs">
+<button class="active" onclick="switchRpt('project',0)">Project status</button>
+<button onclick="switchRpt('project',1)">Timesheet & billing</button>
+</div>
+<div class="rpt active" id="project-0">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Active projects</div><div class="val">42</div><div class="chg">in progress</div></div>
+<div class="kpi"><div class="lbl">Tasks open</div><div class="val">618</div><div class="chg dn">84 overdue</div></div>
+<div class="kpi"><div class="lbl">On schedule</div><div class="val">31</div><div class="chg up">74%</div></div>
+<div class="kpi"><div class="lbl">At risk</div><div class="val">11</div><div class="chg dn">escalate</div></div>
+</div>
+<div class="charts">
+<div class="chart-box"><h4>Projects by health</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">On track</span><div class="bar-fill" style="width:74%;background:#639922"></div><span class="bval">31</span></div>
+<div class="bar-row"><span class="lbl">At risk</span><div class="bar-fill" style="width:26%;background:#EF9F27"></div><span class="bval">11</span></div>
+<div class="bar-row"><span class="lbl">Delayed</span><div class="bar-fill" style="width:14%;background:#E24B4A"></div><span class="bval">6</span></div>
+<div class="bar-row"><span class="lbl">Completed</span><div class="bar-fill" style="width:38%;background:#7F77DD"></div><span class="bval">16 this quarter</span></div>
+</div></div>
+<div class="chart-box"><h4>Top projects by task count</h4>
+<table class="tbl"><tr><th>Project</th><th>Tasks</th><th>Done</th><th>Health</th></tr>
+<tr><td>31070-PMSC_Tripura</td><td>84</td><td>62</td><td><span class="badge b-g">On track</span></td></tr>
+<tr><td>31000-PMC_Gujarat</td><td>72</td><td>48</td><td><span class="badge b-a">At risk</span></td></tr>
+<tr><td>31160-KMC-SHARP</td><td>68</td><td>52</td><td><span class="badge b-g">On track</span></td></tr>
+<tr><td>30830-LTTA_AFD</td><td>44</td><td>28</td><td><span class="badge b-r">Delayed</span></td></tr>
+</table></div>
+</div>
+</div>
+<div class="rpt" id="project-1">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Hours logged</div><div class="val">4,842h</div><div class="chg">this month</div></div>
+<div class="kpi"><div class="lbl">Billable hours</div><div class="val">3,618h</div><div class="chg up">74.7%</div></div>
+<div class="kpi"><div class="lbl">Billed amount</div><div class="val">₹2.18Cr</div><div class="chg up">+12%</div></div>
+<div class="kpi"><div class="lbl">Utilization</div><div class="val">82%</div><div class="chg up">+4pts</div></div>
+</div>
+<div class="full-chart"><h4>Billable hours by project manager</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">Bikash Ghosh</span><div class="bar-fill" style="width:88%;background:#7F77DD"></div><span class="bval">618h · ₹48.2L</span></div>
+<div class="bar-row"><span class="lbl">Debjyoti Dutta</span><div class="bar-fill" style="width:74%;background:#7F77DD"></div><span class="bval">524h · ₹40.8L</span></div>
+<div class="bar-row"><span class="lbl">Bikash G (PMU2)</span><div class="bar-fill" style="width:62%;background:#378ADD"></div><span class="bval">436h · ₹34.0L</span></div>
+<div class="bar-row"><span class="lbl">Others</span><div class="bar-fill" style="width:45%;background:#1D9E75"></div><span class="bval">2,040h · ₹95L</span></div>
+</div></div>
+</div>
+</div>
+
+<div id="ecommerce" class="report-area">
+<div class="module-title"><i class="ti ti-world" aria-hidden="true"></i> Website & eCommerce module</div>
+<div class="report-tabs">
+<button class="active" onclick="switchRpt('ecommerce',0)">Sales & traffic</button>
+<button onclick="switchRpt('ecommerce',1)">Product performance</button>
+</div>
+<div class="rpt active" id="ecommerce-0">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Online revenue</div><div class="val">₹3.84Cr</div><div class="chg up">+28% MoM</div></div>
+<div class="kpi"><div class="lbl">Orders</div><div class="val">2,418</div><div class="chg up">+22%</div></div>
+<div class="kpi"><div class="lbl">Conversion rate</div><div class="val">3.4%</div><div class="chg up">+0.6pts</div></div>
+<div class="kpi"><div class="lbl">Cart abandon</div><div class="val">68%</div><div class="chg dn">+2%</div></div>
+</div>
+<div class="charts">
+<div class="chart-box"><h4>Traffic by source</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">Organic</span><div class="bar-fill" style="width:72%;background:#639922"></div><span class="bval">42%</span></div>
+<div class="bar-row"><span class="lbl">Direct</span><div class="bar-fill" style="width:48%;background:#378ADD"></div><span class="bval">28%</span></div>
+<div class="bar-row"><span class="lbl">Paid ads</span><div class="bar-fill" style="width:35%;background:#EF9F27"></div><span class="bval">21%</span></div>
+<div class="bar-row"><span class="lbl">Social</span><div class="bar-fill" style="width:15%;background:#D4537E"></div><span class="bval">9%</span></div>
+</div></div>
+<div class="chart-box"><h4>Daily orders this week</h4><div class="bar-chart">
+<div class="bar-row"><span class="lbl">Mon</span><div class="bar-fill" style="width:55%;background:#85B7EB"></div><span class="bval">312</span></div>
+<div class="bar-row"><span class="lbl">Tue</span><div class="bar-fill" style="width:62%;background:#85B7EB"></div><span class="bval">352</span></div>
+<div class="bar-row"><span class="lbl">Wed</span><div class="bar-fill" style="width:80%;background:#378ADD"></div><span class="bval">454</span></div>
+<div class="bar-row"><span class="lbl">Thu</span><div class="bar-fill" style="width:72%;background:#85B7EB"></div><span class="bval">408</span></div>
+<div class="bar-row"><span class="lbl">Fri</span><div class="bar-fill" style="width:90%;background:#185FA5"></div><span class="bval">512</span></div>
+</div></div>
+</div>
+</div>
+<div class="rpt" id="ecommerce-1">
+<div class="kpis">
+<div class="kpi"><div class="lbl">Products listed</div><div class="val">1,284</div><div class="chg">active</div></div>
+<div class="kpi"><div class="lbl">Avg rating</div><div class="val">4.3★</div><div class="chg up">+0.1</div></div>
+<div class="kpi"><div class="lbl">Returns</div><div class="val">3.2%</div><div class="chg up">-0.4%</div></div>
+<div class="kpi"><div class="lbl">Out of stock</div><div class="val">28</div><div class="chg dn">live pages</div></div>
+</div>
+<div class="full-chart"><h4>Top products by online revenue</h4>
+<table class="tbl"><tr><th>Product</th><th>Units sold</th><th>Revenue</th><th>Rating</th></tr>
+<tr><td>Product Alpha</td><td>842</td><td>₹48.2L</td><td><span class="badge b-g">4.8★</span></td></tr>
+<tr><td>Product Beta</td><td>618</td><td>₹38.4L</td><td><span class="badge b-g">4.6★</span></td></tr>
+<tr><td>Product Gamma</td><td>524</td><td>₹24.8L</td><td><span class="badge b-a">3.9★</span></td></tr>
+<tr><td>Product Delta</td><td>384</td><td>₹18.2L</td><td><span class="badge b-g">4.4★</span></td></tr>
+<tr><td>Product Epsilon</td><td>218</td><td>₹12.6L</td><td><span class="badge b-r">3.2★</span></td></tr>
+</table></div>
+</div>
+</div>
+
+<script>
+function switchMod(mod){
+  document.querySelectorAll('.report-area').forEach(el=>el.classList.remove('active'));
+  document.getElementById(mod).classList.add('active');
+  document.querySelectorAll('#modNav button').forEach(btn=>btn.classList.remove('active'));
+  event.target.closest('button').classList.add('active');
+}
+function switchRpt(mod,idx){
+  const area=document.getElementById(mod);
+  area.querySelectorAll('.rpt').forEach((el,i)=>el.classList.toggle('active',i===idx));
+  area.querySelectorAll('.report-tabs button').forEach((btn,i)=>btn.classList.toggle('active',i===idx));
+}
+function updateCRM(sel){
+  const data={'Q2 2026':['1,248','₹4.2Cr','34%'],'Q1 2026':['1,084','₹3.8Cr','31%'],'FY 2025':['4,218','₹14.6Cr','29%']};
+  const v=data[sel.value]||data['Q2 2026'];
+  document.getElementById('c-leads').textContent=v[0];
+  document.getElementById('c-pipe').textContent=v[1];
+  document.getElementById('c-win').textContent=v[2];
+}
+</script>

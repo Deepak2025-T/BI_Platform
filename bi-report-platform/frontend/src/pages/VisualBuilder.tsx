@@ -10,6 +10,7 @@ import Icon from "../components/Icon";
 import { useToast } from "../components/Toast";
 import VisualFields from "../components/VisualFields";
 import VisualFilters from "../components/VisualFilters";
+import PalettePicker from "../components/PalettePicker";
 import VisualGallery from "../components/VisualGallery";
 import VisualJoins from "../components/VisualJoins";
 import VisualWells from "../components/VisualWells";
@@ -72,6 +73,8 @@ export default function VisualBuilder() {
   const [fieldsByTable, setFieldsByTable] = useState<Record<string, VisualField[]>>({});
 
   const [visualId, setVisualId] = useState("column_clustered");
+  // The palette this chart is drawn with, and saved with. Undefined means the default colours.
+  const [palette, setPalette] = useState<string[] | undefined>(undefined);
   const [wells, setWells] = useState<Wells>(emptyWells);
   const [buckets, setBuckets] = useState<Record<string, DateBucket | undefined>>({});
   const [filters, setFilters] = useState<VisualFilter[]>([]);
@@ -94,6 +97,7 @@ export default function VisualBuilder() {
   const [note, setNote] = useState("");
 
   const visual = VISUAL_BY_ID[visualId];
+  const chartStyle = palette?.length ? { ...visual.style, palette } : visual.style;
   const sourceId = source ? sourceIdOf(source) : null;
   const table = picked[0] ?? "";
   const fields = useMemo(() => picked.flatMap((t) => fieldsByTable[t] ?? []), [picked, fieldsByTable]);
@@ -335,7 +339,7 @@ export default function VisualBuilder() {
     return {
       key: editingKey ?? `c${Date.now().toString(36)}${charts.length}`,
       title: chartName(), table, tables: picked, joins, visualId, wells, buckets, filters,
-      spec: built!.spec, chart: built!.chart, style: visual.style, sql: standalone.sql,
+      spec: built!.spec, chart: built!.chart, style: chartStyle, sql: standalone.sql,
     };
   }
 
@@ -373,6 +377,7 @@ export default function VisualBuilder() {
     if (!c) return;
     setEditingKey(key);
     setVisualId(c.visualId);
+    setPalette(c.style?.palette);
     setTitle(c.title);
     setNote("");
     reopening.current = c;
@@ -546,7 +551,7 @@ export default function VisualBuilder() {
                 </span>
               </div>
               <DataChart columns={data.columns} rows={data.rows} chart={built!.chart}
-                style={visual.style} height={360} tableHeight={360} truncated={data.truncated} />
+                style={chartStyle} height={360} tableHeight={360} truncated={data.truncated} />
             </div>
           ) : (
             <div className="builder-blank"><span className="spinner" /><p className="muted">Running the query…</p></div>
@@ -575,6 +580,11 @@ export default function VisualBuilder() {
             )}
             {table && (
               <>
+                <div>
+                  <div className="field-group-label">Colours</div>
+                  <PalettePicker value={palette} onChange={setPalette}
+                    hint="Saved with the chart, so it keeps these colours wherever it is used." />
+                </div>
                 <div>
                   <div className="field-group-label">{visual.label}</div>
                   <VisualWells visual={visual} wells={wells} fields={fields} buckets={buckets}

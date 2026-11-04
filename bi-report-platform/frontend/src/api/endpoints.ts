@@ -1,7 +1,7 @@
 import { api } from "./client";
 import type {
-  ChatResult, DashboardConfig, DashboardDataRequest, DashboardFilter, DrillResult, DashboardParameters, DataSourceInfo, QueryData, Widget, WidgetData,
-  AIModel, AIModelInput, AIModelPublic, AIModelTestResult, AIProvider, AIProviderInfo, Category, CategoryInput, ConnectionInput, ConnectionTestResult, DataConnection, QueryParams, QueryResult, Report,
+  ChatResult, DashboardConfig, DashboardDataRequest, DashboardFilter, DrillResult, DashboardParameters, DataModelDetail, DataModelSummary, DataSourceInfo, QueryData, Widget, WidgetData,
+  AIModel, AIModelInput, ColorPalette, PaletteInput, AIModelPublic, AIModelTestResult, AIProvider, AIProviderInfo, Category, CategoryInput, ConnectionInput, ConnectionTestResult, DataConnection, QueryParams, QueryResult, Report,
   ReportConfig, ReportTemplate, Role, SchemaTables, TemplateInput, User,
 } from "./types";
 
@@ -16,6 +16,8 @@ export const authApi = {
  * (300s by default). The browser must not give up first: the backend keeps going, saves the
  * answer, and the person is told the server didn't answer when in fact it did.
  */
+// Matches AI_TIMEOUT_SECONDS in backend/.env (300s) plus a little. A dashboard gets four times
+// this, because it is an outline call plus one call per chart (AI_DASHBOARD_BUDGET_SECONDS).
 const AI_WAIT = 310000;
 
 export const queryApi = {
@@ -57,6 +59,29 @@ export const categoriesApi = {
   remove: (id: number) => api.delete(`/api/categories/${id}`),
 };
 
+/** Saved chart colour palettes. The built-in ones never reach the server. */
+export const palettesApi = {
+  list: () => api.get<ColorPalette[]>("/api/palettes").then((r) => r.data),
+  create: (body: PaletteInput) => api.post<ColorPalette>("/api/palettes", body).then((r) => r.data),
+  update: (id: number, body: Partial<PaletteInput>) =>
+    api.put<ColorPalette>(`/api/palettes/${id}`, body).then((r) => r.data),
+  /** A copy owned by whoever asked, named "<name> copy". Built-in palettes are copied with create. */
+  duplicate: (id: number) => api.post<ColorPalette>(`/api/palettes/${id}/duplicate`).then((r) => r.data),
+  remove: (id: number) => api.delete(`/api/palettes/${id}`),
+};
+
+export const dataModelsApi = {
+  list: () => api.get<DataModelSummary[]>("/api/data-models").then((r) => r.data),
+  /** One model. With a connection, each entity also carries the fields it really has there. */
+  read: (key: string, sourceId: number | null) =>
+    api.get<DataModelDetail>(`/api/data-models/${key}`, { params: { source_id: sourceId }, timeout: 120000 })
+      .then((r) => r.data),
+  /** Throws away what was cached about the connection and reads the fields again. */
+  refresh: (key: string, sourceId: number | null) =>
+    api.post<DataModelDetail>(`/api/data-models/${key}/refresh`, null, { params: { source_id: sourceId }, timeout: 120000 })
+      .then((r) => r.data),
+};
+
 export const connectionsApi = {
   list: () => api.get<DataConnection[]>("/api/connections").then((r) => r.data),
   create: (body: ConnectionInput) => api.post<DataConnection>("/api/connections", body).then((r) => r.data),
@@ -92,12 +117,13 @@ export const assistantApi = {
   promptIdeas: (sourceId: number | null) =>
     api.get<{ ideas: string[] }>("/api/assistant/prompt-ideas", { params: { source_id: sourceId } })
       .then((r) => r.data.ideas),
-  chat: (body: { source_id: number | null; model_id: number; question: string;
+  chat: (body: { source_id: number | null; model_id: number; question: string; data_model?: string | null;
                  history: { question: string; reply: string; sql: string }[] }) =>
     api.post<ChatResult>("/api/assistant/chat", body, { timeout: AI_WAIT }).then((r) => r.data),
-  widget: (body: { source_id: number | null; model_id: number; question: string }) =>
+  widget: (body: { source_id: number | null; model_id: number; question: string; data_model?: string | null }) =>
     api.post<{ widget: Widget; data: QueryData }>("/api/assistant/widget", body, { timeout: AI_WAIT }).then((r) => r.data),
-  dashboard: (body: { source_id: number | null; model_id: number; prompt: string; parameters: DashboardParameters }) =>
+  dashboard: (body: { source_id: number | null; model_id: number; prompt: string; parameters: DashboardParameters;
+                      data_model?: string | null }) =>
     api.post<{ report: Report; failed: { title: string; error: string }[] }>("/api/assistant/dashboard", body, { timeout: AI_WAIT * 4 })
       .then((r) => r.data),
   save: (body: { source_id: number | null; title: string; prompt: string; widgets: Widget[] }) =>

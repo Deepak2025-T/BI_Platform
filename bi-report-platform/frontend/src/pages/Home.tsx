@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { errorMessage } from "../api/client";
-import { aiModelsApi, assistantApi, reportsApi, templatesApi } from "../api/endpoints";
-import type { AIModelPublic, DataSourceInfo, PlannedChart, Report, ReportTemplate, TemplateCategory } from "../api/types";
+import { aiModelsApi, assistantApi, dataModelsApi, reportsApi, templatesApi } from "../api/endpoints";
+import type { AIModelPublic, DataModelSummary, DataSourceInfo, PlannedChart, Report, ReportTemplate, TemplateCategory } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import CategoryBadge from "../components/CategoryBadge";
 import FlowDiagram, { type FlowStep } from "../components/FlowDiagram";
@@ -11,6 +11,7 @@ import TemplateCard from "../components/TemplateCard";
 import TemplateForm from "../components/TemplateForm";
 import { useToast } from "../components/Toast";
 import { type AskModel, rememberModel, rememberedModel } from "../lib/aiModels";
+import { bySolution, rememberModel as rememberDataModel, rememberedModel as rememberedDataModel } from "../lib/dataModel";
 import { shortDate } from "../lib/format";
 import { useCountUp, useReveal } from "../lib/motion";
 import { TEMPLATE_CATEGORIES } from "../lib/report";
@@ -51,7 +52,8 @@ export default function Home() {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
-  const state = location.state as { prompt?: string; template?: ReportTemplate; model?: AskModel | null; mode?: Mode } | null;
+  const state = location.state as { prompt?: string; template?: ReportTemplate; model?: AskModel | null;
+                                   mode?: Mode; dataModel?: string; source?: string } | null;
   const [prompt, setPrompt] = useState(state?.prompt ?? state?.template?.prompt ?? "");
   const [template, setTemplate] = useState<ReportTemplate | null>(state?.template ?? null);
   const [reports, setReports] = useState<Report[]>([]);
@@ -62,7 +64,11 @@ export default function Home() {
   const [modelChoice, setModelChoice] = useState<string>(state?.model ? String(state.model.id) : "");
   const [mode, setMode] = useState<Mode>(state?.mode ?? (state?.template ? "build" : "chat"));
   const [sources, setSources] = useState<DataSourceInfo[]>([]);
-  const [sourceChoice, setSourceChoice] = useState("builtin");
+  const [sourceChoice, setSourceChoice] = useState(state?.source ?? "builtin");
+  // The OpenPages object model to build against: which object types exist, and how they join.
+  // Only OpenPages connections have one, so the picker only appears for those.
+  const [dataModels, setDataModels] = useState<DataModelSummary[]>([]);
+  const [dataModel, setDataModel] = useState(state?.dataModel ?? "");
   const [params, setParams] = useState({ date_from: "", date_to: "", filters: "" });
   // Chart shapes to hold the model to; empty lets it pick whatever fits each chart.
   const [charts, setCharts] = useState<PlannedChart[]>([]);
@@ -95,9 +101,11 @@ export default function Home() {
     }).catch(() => { setModels([]); setModelChoice("builtin"); });
     assistantApi.sources().then((list) => {
       setSources(list);
-      const last = rememberedSource();
+      const last = state?.source ?? rememberedSource();
       if (last && list.some((x) => sourceValue(x) === last)) setSourceChoice(last);
     }).catch(() => setSources([]));
+    dataModelsApi.list().then(setDataModels).catch(() => setDataModels([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   // Every database suggests its own questions, so the chips are never about someone else's data.
@@ -117,7 +125,17 @@ export default function Home() {
   const chooseModel = (v: string) => { setModelChoice(v); rememberModel(v); };
 
   const chosenSource = sources.find((x) => sourceValue(x) === sourceChoice) ?? null;
-  const chooseSource = (v: string) => { setSourceChoice(v); rememberSource(v); };
+  const isOpenPages = chosenSource?.db_type === "openpages";
+  const chooseSource = (v: string) => {
+    setSourceChoice(v);
+    rememberSource(v);
+    // Each database remembers its own model; a model from another one would name types this
+    // database has never heard of.
+    setDataModel(rememberedDataModel(v));
+  };
+  const chooseDataModel = (v: string) => { setDataModel(v); rememberDataModel(sourceChoice, v); };
+  // A model only applies where there is one, so it is never sent for a plain SQL database.
+  const dataModelSent = isOpenPages && dataModel ? dataModel : null;
 
   /**
    * Choosing a template. There are two kinds, and they behave differently:
@@ -196,7 +214,8 @@ export default function Home() {
     const text = prompt.trim();
     if (text.length < 3 || needsModel) return;
     if (mode === "chat" && chosenModel) {
-      navigate("/chat", { state: { source: sourceChoice, model: String(chosenModel.id), question: text } });
+      navigate("/chat", { state: { source: sourceChoice, model: String(chosenModel.id), question: text,
+                                   dataModel: dataModelSent } });
     } else if (classic || !chosenModel) {
       navigate("/ask", { state: { prompt: text, template: template ?? undefined,
                                   model: chosenModel ? { id: chosenModel.id, name: chosenModel.name } : null } });
@@ -207,6 +226,7 @@ export default function Home() {
         prompt: text,
         parameters: { date_from: params.date_from || null, date_to: params.date_to || null,
                       filters: params.filters.trim(), charts },
+        dataModel: dataModelSent,
       };
       navigate("/build", { state: req });
     }
@@ -331,6 +351,24 @@ export default function Home() {
                       {sources.length === 0 && <option value="builtin">Sample sales data</option>}
                     </select>
                   </label>
+                  {isOpenPages && dataModels.length > 0 && (
+                    <label className="model-picker">
+                      <span className="muted small">Data model</span>
+                      <select value={dataModel} onChange={(e) => chooseDataModel(e.target.value)}
+                        aria-label="OpenPages data model" disabled={!!readyMade}>
+                        <option value="">Every shared object type</option>
+                        {bySolution(dataModels).map(([solution, list]) => (
+                          <optgroup key={solution} label={solution}>
+                            {list.map((m) => (
+                              <option key={m.key} value={m.key}>
+                                {m.namespace}{m.is_default ? " (default)" : ""} &middot; {m.entity_count} types
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   <label className="model-picker">
                     <span className="muted small">AI model</span>
                     <select value={modelChoice} onChange={(e) => chooseModel(e.target.value)}

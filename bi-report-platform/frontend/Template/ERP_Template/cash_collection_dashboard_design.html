@@ -1,0 +1,151 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+.dash{padding:16px;background:var(--color-background-tertiary)}
+.top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+.dash-title{font-size:16px;font-weight:500;color:var(--color-text-primary)}
+.filters{display:flex;gap:8px;flex-wrap:wrap}
+.filter-pill{background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:6px;padding:4px 10px;font-size:10px;color:var(--color-text-secondary);display:flex;flex-direction:column;gap:1px;min-width:64px}
+.filter-pill-label{font-size:9px;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.3px}
+.kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.kpi{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:12px 14px;position:relative;overflow:hidden}
+.kpi-label{font-size:10px;color:var(--color-text-secondary);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
+.kpi-value{font-size:22px;font-weight:500;color:var(--color-text-primary)}
+.kpi-sub{font-size:11px;margin-top:2px}
+.kpi-bar{position:absolute;bottom:0;left:0;height:3px}
+.mid-row{display:grid;grid-template-columns:1fr 1.3fr;gap:10px;margin-bottom:12px}
+.card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:14px}
+.card-title{font-size:11px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px}
+.donut-wrap{display:flex;flex-direction:column;align-items:center;gap:10px}
+.legend-row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--color-text-secondary)}
+.legend-dot{width:8px;height:8px;border-radius:50%}
+.table-wrap{font-size:11px}
+.t-head{display:grid;grid-template-columns:1.6fr 1fr 1fr;padding:6px 8px;background:var(--color-background-secondary);border-radius:4px 4px 0 0;font-size:10px;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.3px;font-weight:500}
+.t-head div:not(:first-child){text-align:right}
+.t-row{display:grid;grid-template-columns:1.6fr 1fr 1fr;padding:6px 8px;border-bottom:0.5px solid var(--color-border-tertiary);align-items:center}
+.t-row div:not(:first-child){text-align:right;color:var(--color-text-secondary)}
+.t-row:last-child{border-bottom:none}
+.t-name{color:var(--color-text-primary);display:flex;align-items:center;gap:6px}
+.t-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.t-pos{color:#0F6E56!important}
+.t-neg{color:#A32D2D!important}
+.bot-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.trend-bars{display:flex;align-items:flex-end;gap:10px;height:120px;padding:0 4px}
+.trend-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
+.t-bar{width:100%;border-radius:3px 3px 0 0;min-height:2px}
+.t-bar-lbl{font-size:9px;color:var(--color-text-tertiary)}
+.account-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--color-border-tertiary)}
+.account-row:last-child{border-bottom:none}
+.account-rank{font-size:10px;color:var(--color-text-tertiary);min-width:14px}
+.account-name{font-size:11px;color:var(--color-text-primary);flex:1}
+.account-bar-wrap{width:60px;height:6px;background:var(--color-background-secondary);border-radius:3px;overflow:hidden}
+.account-bar{height:100%;border-radius:3px}
+.account-amt{font-size:10px;color:var(--color-text-secondary);min-width:50px;text-align:right}
+</style>
+
+<div class="dash">
+  <div class="top-bar">
+    <div class="dash-title">Cash collection report</div>
+    <div class="filters">
+      <div class="filter-pill"><span class="filter-pill-label">Account</span>All</div>
+      <div class="filter-pill"><span class="filter-pill-label">Region</span>All</div>
+      <div class="filter-pill"><span class="filter-pill-label">Department</span>All</div>
+      <div class="filter-pill"><span class="filter-pill-label">Project</span>All</div>
+      <div class="filter-pill"><span class="filter-pill-label">Posting date</span>May 2026</div>
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="kpi-label">Cash collected — current</div>
+      <div class="kpi-value" style="color:#0F6E56">₹4.59 Cr</div>
+      <div class="kpi-sub" style="color:#0F6E56">May 2026</div>
+      <div class="kpi-bar" style="width:100%;background:#1D9E75"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Cash collected — previous</div>
+      <div class="kpi-value" style="color:#185FA5">₹4.21 Cr</div>
+      <div class="kpi-sub" style="color:#185FA5">April 2026</div>
+      <div class="kpi-bar" style="width:100%;background:#378ADD"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Delta (MoM)</div>
+      <div class="kpi-value" style="color:#0F6E56">▲ ₹0.38 Cr</div>
+      <div class="kpi-sub" style="color:#0F6E56">↑ 9.0% vs prev month</div>
+      <div class="kpi-bar" style="width:90%;background:#1D9E75"></div>
+    </div>
+  </div>
+
+  <div class="mid-row">
+    <div class="card">
+      <div class="card-title">Cash collection by account</div>
+      <div class="donut-wrap">
+        <svg viewBox="0 0 160 160" width="150" height="150">
+          <circle cx="80" cy="80" r="60" fill="none" stroke="#1D9E75" stroke-width="28" stroke-dasharray="226 377" stroke-dashoffset="0" transform="rotate(-90 80 80)"/>
+          <circle cx="80" cy="80" r="60" fill="none" stroke="#185FA5" stroke-width="28" stroke-dasharray="113 377" stroke-dashoffset="-226" transform="rotate(-90 80 80)"/>
+          <circle cx="80" cy="80" r="60" fill="none" stroke="#EF9F27" stroke-width="28" stroke-dasharray="38 377" stroke-dashoffset="-339" transform="rotate(-90 80 80)"/>
+        </svg>
+        <div class="legend-row">
+          <div class="legend-item"><div class="legend-dot" style="background:#1D9E75"></div>Indian Oversea Bank 60%</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#185FA5"></div>Debtors cleared 30%</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#EF9F27"></div>Other accounts 10%</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Account-wise debit / credit</div>
+      <div class="table-wrap">
+        <div class="t-head"><div>Account</div><div>Current</div><div>Previous</div></div>
+        <div class="t-row"><div class="t-name"><span class="t-dot" style="background:#1D9E75"></span>Indian Oversea Bank</div><div class="t-pos">₹5.30 Cr</div><div>₹4.21 Cr</div></div>
+        <div class="t-row"><div class="t-name"><span class="t-dot" style="background:#888780"></span>Cash with Finance</div><div>₹0.00</div><div>₹0.00</div></div>
+        <div class="t-row"><div class="t-name"><span class="t-dot" style="background:#185FA5"></span>Debtors</div><div class="t-pos">₹1.65 Cr</div><div>₹1.30 Cr</div></div>
+        <div class="t-row"><div class="t-name" style="font-weight:500"><span class="t-dot" style="background:#3d3d3a"></span>Total</div><div class="t-pos" style="font-weight:500">₹6.95 Cr</div><div style="font-weight:500">₹5.51 Cr</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bot-row">
+    <div class="card">
+      <div class="card-title">Monthly cash trend (INR Cr)</div>
+      <div class="trend-bars">
+        <div class="trend-col"><div class="t-bar" style="height:48px;background:#1D9E75"></div><div class="t-bar-lbl">Jan</div></div>
+        <div class="trend-col"><div class="t-bar" style="height:62px;background:#1D9E75"></div><div class="t-bar-lbl">Feb</div></div>
+        <div class="trend-col"><div class="t-bar" style="height:55px;background:#1D9E75"></div><div class="t-bar-lbl">Mar</div></div>
+        <div class="trend-col"><div class="t-bar" style="height:84px;background:#EF9F27"></div><div class="t-bar-lbl">Apr</div></div>
+        <div class="trend-col"><div class="t-bar" style="height:92px;background:#0F6E56"></div><div class="t-bar-lbl">May</div></div>
+        <div class="trend-col"><div class="t-bar" style="height:20px;background:#B4B2A9"></div><div class="t-bar-lbl">Jun</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Top accounts by cash collected</div>
+      <div class="account-row">
+        <span class="account-rank">1</span>
+        <span class="account-name">Indian Oversea Bank A/C 290</span>
+        <div class="account-bar-wrap"><div class="account-bar" style="width:100%;background:#185FA5"></div></div>
+        <span class="account-amt">₹5.30 Cr</span>
+      </div>
+      <div class="account-row">
+        <span class="account-rank">2</span>
+        <span class="account-name">10041001 Debtors</span>
+        <div class="account-bar-wrap"><div class="account-bar" style="width:31%;background:#185FA5"></div></div>
+        <span class="account-amt">₹1.65 Cr</span>
+      </div>
+      <div class="account-row">
+        <span class="account-rank">3</span>
+        <span class="account-name">Mobilization advances</span>
+        <div class="account-bar-wrap"><div class="account-bar" style="width:8%;background:#185FA5"></div></div>
+        <span class="account-amt">₹0.42 Cr</span>
+      </div>
+      <div class="account-row">
+        <span class="account-rank">4</span>
+        <span class="account-name">Cash with Finance</span>
+        <div class="account-bar-wrap"><div class="account-bar" style="width:0%;background:#185FA5"></div></div>
+        <span class="account-amt">₹0.00 Cr</span>
+      </div>
+    </div>
+  </div>
+</div>

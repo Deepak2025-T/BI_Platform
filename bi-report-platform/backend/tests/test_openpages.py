@@ -32,9 +32,38 @@ class FakeOpenPages(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
-        if self.path == "/oauth/token":
+        if self.path == "/oauth/token-moved":  # same host: the hop is re-sent as a POST
+            self.rfile.read(int(self.headers["Content-Length"]))  # drain, or the socket is reset
+            self.send_response(302)
+            self.send_header("Location", "/oauth/token")
+            self.send_header("Content-Length", "0")
+            return self.end_headers()
+        if self.path == "/oauth/token-sso":  # a gateway sending the caller off to sign in
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(302)
+            self.send_header("Location", "https://sso.example.com/login")
+            self.send_header("Content-Length", "0")
+            return self.end_headers()
+        if self.path in ("/oauth/token", "/oauth/token-basic", "/oauth/token-html"):
             form = parse_qs(self.rfile.read(int(self.headers["Content-Length"])).decode())
-            if form.get("client_secret") == ["oauth-secret"] and form.get("grant_type") == ["client_credentials"]:
+            if form.get("grant_type") != ["client_credentials"]:
+                return self._send(400, {"error": "unsupported_grant_type"})
+            if self.path == "/oauth/token-html":  # a wrong URL: a sign-in page, not a token
+                body = b"<html><body>Sign in</body></html>"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                return self.wfile.write(body)
+            if self.path == "/oauth/token-basic":
+                # WebSphere Liberty's provider, which OpenPages uses: the client must be a Basic
+                # header, and credentials in the body alone are not accepted.
+                want = "Basic " + base64.b64encode(b"bi:oauth-secret").decode()
+                if self.headers.get("Authorization") != want:
+                    return self._send(401, {"error": "invalid_client",
+                                            "error_description": "client authentication failed"})
+                return self._send(200, {"access_token": "tok-123", "expires_in": 3600})
+            if form.get("client_secret") == ["oauth-secret"]:
                 return self._send(200, {"access_token": "tok-123", "expires_in": 3600})
             return self._send(401, {"error": "invalid_client"})
         self._send(404, {})
@@ -171,7 +200,46 @@ def test_oauth_client_credentials(client, manager, op_server):
     assert client.post("/api/connections/test", headers=manager, json=body).json()["ok"]
     body["password"] = "nope"
     res = client.post("/api/connections/test", headers=manager, json=body).json()
-    assert not res["ok"] and "token server refused" in res["message"]
+    # The server's own words, not a guess: "invalid_client" is a wrong id or secret, and the
+    # message has to say so, because the same failure used to read "no access_token".
+    assert not res["ok"] and "invalid_client" in res["message"]
+
+
+def test_oauth_against_a_server_that_wants_the_client_in_a_basic_header(client, manager, op_server):
+    """WebSphere Liberty, which serves OpenPages' /oauth2/endpoint/<provider>/token, authenticates
+    the client with a Basic header and ignores credentials sent only in the body."""
+    body = {"db_type": "openpages", "host": op_server + "/grc/api", "password": "oauth-secret",
+            "options": {"auth_type": "oauth2", "client_id": "bi",
+                        "token_url": op_server + "/oauth/token-basic"}}
+    assert client.post("/api/connections/test", headers=manager, json=body).json()["ok"]
+
+
+def test_a_token_url_that_redirects_on_the_same_server_is_followed(client, manager, op_server):
+    """A 302 to another path on the same host is a moved endpoint: re-POST there. Letting a client
+    follow it would turn the POST into a GET and drop the form, which is why it is done by hand."""
+    body = {"db_type": "openpages", "host": op_server + "/grc/api", "password": "oauth-secret",
+            "options": {"auth_type": "oauth2", "client_id": "bi",
+                        "token_url": op_server + "/oauth/token-moved"}}
+    assert client.post("/api/connections/test", headers=manager, json=body).json()["ok"]
+
+
+def test_a_token_url_that_redirects_off_the_server_keeps_the_secret(client, manager, op_server):
+    """A redirect to a sign-in page must not be followed: the client secret would go to whoever
+    answered. The message has to name where it was being sent."""
+    body = {"db_type": "openpages", "host": op_server + "/grc/api", "password": "oauth-secret",
+            "options": {"auth_type": "oauth2", "client_id": "bi",
+                        "token_url": op_server + "/oauth/token-sso"}}
+    res = client.post("/api/connections/test", headers=manager, json=body).json()
+    assert not res["ok"]
+    assert "sso.example.com" in res["message"] and "not sent there" in res["message"]
+
+
+def test_a_token_url_that_answers_with_a_page_says_the_url_is_wrong(client, manager, op_server):
+    body = {"db_type": "openpages", "host": op_server + "/grc/api", "password": "oauth-secret",
+            "options": {"auth_type": "oauth2", "client_id": "bi",
+                        "token_url": op_server + "/oauth/token-html"}}
+    res = client.post("/api/connections/test", headers=manager, json=body).json()
+    assert not res["ok"] and "token URL is probably wrong" in res["message"]
 
 
 def test_mtls_private_key_is_never_returned(client, manager, op_server):

@@ -11,6 +11,8 @@ export interface BuildRequest {
   model: { id: number; name: string };
   prompt: string;
   parameters: DashboardParameters;
+  /** The OpenPages object model to build against, or null for every shared object type. */
+  dataModel?: string | null;
 }
 
 /** Builds a dashboard with the AI model, then opens it for arranging and publishing. */
@@ -24,7 +26,8 @@ export default function BuildDashboard() {
   const started = useRef(false); // StrictMode runs effects twice in development; build once
 
   const steps = req ? [
-    `Reading the tables in ${req.source.name}`,
+    req.dataModel ? `Reading the ${req.dataModel.split("/").pop()?.toUpperCase()} model on ${req.source.name}`
+      : `Reading the tables in ${req.source.name}`,
     `Planning the charts with ${req.model.name}`,
     "Writing the SQL and checking it only reads data",
     "Running each query and fixing any that fail",
@@ -34,7 +37,8 @@ export default function BuildDashboard() {
     if (!req || started.current) return;
     started.current = true;
     const timer = window.setInterval(() => setStep((s) => Math.min(s + 1, 3)), 4000);
-    assistantApi.dashboard({ source_id: req.source.id, model_id: req.model.id, prompt: req.prompt, parameters: req.parameters })
+    assistantApi.dashboard({ source_id: req.source.id, model_id: req.model.id, prompt: req.prompt,
+                             parameters: req.parameters, data_model: req.dataModel ?? null })
       .then((res) => {
         toast(`Built "${res.report.title}" with ${isDashboard(res.report.config) ? res.report.config.widgets.length : 0} charts. Arrange them, then publish.`);
         navigate(`/reports/${res.report.id}/edit`, { replace: true, state: { failed: res.failed } });
@@ -58,7 +62,7 @@ export default function BuildDashboard() {
             <div className="alert alert-error">{error}</div>
             <div className="row-wrap">
               <button className="btn btn-primary" onClick={back}>Change the request</button>
-              <button className="btn btn-ghost" onClick={() => navigate("/chat", { state: { source: req.source.id === null ? "builtin" : String(req.source.id), model: String(req.model.id), question: req.prompt } })}>
+              <button className="btn btn-ghost" onClick={() => navigate("/chat", { state: { source: req.source.id === null ? "builtin" : String(req.source.id), model: String(req.model.id), question: req.prompt, dataModel: req.dataModel ?? null } })}>
                 Ask it in chat instead
               </button>
             </div>

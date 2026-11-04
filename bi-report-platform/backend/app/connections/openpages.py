@@ -37,6 +37,7 @@ AUTH_TYPES = {
 }
 IAM_TOKEN_URL = "https://iam.cloud.ibm.com/identity/token"
 TIMEOUT = 30  # seconds per request
+MAX_TOKEN_REDIRECTS = 3  # same-host hops a token request will follow before giving up
 MAX_PAGES = 20
 
 # Fields every object type has.
@@ -85,6 +86,7 @@ class OPSpec:
     secret: str = ""  # password, client secret, JWT or IAM API key, depending on auth_type
     client_id: str = ""
     token_url: str = ""
+    scope: str = ""  # OAuth 2.0: only when the provider insists on one
     client_cert: str = ""  # PEM
     client_key: str = ""  # PEM
     verify: bool = True
@@ -182,28 +184,65 @@ class OpenPagesClient:
                     raise OpenPagesError("Enter the IBM Cloud API key.")
                 url = self.spec.token_url.strip() or IAM_TOKEN_URL
                 data = {"grant_type": "urn:ibm:params:oauth:grant-type:apikey", "apikey": self.spec.secret}
+                attempts = [(data, None)]
             else:
                 if not self.spec.token_url.strip() or not self.spec.client_id or not self.spec.secret:
                     raise OpenPagesError("Enter the token URL, client ID and client secret.")
                 url = self.spec.token_url.strip()
-                data = {"grant_type": "client_credentials", "client_id": self.spec.client_id,
-                        "client_secret": self.spec.secret}
-            if urlparse(url).scheme != "https" and urlparse(url).hostname not in ("localhost", "127.0.0.1"):
+                data = {"grant_type": "client_credentials"}
+                if self.spec.scope.strip():
+                    data["scope"] = self.spec.scope.strip()
+                # Two ways to present the client, in the order OAuth 2.0 prefers them. WebSphere
+                # Liberty, which serves OpenPages' /oauth2/endpoint/<provider>/token, is configured
+                # for client_secret_basic by default and answers a body-only request without an
+                # access_token; other servers only accept the credentials in the body.
+                attempts = [({**data}, httpx.BasicAuth(self.spec.client_id, self.spec.secret)),
+                            ({**data, "client_id": self.spec.client_id,
+                              "client_secret": self.spec.secret}, None)]
+            if not _secure_enough(url):
                 raise OpenPagesError("The token URL must start with https://.")
+            problem = ""
+            for form, auth in attempts:
+                r, redirect_problem = self._post_token(url, form, auth)
+                if r is None:
+                    # A redirect has nothing to do with how the client was presented, so trying the
+                    # other way would only repeat it: say what happened and stop.
+                    raise OpenPagesError(f"The token URL didn't answer with a token. {redirect_problem}")
+                token, expires, problem = _read_token(r)
+                if token:
+                    self._token = (token, time.time() + expires)
+                    return token
+            how = "as a Basic header and in the body" if len(attempts) > 1 else ""
+            raise OpenPagesError(f"The token server didn't return an access token{' (tried the client ' + how + ')' if how else ''}. {problem}".strip())
+
+    def _post_token(self, url: str, form: dict, auth) -> tuple[httpx.Response | None, str]:
+        """POSTs the token request, following redirects by hand. httpx doesn't follow them, and
+        letting a client follow a 302 would turn the POST into a GET and drop the form, so each hop
+        is re-sent as a POST. A redirect off this host is never followed: it would hand the client
+        secret to whatever answered, which for an SSO login page is exactly the wrong thing."""
+        seen = []
+        for _ in range(MAX_TOKEN_REDIRECTS + 1):
             try:
-                r = httpx.post(url, data=data, headers={"Accept": "application/json"}, timeout=TIMEOUT, verify=self._verify)
+                r = httpx.post(url, data=form, auth=auth, timeout=TIMEOUT, verify=self._verify,
+                               headers={"Accept": "application/json",
+                                        "Content-Type": "application/x-www-form-urlencoded"})
             except httpx.HTTPError as err:
                 raise OpenPagesError(f"Couldn't reach the token server: {_short(err)}")
-            if r.status_code >= 400:
-                raise OpenPagesError(f"The token server refused the sign-in (HTTP {r.status_code}). Check the client ID, secret or API key.")
-            try:
-                body = r.json()
-                token = str(body["access_token"])
-            except (ValueError, KeyError, TypeError):
-                raise OpenPagesError("The token server's answer had no access_token.")
-            expires = float(body.get("expires_in") or 3600)
-            self._token = (token, time.time() + expires)
-            return token
+            if r.status_code not in (301, 302, 303, 307, 308):
+                return r, ""
+            target = r.headers.get("location", "").strip()
+            if not target:
+                return None, (f"It answered HTTP {r.status_code} (a redirect) with no Location header, so there "
+                              "is nowhere to follow. Check the token URL with your OpenPages administrator.")
+            target = urljoin(url, target)
+            if urlparse(target).netloc != urlparse(url).netloc or not _secure_enough(target):
+                return None, (f"It answered HTTP {r.status_code} and redirected to {_clip(target, 120)}, on another "
+                              "server. The client secret was not sent there. A token endpoint should answer "
+                              "directly; this one looks like it sits behind a sign-in page or gateway.")
+            seen.append(target)
+            url = target
+        return None, (f"It kept redirecting ({' -> '.join(_clip(u, 80) for u in seen)}). "
+                      "Check the token URL with your OpenPages administrator.")
 
     def get(self, path_or_url: str, params: dict | None = None):
         url = path_or_url if path_or_url.startswith("http") else f"{self.base}/{path_or_url.lstrip('/')}"
@@ -219,7 +258,12 @@ class OpenPagesClient:
             r = httpx.get(url, params=params, headers=self._headers(), auth=self._auth(), timeout=TIMEOUT,
                           verify=self._verify)
         if r.status_code in (401, 403):
-            raise OpenPagesError(f"OpenPages refused the sign-in or the account can't do this (HTTP {r.status_code}).")
+            # A 401 on basic auth is nearly always the username: OpenPages wants the login name
+            # held in its own user record, which is often not the person's email address.
+            hint = (" Check the username is the OpenPages login name (often not the email address) "
+                    "and the password is current." if self.spec.auth_type == "basic" and r.status_code == 401 else "")
+            raise OpenPagesError(f"OpenPages refused the sign-in or the account can't do this "
+                                 f"(HTTP {r.status_code}).{hint}")
         if r.status_code >= 400:
             raise OpenPagesError(f"OpenPages returned HTTP {r.status_code}: {_error_text(r)}")
         try:
@@ -548,6 +592,50 @@ def _enum_names(f: dict) -> list[str]:
         values = values.get("enumValue", values.get("items", []))
     names = [str(v.get("name") or v.get("localizedLabel")) for v in values if isinstance(v, dict) and (v.get("name") or v.get("localizedLabel"))]
     return names[:50]
+
+
+def _read_token(r: httpx.Response) -> tuple[str, float, str]:
+    """Reads a token response. Returns (token, seconds_valid, problem). The problem says what the
+    server actually sent, because "no access_token" covers an OAuth error, an HTML sign-in page and
+    a wrong URL alike, and they need different fixes."""
+    try:
+        body = r.json()
+    except ValueError:
+        kind = r.headers.get("content-type", "").split(";")[0] or "no content type"
+        if "html" in kind:
+            return "", 0.0, (f"It answered HTTP {r.status_code} with an HTML page, not JSON: the token URL is "
+                             "probably wrong. It should end in /token.")
+        return "", 0.0, f"It answered HTTP {r.status_code} with {kind}, not JSON: {_clip(r.text)}"
+    if not isinstance(body, dict):
+        return "", 0.0, f"It answered HTTP {r.status_code} with {_clip(r.text)}."
+    token = body.get("access_token")
+    if token:
+        return str(token), float(body.get("expires_in") or 3600), ""
+    # An OAuth 2.0 error response (RFC 6749 §5.2): "invalid_client" means the id or secret was
+    # rejected, "unauthorized_client" that this client may not use client_credentials at all.
+    error = str(body.get("error") or "").strip()
+    detail = str(body.get("error_description") or body.get("error_message") or "").strip()
+    if error or detail:
+        hint = {
+            "invalid_client": " Check the client ID and secret.",
+            "unauthorized_client": " The OAuth provider doesn't allow this client the "
+                                   "client_credentials grant; enable it in OpenPages.",
+            "invalid_scope": " The scope this client needs wasn't accepted.",
+            "invalid_grant": " The OAuth provider rejected the grant.",
+        }.get(error, "")
+        return "", 0.0, f"It answered HTTP {r.status_code}: {error or 'error'}{' - ' + detail if detail else ''}.{hint}"
+    return "", 0.0, f"It answered HTTP {r.status_code} with JSON that has no access_token: {_clip(r.text)}"
+
+
+def _secure_enough(url: str) -> bool:
+    """https anywhere, or plain http on this machine, which is how the tests and local servers run.
+    Credentials are only ever sent to a URL that passes this."""
+    parsed = urlparse(url)
+    return parsed.scheme == "https" or parsed.hostname in ("localhost", "127.0.0.1")
+
+
+def _clip(text: str, limit: int = 200) -> str:
+    return " ".join((text or "").split())[:limit] or "an empty body"
 
 
 def _short(err: Exception) -> str:

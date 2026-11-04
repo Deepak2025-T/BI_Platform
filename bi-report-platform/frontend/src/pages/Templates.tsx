@@ -9,7 +9,7 @@ import Icon from "../components/Icon";
 import TemplateCard from "../components/TemplateCard";
 import TemplateForm from "../components/TemplateForm";
 import { useToast } from "../components/Toast";
-import { CATEGORY_BLURBS, TEMPLATE_CATEGORIES } from "../lib/report";
+import { CATEGORY_BLURBS, MODULE_LABELS, moduleGroups, TEMPLATE_CATEGORIES } from "../lib/report";
 
 type Filter = "all" | "mine" | "shared" | "builtin";
 const FILTERS: [Filter, string][] = [["all", "All"], ["mine", "Mine"], ["shared", "Shared"], ["builtin", "Built-in"]];
@@ -66,7 +66,7 @@ export default function Templates() {
 
   const duplicate = (t: ReportTemplate) => setForm({
     initial: { name: `${t.name} (copy)`, description: t.description, prompt: t.prompt, color: t.color,
-               category: t.category, layout: t.layout, visibility: "private" },
+               category: t.category, module: t.module, layout: t.layout, visibility: "private" },
   });
   // Dashboard templates build on a connection; the others start a question on the Ask page.
   const use = (t: ReportTemplate) => (t.layout.kind === "dashboard" ? setBuilding(t) : navigate("/", { state: { template: t } }));
@@ -112,8 +112,16 @@ export default function Templates() {
                   <h2 className="h2">{category} <span className="muted small">({list.length})</span></h2>
                   <span className="muted small">{CATEGORY_BLURBS[category]}</span>
                 </div>
+                {moduleGroups(list).map(([module, inModule]) => (
+                  <section key={module || "_"} className="stack tpl-module">
+                    {module && (
+                      <div className="row-between">
+                        <h3 className="h3">{module} <span className="muted small">({inModule.length})</span></h3>
+                        <span className="muted small">{MODULE_LABELS[module] ?? ""}</span>
+                      </div>
+                    )}
                 <div className="tpl-grid">
-                  {list.map((t) => (
+                  {inModule.map((t) => (
                     <TemplateCard key={t.id} template={t} onUse={() => use(t)} actions={
                       <>
                         <button className="btn btn-primary btn-sm" onClick={() => use(t)}>Use</button>
@@ -131,6 +139,8 @@ export default function Templates() {
                     } />
                   ))}
                 </div>
+                  </section>
+                ))}
               </section>
             ))}
             {filter !== "builtin" && !search && (

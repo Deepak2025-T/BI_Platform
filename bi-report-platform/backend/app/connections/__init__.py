@@ -22,5 +22,6 @@ def openpages_spec(c: DataConnection, password: str | None = None, client_key: s
         client_key = crypto.decrypt(o.get("client_key_encrypted", ""))
     return OPSpec(base_url=c.host, auth_type=o.get("auth_type", "basic"), username=c.username, secret=password,
                   client_id=o.get("client_id", ""), token_url=o.get("token_url", ""),
+                  scope=o.get("scope", ""),
                   client_cert=o.get("client_cert", ""), client_key=client_key,
                   verify=not o.get("trust_server_certificate", False))

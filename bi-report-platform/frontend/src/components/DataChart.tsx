@@ -5,6 +5,7 @@ import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import type { Cell, ChartSpec, WidgetStyle } from "../api/types";
 import { isDark } from "../lib/cardColors";
+import { meaningColor, normalizeColor, ruleColor, worthColoringByMeaning } from "../lib/colors";
 import { columnLabel, formatValue } from "../lib/format";
 import { delta, tone } from "../lib/history";
 import ResultTable from "./ResultTable";
@@ -50,7 +51,12 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
   const xi = columns.indexOf(chart.x);
   const ys = chart.y.filter((c) => columns.includes(c));
   const fmt = (v: number) => formatValue(v, style);
-  const colors = style.color ? [style.color, ...CHART_COLORS.filter((c) => c.toUpperCase() !== style.color!.toUpperCase())] : CHART_COLORS;
+  // A colour typed as rgb() or a name is stored as it was typed; the chart library wants hex.
+  const main = normalizeColor(style.color);
+  // The chart's palette, else the one the dashboard set, else the built-in list. A chart colour
+  // still wins over the palette's first entry: it is the more specific choice of the two.
+  const base = (style.palette?.length ? style.palette.map(normalizeColor).filter(Boolean) : null) ?? CHART_COLORS;
+  const colors = main ? [main, ...base.filter((c) => c.toUpperCase() !== main.toUpperCase())] : base;
   // Text and lines that read on the card's background.
   const dark = isDark(style.cardBg);
   const ink = dark ? "#D6E2EE" : "#4A5568", strong = dark ? "#FFFFFF" : "#1A2332";
@@ -65,7 +71,7 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     const change = typeof value === "number" && typeof then === "number" ? delta(value, then, fmt) : null;
     return (
       <div className="kpi-tile">
-        <span className="kpi-value" style={style.color ? { color: style.color } : undefined}>
+        <span className="kpi-value" style={main ? { color: main } : undefined}>
           {typeof value === "number" ? fmt(value) : value ?? "–"}
         </span>
         {col && columnLabel(col) !== "Count" && <span className="kpi-label">{columnLabel(col)}</span>}
@@ -74,7 +80,7 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
             {change.text} <span className="muted">since {compare!.label}</span>
           </span>
         )}
-        {spark && spark.length > 1 && <Sparkline values={spark} color={style.color ?? CHART_COLORS[0]} />}
+        {spark && spark.length > 1 && <Sparkline values={spark} color={main || CHART_COLORS[0]} />}
       </div>
     );
   }
@@ -101,6 +107,19 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
   }
 
   const labels = sorted.map((r) => String(r[xi] ?? ""));
+
+  // One series, many categories: give each category its own colour, so a chart of risk ratings
+  // reads the way it would on paper instead of as one block of blue. Several series keep the
+  // palette per series, because there the colour already tells the series apart.
+  const colorMode = style.colorMode ?? "auto";
+  const pie = chart.type === "pie" || chart.type === "donut";
+  const useMeanings = colorMode === "auto" && worthColoringByMeaning(labels);
+  const perCategory = ys.length === 1 && colorMode !== "single"
+    && (colorMode === "palette" || useMeanings || !!style.colorRules?.length);
+  /** The colour for one category: the person's rules, then what the name means, then the palette. */
+  const categoryColor = (label: string, i: number) =>
+    ruleColor(label, style.colorRules) || (useMeanings ? meaningColor(label) : "")
+    || (colorMode === "palette" || pie ? colors[i % colors.length] : colors[0]);
   const values = (y: string) => sorted.map((r) => {
     const v = r[columns.indexOf(y)];
     return typeof v === "number" ? v : Number(v);
@@ -188,7 +207,10 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
                                              : (p: { percent: number }) => `${Math.round(p.percent)}%`, fontSize: 11, color: ink },
         labelLine: { length: 6, length2: 6 },
         labelLayout: { hideOverlap: true },
-        data: labels.map((name, i) => ({ name, value: values(ys[0])[i] })),
+        data: labels.map((name, i) => ({
+          name, value: values(ys[0])[i],
+          ...(perCategory ? { itemStyle: { color: categoryColor(name, i) } } : {}),
+        })),
       }],
     };
   } else {
@@ -228,7 +250,10 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
       series: ys.map((y) => ({
         name: columnLabel(y),
         type: chart.type === "bar" ? "bar" : "line",
-        data: seriesData(y),
+        // Bars can differ per category; a line is one shape, so it keeps one colour.
+        data: perCategory && chart.type === "bar"
+          ? seriesData(y).map((v, i) => ({ value: v, itemStyle: { color: categoryColor(labels[i], i) } }))
+          : seriesData(y),
         smooth: chart.type !== "bar",
         stack: stacked ? "total" : undefined,
         areaStyle: chart.type === "area" ? { opacity: stacked ? 0.5 : 0.18 } : undefined,

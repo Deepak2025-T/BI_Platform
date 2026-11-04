@@ -138,6 +138,14 @@ export default function ConnectionForm({ connection, onClose, onSaved }: Props) 
                 <label className="field">Client ID
                   <input value={form.options.client_id ?? ""} autoComplete="off" onChange={(e) => opt({ client_id: e.target.value })} />
                 </label>
+                <label className="field">Scope (optional)
+                  <input value={form.options.scope ?? ""} autoComplete="off" placeholder="only if your provider requires one"
+                    onChange={(e) => opt({ scope: e.target.value })} />
+                  <span className="hint">
+                    The client ID and secret are sent as a Basic header first, then in the body, so either
+                    kind of OAuth provider works.
+                  </span>
+                </label>
               </div>
             )}
             {auth === "iam" && (

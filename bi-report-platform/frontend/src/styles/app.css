@@ -34,6 +34,7 @@ a { color: var(--accent); }
 .display { margin: 0; font-size: 34px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; }
 .h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.01em; }
 .h2 { margin: 0; font-size: 16px; font-weight: 700; }
+.h3 { margin: 0; font-size: 14px; font-weight: 700; }
 .lead { font-size: 15px; margin: 0; max-width: 60ch; }
 .muted { color: var(--fg2); }
 .small { font-size: 12.5px; }
@@ -738,6 +739,10 @@ body.focus-mode .main { flex-basis: 100%; }
 .tpl-domain { gap: 10px; }
 .tpl-domain + .tpl-domain { margin-top: 6px; }
 .tpl-domain .row-between { align-items: baseline; gap: 12px; }
+/* A module folder inside a domain, e.g. GRC > ORM. Indented so the nesting reads at a glance. */
+.tpl-module { gap: 8px; padding-left: 12px; border-left: 2px solid var(--border); }
+.tpl-module + .tpl-module { margin-top: 10px; }
+.tpl-module .row-between { align-items: baseline; gap: 12px; }
 
 /* Drilling into a chart: the trail of what was clicked, above the chart. */
 .drill-trail { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
@@ -773,3 +778,123 @@ a.media-body:hover .media-img, a.media-body:hover .media-icon { opacity: .85; }
 /* The Ask page: choosing chart shapes beside the other parameters. */
 .chip-row.tight { gap: 4px; margin: 2px 0; flex-wrap: wrap; }
 .ask-params .field > span:first-child { font-size: 12px; }
+
+/* Typing a colour as hex or rgb(), beside the dots and the native picker. */
+.color-text { width: 170px; padding: 5px 8px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  border: 1px solid var(--border-strong); border-radius: 6px; background: var(--card); color: var(--fg); }
+.color-text.bad { border-color: #D64545; }
+.hint.bad { color: #D64545; }
+
+/* Colour rules: one category name, a named colour, a typed colour and a picker, per row. */
+.rule-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rule-row > input:first-child { flex: 1 1 150px; min-width: 120px; padding: 5px 8px; font-size: 13px;
+  border: 1px solid var(--border-strong); border-radius: 6px; background: var(--card); color: var(--fg); }
+.rule-row select { padding: 5px 8px; font-size: 13px; border: 1px solid var(--border-strong); border-radius: 6px;
+  background: var(--card); color: var(--fg); }
+.rule-row input[type="color"] { width: 30px; height: 28px; padding: 0; border: 1px solid var(--border-strong);
+  border-radius: 6px; background: none; cursor: pointer; }
+.rule-preview { display: flex; flex-wrap: wrap; gap: 6px; }
+.rule-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 6px; font-size: 12px;
+  border: 1px solid var(--border); border-radius: 999px; color: var(--fg2); }
+.rule-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+/* ---- Colour palettes ---- */
+.palette-group { max-height: 420px; overflow-y: auto; }
+.palette-head { margin: 10px 0 4px; font-size: 11px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--fg2); }
+.palette-list { display: flex; flex-direction: column; gap: 2px; }
+.palette-row { display: flex; align-items: center; gap: 4px; padding: 2px 4px; border-radius: 8px;
+  border: 1px solid transparent; }
+.palette-row.on { border-color: var(--accent); background: var(--accent-soft, rgba(0, 180, 216, .08)); }
+.palette-pick { flex: 1; display: flex; flex-direction: column; gap: 4px; align-items: flex-start;
+  padding: 6px; background: none; border: 0; cursor: pointer; text-align: left; color: inherit; }
+.palette-pick.as-text { cursor: default; }
+.palette-name { font-size: 12px; color: var(--fg2); }
+.palette-strip { display: flex; flex-wrap: wrap; gap: 2px; }
+.palette-strip > span { width: 18px; height: 16px; border-radius: 3px; }
+.palette-menu-wrap { position: relative; flex: none; }
+.palette-menu { position: absolute; right: 0; top: 100%; z-index: 30; min-width: 170px; padding: 4px;
+  display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border-strong);
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+.palette-menu button { padding: 7px 10px; font-size: 13px; text-align: left; background: none; border: 0;
+  border-radius: 6px; cursor: pointer; color: inherit; }
+.palette-menu button:hover { background: var(--hover, rgba(0, 0, 0, .05)); }
+.palette-menu button.danger { color: #D64545; }
+.palette-menu-note { padding: 7px 10px; font-size: 12px; color: var(--fg2); }
+
+/* The palette editor */
+.palette-edit-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.palette-chip { width: 34px; height: 30px; border-radius: 6px; border: 2px solid transparent;
+  box-shadow: 0 0 0 1px var(--border-strong); cursor: pointer; }
+.palette-chip.on { border-color: var(--fg); }
+.palette-chip.add { background: none; font-size: 17px; line-height: 1; color: var(--fg2); }
+.color-grid { display: flex; flex-direction: column; gap: 2px; }
+.color-grid-row { display: flex; gap: 2px; }
+.color-grid-cell { flex: 1; min-width: 18px; height: 22px; border: 0; border-radius: 2px; cursor: pointer; padding: 0; }
+.color-grid-cell:hover { outline: 2px solid var(--fg); outline-offset: 1px; }
+.palette-preview { display: flex; flex-direction: column; gap: 6px; }
+.palette-bars { display: flex; align-items: flex-end; gap: 4px; height: 56px; }
+.palette-bars > span { flex: 1; border-radius: 3px 3px 0 0; min-height: 8px; }
+
+/* ===== Data model: the object model drawn as boxes and the lines between them ===== */
+.model-controls { align-items: flex-end; gap: 14px; margin: 4px 0 10px; }
+.model-picker.grow { flex: 1 1 220px; }
+.model-picker.grow input { height: 34px; font-size: 13px; width: 100%; }
+.model-picker label, .model-picker > span { white-space: nowrap; }
+
+.model-layout { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.model-layout.with-panel { grid-template-columns: minmax(0, 1fr) 320px; }
+@media (max-width: 1100px) { .model-layout.with-panel { grid-template-columns: 1fr; } }
+
+.model-canvas { position: relative; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.model-zoom { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--row); background: var(--bg); }
+.model-zoom .icon-btn { width: 28px; height: 28px; font-size: 16px; line-height: 1; }
+.model-zoom .link-btn { margin-left: auto; }
+
+/* The surface scrolls; the stage inside it is the drawing at its scaled size, so the scrollbars
+   match what is actually there rather than the unscaled layout. */
+.model-surface { overflow: auto; max-height: 72vh; background:
+  radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0) 0 0 / 24px 24px; }
+.model-stage { position: relative; }
+.model-scale { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+
+.model-links { position: absolute; top: 0; left: 0; pointer-events: none; }
+.model-link { fill: none; stroke: var(--border-strong); stroke-width: 1.6; }
+.model-links marker path { fill: var(--border-strong); }
+.model-link.self { stroke-dasharray: 4 3; }
+.model-link.off { opacity: 0.18; }
+
+.model-box { position: absolute; background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: 8px; box-shadow: 0 1px 3px rgb(13 27 42 / 8%); overflow: hidden; transition: opacity .15s, box-shadow .15s; }
+.model-box.dim { opacity: 0.3; }
+.model-box.picked { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), 0 2px 8px rgb(13 27 42 / 14%); }
+/* A type that isn't installed, or isn't shared with this app, is still drawn - the model has a
+   shape either way - but it is clearly not something a report can use. */
+.model-box.missing, .model-box.unshared { border-style: dashed; background: var(--bg); }
+.model-box.missing .model-box-head { color: var(--fg2); }
+
+.model-box-head { display: flex; align-items: center; gap: 6px; padding: 7px 9px; background: var(--navy);
+  color: #fff; cursor: grab; touch-action: none; }
+.model-box-head:active { cursor: grabbing; }
+.model-box.missing .model-box-head, .model-box.unshared .model-box-head { background: var(--fg2); }
+.model-box.unknown .model-box-head { background: var(--navy); }
+.model-box-name { display: flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0;
+  color: inherit; font: inherit; font-weight: 600; font-size: 12.5px; cursor: pointer; text-align: left; }
+.model-tag { margin-left: auto; font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+  background: rgb(255 255 255 / 22%); border-radius: 4px; padding: 1px 5px; }
+
+.model-fields { list-style: none; margin: 0; padding: 4px 0 0; }
+.model-fields li { display: flex; align-items: center; gap: 8px; padding: 0 9px; font-size: 11.5px; }
+.model-fields li:nth-child(odd) { background: var(--row); }
+.model-field-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-field-type { color: var(--fg2); font-size: 10.5px; white-space: nowrap; }
+.model-fields .link-btn { font-size: 11px; }
+.model-empty { display: flex; align-items: center; padding: 0 9px; font-size: 11.5px; color: var(--fg2); }
+
+.model-panel { align-self: start; position: sticky; top: 16px; max-height: 72vh; overflow: auto; }
+.model-panel .page-head.tight { margin-bottom: 6px; align-items: center; }
+.model-panel h2 { font-size: 16px; margin: 0; }
+.model-panel h3 { margin: 12px 0 4px; }
+.model-panel-fields { list-style: none; margin: 0; padding: 0; }
+.model-panel-fields li { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 5px 0; border-bottom: 1px solid var(--row); font-size: 12px; }
+.model-panel-fields .model-field-name { flex: 1 1 auto; font-weight: 500; }

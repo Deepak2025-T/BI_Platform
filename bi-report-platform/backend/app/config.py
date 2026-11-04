@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     ai_timeout_seconds: int = 300
     # How long Ollama keeps a model in memory after a call, so later calls skip the load time.
     ollama_keep_alive: str = "30m"
+    # A dashboard is many model calls (an outline, then one per chart), so it gets its own budget.
+    # When it runs out, the charts already built are kept and the rest are reported as failed.
+    ai_dashboard_budget_seconds: int = 900
+    # How many charts are written at once. Ollama queues what it can't run in parallel, so raising
+    # this helps a hosted model far more than a local one.
+    ai_max_parallel: int = 4
     # Room for one Ollama call: the prompt and the answer together, in tokens. Ollama's own
     # default is 4096 whatever the model supports, which a dozen tables of schema will fill.
     # More costs memory; less cuts answers short.

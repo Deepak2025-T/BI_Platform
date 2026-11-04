@@ -1,0 +1,262 @@
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-sans); }
+  .dash { padding: 16px; background: var(--color-background-tertiary); min-height: 100vh; }
+  .top-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
+  .dash-title { font-size: 16px; font-weight: 500; color: var(--color-text-primary); }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filter-pill { background: var(--color-background-primary); border: 0.5px solid var(--color-border-secondary); border-radius: 20px; padding: 4px 12px; font-size: 11px; color: var(--color-text-secondary); cursor: pointer; display: flex; align-items: center; gap: 4px; }
+  .filter-pill.active { border-color: #185FA5; color: #185FA5; background: #E6F1FB; }
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
+  .kpi { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 12px 14px; position: relative; overflow: hidden; cursor: pointer; }
+  .kpi:hover { border-color: var(--color-border-secondary); }
+  .kpi-label { font-size: 11px; color: var(--color-text-secondary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .kpi-value { font-size: 22px; font-weight: 500; color: var(--color-text-primary); }
+  .kpi-sub { font-size: 11px; margin-top: 2px; }
+  .kpi-bar { position: absolute; bottom: 0; left: 0; height: 3px; border-radius: 0 0 var(--border-radius-md) var(--border-radius-md); }
+  .mid-row { display: grid; grid-template-columns: 1.5fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 14px; }
+  .card-title { font-size: 12px; font-weight: 500; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 12px; }
+  .aging-bar-wrap { display: flex; flex-direction: column; gap: 7px; }
+  .aging-row { display: flex; align-items: center; gap: 8px; }
+  .aging-label { font-size: 11px; color: var(--color-text-secondary); min-width: 70px; }
+  .aging-track { flex: 1; height: 18px; background: var(--color-background-secondary); border-radius: 4px; overflow: hidden; }
+  .aging-fill { height: 100%; border-radius: 4px; display: flex; align-items: center; padding-left: 6px; transition: width 0.6s ease; }
+  .aging-amt { font-size: 10px; font-weight: 500; color: #fff; white-space: nowrap; }
+  .aging-pct { font-size: 10px; color: var(--color-text-secondary); min-width: 32px; text-align: right; }
+  .donut-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .legend-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--color-text-secondary); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .bot-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .debtor-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 0.5px solid var(--color-border-tertiary); }
+  .debtor-row:last-child { border-bottom: none; }
+  .debtor-rank { font-size: 11px; color: var(--color-text-tertiary); min-width: 16px; }
+  .debtor-name { font-size: 12px; color: var(--color-text-primary); flex: 1; }
+  .debtor-bar-wrap { width: 80px; height: 6px; background: var(--color-background-secondary); border-radius: 3px; overflow: hidden; }
+  .debtor-bar { height: 100%; border-radius: 3px; }
+  .debtor-amt { font-size: 11px; color: var(--color-text-secondary); min-width: 60px; text-align: right; }
+  .trend-row { display: flex; flex-direction: column; gap: 6px; }
+  .trend-month { display: flex; align-items: center; gap: 8px; }
+  .trend-label { font-size: 11px; color: var(--color-text-secondary); min-width: 30px; }
+  .trend-bars { display: flex; gap: 2px; align-items: flex-end; height: 32px; flex: 1; }
+  .trend-bar-col { display: flex; flex-direction: column; gap: 1px; align-items: center; }
+  .t-bar { width: 14px; border-radius: 2px 2px 0 0; transition: height 0.4s; }
+  .t-bar-lbl { font-size: 9px; color: var(--color-text-tertiary); }
+  .active-filter { background: #E6F1FB; }
+</style>
+
+<div class="dash">
+  <div class="top-bar">
+    <div class="dash-title">Accounts Receivable Dashboard</div>
+    <div class="filters">
+      <div class="filter-pill active" onclick="filterRegion('all',this)">All Regions</div>
+      <div class="filter-pill" onclick="filterRegion('india',this)">India</div>
+      <div class="filter-pill" onclick="filterRegion('asia',this)">Other Asia</div>
+      <div class="filter-pill" style="border-radius:6px; gap:0;">
+        <span style="font-size:10px; color:var(--color-text-tertiary)">Currency:</span>
+        <select id="ccy" onchange="setCurrency(this.value)" style="border:none;background:transparent;font-size:11px;color:var(--color-text-secondary);cursor:pointer;outline:none;">
+          <option value="inr">INR</option>
+          <option value="eur">EUR</option>
+        </select>
+      </div>
+      <div class="filter-pill" style="border-radius:6px;">
+        <span style="font-size:10px; color:var(--color-text-tertiary)">PMU:</span>
+        <select id="pmu" onchange="filterPMU(this.value)" style="border:none;background:transparent;font-size:11px;color:var(--color-text-secondary);cursor:pointer;outline:none;">
+          <option value="all">All</option>
+          <option value="pmu1">PMU-1</option>
+          <option value="pmu2">PMU-2</option>
+          <option value="gdc">GDC</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="kpi-row">
+    <div class="kpi" onclick="sendPrompt('Drill through on total receivables by project')">
+      <div class="kpi-label">Total AR</div>
+      <div class="kpi-value" id="kpi-total">₹17.44 Cr</div>
+      <div class="kpi-sub" style="color:var(--color-text-info)">EUR 17.44 L equivalent</div>
+      <div class="kpi-bar" style="width:100%;background:#185FA5;"></div>
+    </div>
+    <div class="kpi" onclick="sendPrompt('Show overdue invoice details')">
+      <div class="kpi-label">Total Overdue (&gt;60d)</div>
+      <div class="kpi-value" id="kpi-overdue" style="color:#A32D2D">₹9.14 Cr</div>
+      <div class="kpi-sub" style="color:#A32D2D">67.8% of Total AR</div>
+      <div class="kpi-bar" style="width:67.8%;background:#E24B4A;"></div>
+    </div>
+    <div class="kpi" onclick="sendPrompt('Explain DSO calculation and how to reduce it')">
+      <div class="kpi-label">Days Sales Outstanding</div>
+      <div class="kpi-value" id="kpi-dso" style="color:#854F0B">187 days</div>
+      <div class="kpi-sub" style="color:#854F0B">Target: &lt;90 days</div>
+      <div class="kpi-bar" style="width:80%;background:#EF9F27;"></div>
+    </div>
+    <div class="kpi" onclick="sendPrompt('Show cash collected this month by project')">
+      <div class="kpi-label">Cash Collected (Apr)</div>
+      <div class="kpi-value" id="kpi-collected" style="color:#0F6E56">₹4.16 Cr</div>
+      <div class="kpi-sub" style="color:#0F6E56">↑ vs last month</div>
+      <div class="kpi-bar" style="width:40%;background:#1D9E75;"></div>
+    </div>
+  </div>
+
+  <!-- Middle row -->
+  <div class="mid-row">
+    <!-- Aging Chart -->
+    <div class="card">
+      <div class="card-title">AR Ageing Buckets</div>
+      <div class="aging-bar-wrap" id="aging-chart">
+        <!-- rendered by JS -->
+      </div>
+    </div>
+    <!-- Invoice Status Donut -->
+    <div class="card">
+      <div class="card-title">AR by Ageing % (Total)</div>
+      <div class="donut-wrap">
+        <canvas id="donut" width="180" height="180" role="img" aria-label="Donut chart of AR by ageing percentage">AR ageing breakdown donut chart.</canvas>
+        <div class="legend-row" id="donut-legend"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Row -->
+  <div class="bot-row">
+    <!-- Top Debtors -->
+    <div class="card">
+      <div class="card-title">Top 10 Projects by Open AR</div>
+      <div id="debtors-list"></div>
+    </div>
+    <!-- Cash trend -->
+    <div class="card">
+      <div class="card-title">AR Trend by Ageing Band (INR Cr)</div>
+      <div style="position:relative;width:100%;height:200px;"><canvas id="trendChart" role="img" aria-label="Stacked bar chart of AR trend">AR trend bar chart.</canvas></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const agingData = [
+  { label: '≤60 days',     inr: 5.69,  eur: 5.69,  color: '#1D9E75', pct: 32.6 },
+  { label: '>60 ≤6M',      inr: 7.01,  eur: 7.01,  color: '#EF9F27', pct: 40.2 },
+  { label: '>6M ≤1Y',      inr: 1.28,  eur: 1.28,  color: '#E24B4A', pct: 7.3  },
+  { label: '>1Y ≤2Y',      inr: 0.58,  eur: 0.58,  color: '#A32D2D', pct: 3.3  },
+  { label: '>2Y',           inr: 2.89,  eur: 2.89,  color: '#501313', pct: 16.6 },
+];
+const maxInr = Math.max(...agingData.map(d=>d.inr));
+
+const debtors = [
+  { name:'KFW Uttarakhand',      inr: 30.87, eur: 3.09, pmu:'PMU-1' },
+  { name:'DSC Kashmir',          inr: 16.47, eur: 1.65, pmu:'PMU-1' },
+  { name:'TUTDP Tripura',        inr: 24.93, eur: 2.49, pmu:'PMU-1' },
+  { name:'ASDMA Assam',          inr: 13.95, eur: 1.40, pmu:'PMU-1' },
+  { name:'PMC Gujarat',          inr: 13.96, eur: 1.40, pmu:'PMU-2' },
+  { name:'KUIDFC-PMDCSC',        inr: 18.23, eur: 1.82, pmu:'PMU-1' },
+  { name:'KMC SHARP',            inr: 10.46, eur: 1.05, pmu:'PMU-2' },
+  { name:'LISU Kerala',          inr:  9.75, eur: 0.98, pmu:'PMU-1' },
+  { name:'Puducherry AFD',       inr:  6.85, eur: 0.69, pmu:'PMU-1' },
+  { name:'KUIDFC AMRUT',         inr:  3.20, eur: 0.32, pmu:'PMU-1' },
+];
+const maxDebtor = Math.max(...debtors.map(d=>d.inr));
+
+let currency = 'inr';
+
+function renderAging() {
+  const wrap = document.getElementById('aging-chart');
+  wrap.innerHTML = '';
+  agingData.forEach(d => {
+    const val = currency === 'inr' ? d.inr : d.eur;
+    const pct = (d.inr / maxInr * 100).toFixed(0);
+    const row = document.createElement('div'); row.className='aging-row';
+    row.innerHTML = `
+      <div class="aging-label">${d.label}</div>
+      <div class="aging-track">
+        <div class="aging-fill" style="width:${pct}%;background:${d.color}">
+          <span class="aging-amt">${currency==='inr'?'₹':'€'}${val.toFixed(2)} Cr</span>
+        </div>
+      </div>
+      <div class="aging-pct">${d.pct}%</div>
+    `;
+    wrap.appendChild(row);
+  });
+}
+
+function renderDebtors() {
+  const list = document.getElementById('debtors-list');
+  list.innerHTML = '';
+  [...debtors].sort((a,b)=>b.inr-a.inr).slice(0,10).forEach((d,i) => {
+    const val = currency==='inr' ? d.inr : d.eur;
+    const sym = currency==='inr'?'₹':'€';
+    const pct = (d.inr/maxDebtor*100).toFixed(0);
+    const el = document.createElement('div'); el.className='debtor-row';
+    el.innerHTML = `
+      <span class="debtor-rank">${i+1}</span>
+      <span class="debtor-name">${d.name}</span>
+      <div class="debtor-bar-wrap"><div class="debtor-bar" style="width:${pct}%;background:#185FA5"></div></div>
+      <span class="debtor-amt">${sym}${val.toFixed(2)}Cr</span>
+    `;
+    el.onclick = () => sendPrompt(`Show invoice details for ${d.name}`);
+    el.style.cursor='pointer';
+    list.appendChild(el);
+  });
+}
+
+let donutChart;
+function renderDonut() {
+  const ctx = document.getElementById('donut').getContext('2d');
+  if (donutChart) donutChart.destroy();
+  const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+  donutChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: agingData.map(d=>d.label),
+      datasets: [{ data: agingData.map(d=>d.pct), backgroundColor: agingData.map(d=>d.color), borderWidth: 2, borderColor: isDark?'#1a1a1a':'#fff', hoverOffset: 6 }]
+    },
+    options: { responsive: false, cutout: '65%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw}%` } } } }
+  });
+  const leg = document.getElementById('donut-legend');
+  leg.innerHTML = agingData.map(d=>`<div class="legend-item"><div class="legend-dot" style="background:${d.color}"></div>${d.label} ${d.pct}%</div>`).join('');
+}
+
+let trendChart;
+function renderTrend() {
+  const ctx = document.getElementById('trendChart').getContext('2d');
+  if (trendChart) trendChart.destroy();
+  const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const months = ['Jan','Feb','Mar','Apr'];
+  trendChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: months,
+      datasets: [
+        { label:'≤60d',   data:[6.1,5.9,6.3,5.69], backgroundColor:'#1D9E75', stack:'a' },
+        { label:'>60d≤6M',data:[7.5,7.2,7.0,7.01],  backgroundColor:'#EF9F27', stack:'a' },
+        { label:'>6M≤1Y', data:[1.5,1.4,1.3,1.28],  backgroundColor:'#E24B4A', stack:'a' },
+        { label:'>1Y',    data:[4.2,3.8,3.6,3.47],  backgroundColor:'#A32D2D', stack:'a' },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { mode:'index', callbacks: { label: c=>`${c.dataset.label}: ₹${c.raw.toFixed(2)}Cr` } } },
+      scales: {
+        x: { stacked:true, ticks:{ font:{size:11}, color: isDark?'#9c9a92':'#73726c' }, grid:{ display:false } },
+        y: { stacked:true, ticks:{ font:{size:11}, color: isDark?'#9c9a92':'#73726c', callback: v=>`₹${v}Cr` }, grid:{ color: isDark?'rgba(255,255,255,.06)':'rgba(0,0,0,.06)' } }
+      }
+    }
+  });
+  const leg = document.getElementById('donut-legend');
+}
+
+function setCurrency(val) { currency=val; renderAging(); renderDebtors(); }
+function filterRegion(r, el) {
+  document.querySelectorAll('.filter-pill').forEach(p=>{ if(['All Regions','India','Other Asia'].find(l=>p.textContent.trim()===l)) p.classList.remove('active'); });
+  el.classList.add('active');
+}
+function filterPMU(val) {}
+
+renderAging();
+renderDebtors();
+renderDonut();
+renderTrend();
+</script>

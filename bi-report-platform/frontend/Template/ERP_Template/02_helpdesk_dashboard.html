@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Helpdesk Analytics · Odoo Power BI</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+  :root {
+    --bg: #F7F8FA;
+    --surface: #FFFFFF;
+    --surface2: #F0F2F5;
+    --border: #E4E6EA;
+    --text: #111827;
+    --muted: #6B7280;
+    --red: #DC2626;
+    --red-light: #FEF2F2;
+    --red-mid: rgba(220,38,38,0.12);
+    --amber: #D97706;
+    --amber-light: #FFFBEB;
+    --green: #059669;
+    --green-light: #ECFDF5;
+    --blue: #2563EB;
+    --blue-light: #EFF6FF;
+    --violet: #7C3AED;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+  .shell{display:grid;grid-template-rows:auto auto 1fr auto;min-height:100vh}
+
+  header{
+    background:var(--surface);
+    border-bottom:1px solid var(--border);
+    padding:14px 28px;
+    display:flex;align-items:center;justify-content:space-between;
+    position:sticky;top:0;z-index:100;
+  }
+  .logo{display:flex;align-items:center;gap:10px}
+  .logo-mark{
+    width:32px;height:32px;border-radius:10px;
+    background:var(--red);
+    display:flex;align-items:center;justify-content:center;
+    color:#fff;font-size:14px;font-weight:700;
+  }
+  .logo-text{font-size:15px;font-weight:600}
+  .logo-sub{font-size:11px;color:var(--muted)}
+
+  .alert-bar{
+    background:var(--red);
+    padding:8px 28px;
+    display:flex;align-items:center;justify-content:space-between;
+    font-size:12px;color:#fff;
+  }
+  .alert-items{display:flex;gap:20px}
+  .alert-item{display:flex;align-items:center;gap:6px}
+  .alert-dot{width:6px;height:6px;border-radius:50%;background:#fff;opacity:.7;animation:blink 1.5s infinite}
+  @keyframes blink{0%,100%{opacity:.7}50%{opacity:1}}
+
+  main{padding:24px 28px;display:flex;flex-direction:column;gap:18px}
+
+  .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+  .kpi{
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:10px;padding:14px 16px;
+    display:flex;flex-direction:column;gap:6px;
+    transition:box-shadow .2s;cursor:pointer;
+  }
+  .kpi:hover{box-shadow:0 4px 20px rgba(0,0,0,.08)}
+  .kpi-top{display:flex;align-items:center;justify-content:space-between}
+  .kpi-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .kpi-icon{font-size:16px}
+  .kpi-val{font-size:24px;font-weight:700;font-family:'DM Mono',monospace;line-height:1}
+  .kpi-change{font-size:11px;display:flex;align-items:center;gap:3px}
+  .kpi-accent{height:3px;border-radius:0 0 10px 10px;margin:-14px -16px 0;margin-top:10px}
+
+  .row2{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px}
+  .card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .card-title{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .card-badge{font-size:10px;padding:2px 8px;border-radius:20px}
+
+  /* SLA circles */
+  .sla-ring-wrap{display:flex;justify-content:space-around;align-items:center;padding:8px 0}
+  .sla-ring{position:relative;width:100px;height:100px}
+  .sla-inner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .sla-pct{font-size:20px;font-weight:700;font-family:'DM Mono',monospace}
+  .sla-lbl{font-size:9px;color:var(--muted);text-align:center;margin-top:2px}
+
+  /* Ticket table */
+  .tick-table{width:100%;border-collapse:collapse}
+  .tick-table th{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;padding:6px 8px;border-bottom:1px solid var(--border);text-align:left}
+  .tick-table td{padding:9px 8px;font-size:12px;border-bottom:1px solid #F3F4F6}
+  .tick-table tr:last-child td{border:none}
+  .tick-table tr:hover td{background:#FAFAFA;cursor:pointer}
+  .pri{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 7px;border-radius:20px;font-weight:500}
+  .pri-crit{background:#FEF2F2;color:var(--red)}
+  .pri-high{background:#FFF7ED;color:#C2410C}
+  .pri-med{background:#FFFBEB;color:var(--amber)}
+  .pri-low{background:#F0FDF4;color:var(--green)}
+  .status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
+  .t-open{background:#DC2626}
+  .t-prog{background:#2563EB}
+  .t-pend{background:#D97706}
+  .t-res{background:#059669}
+
+  /* Category bars */
+  .cat-list{display:flex;flex-direction:column;gap:10px}
+  .cat-row{display:flex;flex-direction:column;gap:4px}
+  .cat-meta{display:flex;justify-content:space-between;font-size:11px}
+  .cat-track{height:8px;background:var(--surface2);border-radius:4px;overflow:hidden}
+  .cat-fill{height:100%;border-radius:4px}
+
+  /* Team grid */
+  .team-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .team-card{background:var(--surface2);border-radius:8px;padding:10px 12px}
+  .team-name{font-size:12px;font-weight:500;margin-bottom:6px}
+  .team-stats{display:flex;gap:12px}
+  .ts{font-size:10px;color:var(--muted)}
+  .tsv{font-size:13px;font-weight:600;font-family:'DM Mono',monospace}
+
+  /* CSAT stars */
+  .csat-num{font-size:48px;font-weight:700;font-family:'DM Mono',monospace;color:var(--green)}
+  .csat-stars{font-size:20px;letter-spacing:2px}
+  .csat-bars{display:flex;flex-direction:column;gap:6px;margin-top:12px}
+  .csat-bar-row{display:flex;align-items:center;gap:8px;font-size:11px}
+  .csat-star-lbl{min-width:40px;color:var(--muted)}
+  .csat-track{flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden}
+  .csat-fill{height:100%;background:var(--amber);border-radius:3px}
+  .csat-cnt{min-width:30px;text-align:right;color:var(--muted)}
+
+  footer{padding:12px 28px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:10px;color:var(--muted)}
+  .o-badge{background:#EDE9FE;color:var(--violet);padding:3px 10px;border-radius:20px;font-size:10px;font-weight:500}
+</style>
+</head>
+<body>
+<div class="shell">
+<header>
+  <div class="logo">
+    <div class="logo-mark">HD</div>
+    <div>
+      <div class="logo-text">Helpdesk Analytics</div>
+      <div class="logo-sub">Odoo Helpdesk · Power BI</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <select style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;background:var(--surface);color:var(--text);cursor:pointer">
+      <option>Last 30 days</option><option>Last 90 days</option><option>This Year</option>
+    </select>
+    <select style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;background:var(--surface);color:var(--text);cursor:pointer">
+      <option>All Teams</option><option>Tier 1</option><option>Tier 2</option>
+    </select>
+  </div>
+</header>
+
+<div class="alert-bar">
+  <div class="alert-items">
+    <div class="alert-item"><div class="alert-dot"></div>14 tickets SLA breach — immediate action required</div>
+    <div class="alert-item"><div class="alert-dot"></div>Avg first response: 4h 12m (↑ above 4h threshold)</div>
+  </div>
+  <span style="opacity:.7;font-size:11px">⚠ Critical SLA alert active</span>
+</div>
+
+<main>
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-top"><span class="kpi-label">Open Tickets</span><span class="kpi-icon">🎫</span></div>
+      <div class="kpi-val" style="color:var(--red)">342</div>
+      <div class="kpi-change" style="color:var(--red)">↑ +28 since yesterday</div>
+      <div class="kpi-accent" style="background:var(--red)"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-top"><span class="kpi-label">Resolved</span><span class="kpi-icon">✅</span></div>
+      <div class="kpi-val" style="color:var(--green)">1,847</div>
+      <div class="kpi-change" style="color:var(--green)">↑ +12% vs last month</div>
+      <div class="kpi-accent" style="background:var(--green)"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-top"><span class="kpi-label">SLA Compliance</span><span class="kpi-icon">🎯</span></div>
+      <div class="kpi-val" style="color:var(--amber)">78.4%</div>
+      <div class="kpi-change" style="color:var(--red)">↓ -3.2pp — below 85% target</div>
+      <div class="kpi-accent" style="background:var(--amber)"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-top"><span class="kpi-label">Avg Resolution</span><span class="kpi-icon">⏱</span></div>
+      <div class="kpi-val" style="color:var(--blue)">8h 34m</div>
+      <div class="kpi-change" style="color:var(--green)">↓ -42m faster</div>
+      <div class="kpi-accent" style="background:var(--blue)"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-top"><span class="kpi-label">CSAT Score</span><span class="kpi-icon">⭐</span></div>
+      <div class="kpi-val" style="color:var(--violet)">4.3</div>
+      <div class="kpi-change" style="color:var(--green)">↑ +0.2 vs last month</div>
+      <div class="kpi-accent" style="background:var(--violet)"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-top"><span class="kpi-label">Backlog</span><span class="kpi-icon">📋</span></div>
+      <div class="kpi-val" style="color:#C2410C">89</div>
+      <div class="kpi-change" style="color:var(--red)">↑ +11 critical</div>
+      <div class="kpi-accent" style="background:#C2410C"></div>
+    </div>
+  </div>
+
+  <!-- SLA + Tickets -->
+  <div class="row2">
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Active Tickets — Priority Queue</span>
+        <span style="font-size:11px;color:var(--red);cursor:pointer;font-weight:500">View all 342 ↗</span>
+      </div>
+      <table class="tick-table">
+        <thead><tr><th>#</th><th>Subject</th><th>Customer</th><th>Priority</th><th>Status</th><th>Age</th><th>Agent</th></tr></thead>
+        <tbody id="tick-tbody"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">SLA Performance</span></div>
+      <div class="sla-ring-wrap" id="sla-rings"></div>
+      <div style="height:130px;margin-top:12px;position:relative">
+        <canvas id="slaChart" role="img" aria-label="SLA trend line chart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Category + Team + CSAT -->
+  <div class="row3">
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Tickets by Category</span></div>
+      <div class="cat-list" id="catList"></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Team Performance</span></div>
+      <div class="team-grid" id="teamGrid"></div>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column">
+      <div class="card-hdr"><span class="card-title">Customer Satisfaction</span></div>
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <div class="csat-num">4.3</div>
+        <div>
+          <div class="csat-stars">⭐⭐⭐⭐<span style="opacity:.3">⭐</span></div>
+          <div style="font-size:11px;color:var(--muted)">from 1,204 ratings</div>
+        </div>
+      </div>
+      <div class="csat-bars" id="csatBars"></div>
+    </div>
+  </div>
+
+  <!-- Volume trend -->
+  <div class="card">
+    <div class="card-hdr">
+      <span class="card-title">Ticket Volume &amp; Resolution Rate — Last 12 Weeks</span>
+      <span style="display:flex;gap:12px;font-size:11px;color:var(--muted)">
+        <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:var(--red);border-radius:2px;display:inline-block"></span>Opened</span>
+        <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:var(--green);border-radius:2px;display:inline-block"></span>Resolved</span>
+      </span>
+    </div>
+    <div style="height:160px;position:relative">
+      <canvas id="volChart" role="img" aria-label="Ticket volume and resolution trend"></canvas>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span>Source: Odoo Helpdesk module · Refreshed 3 min ago · UTC+5:30</span>
+  <span class="o-badge">⬡ Odoo 17 · Power BI Embedded</span>
+</footer>
+</div>
+
+<script>
+/* Ticket rows */
+const tickets = [
+  {id:'HD-4821',subj:'Login failure on mobile app',   cust:'TechCorp SA',    pri:'Critical',pric:'pri-crit',stat:'Open',  sc:'t-open',age:'2h 14m',agent:'Riya M.'},
+  {id:'HD-4820',subj:'Invoice export not generating', cust:'Meridian Group', pri:'High',    pric:'pri-high',stat:'In Progress',sc:'t-prog',age:'4h 05m',agent:'Carlos P.'},
+  {id:'HD-4819',subj:'Dashboard loading slowly',     cust:'Nexus Corp',     pri:'Medium',  pric:'pri-med', stat:'Pending', sc:'t-pend',age:'6h 40m',agent:'Asha K.'},
+  {id:'HD-4818',subj:'Email notification not sent',  cust:'Pulsar Ltd',     pri:'Low',     pric:'pri-low', stat:'Resolved',sc:'t-res', age:'1d 2h', agent:'James R.'},
+  {id:'HD-4817',subj:'Payroll calculation error',    cust:'Forte BPO',      pri:'Critical',pric:'pri-crit',stat:'Open',  sc:'t-open',age:'5h 22m',agent:'Priya S.'},
+  {id:'HD-4816',subj:'User permission issue',        cust:'Axeon Inc',      pri:'High',    pric:'pri-high',stat:'In Progress',sc:'t-prog',age:'8h 11m',agent:'Riya M.'},
+];
+const tb = document.getElementById('tick-tbody');
+tickets.forEach(t => {
+  tb.innerHTML += `<tr>
+    <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted)">${t.id}</td>
+    <td style="max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500">${t.subj}</td>
+    <td style="color:var(--muted);font-size:11px">${t.cust}</td>
+    <td><span class="pri ${t.pric}">${t.pri}</span></td>
+    <td><span class="status-dot ${t.sc}"></span>${t.stat}</td>
+    <td style="font-size:11px;font-family:'DM Mono',monospace;color:var(--muted)">${t.age}</td>
+    <td style="font-size:11px">${t.agent}</td>
+  </tr>`;
+});
+
+/* SLA rings */
+const slas = [
+  {label:'First Response',pct:82,color:'#D97706'},{label:'Resolution',pct:78,color:'#DC2626'},{label:'Follow-up',pct:91,color:'#059669'}
+];
+const slaWrap = document.getElementById('sla-rings');
+slas.forEach((s,i) => {
+  const id = 'sla'+i;
+  slaWrap.innerHTML += `<div style="text-align:center">
+    <div style="position:relative;width:90px;height:90px;margin:0 auto">
+      <canvas id="${id}" width="90" height="90" role="img" aria-label="${s.label} SLA ${s.pct}%"></canvas>
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="font-size:18px;font-weight:700;font-family:'DM Mono',monospace;color:${s.color}">${s.pct}%</div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:4px">${s.label}</div>
+  </div>`;
+  setTimeout(()=>{
+    new Chart(document.getElementById(id),{
+      type:'doughnut',
+      data:{datasets:[{data:[s.pct,100-s.pct],backgroundColor:[s.color,'#F0F2F5'],borderWidth:0,cutout:'75%'}]},
+      options:{plugins:{legend:{display:false}},responsive:false,maintainAspectRatio:true}
+    });
+  },100);
+});
+
+/* Categories */
+const cats = [
+  {name:'Technical Issues',     cnt:142, pct:42, color:'#DC2626'},
+  {name:'Billing & Payments',   cnt:89,  pct:26, color:'#2563EB'},
+  {name:'Feature Requests',     cnt:61,  pct:18, color:'#7C3AED'},
+  {name:'Account Management',   cnt:34,  pct:10, color:'#D97706'},
+  {name:'General Enquiry',      cnt:16,  pct:5,  color:'#059669'},
+];
+const cL = document.getElementById('catList');
+cats.forEach(c => {
+  cL.innerHTML += `<div class="cat-row">
+    <div class="cat-meta"><span>${c.name}</span><span style="color:var(--muted);font-family:'DM Mono',monospace">${c.cnt} · ${c.pct}%</span></div>
+    <div class="cat-track"><div class="cat-fill" style="width:${c.pct*2.4}%;background:${c.color}"></div></div>
+  </div>`;
+});
+
+/* Teams */
+const teams = [
+  {name:'Tier 1 Support', tickets:180, resolved:142, sla:'82%', csat:'4.2'},
+  {name:'Tier 2 Support', tickets:98,  resolved:71,  sla:'74%', csat:'4.5'},
+  {name:'Billing Team',   tickets:64,  resolved:58,  sla:'91%', csat:'4.1'},
+  {name:'Dev Escalations',tickets:28,  resolved:18,  sla:'65%', csat:'4.6'},
+];
+const tg = document.getElementById('teamGrid');
+teams.forEach(t => {
+  tg.innerHTML += `<div class="team-card">
+    <div class="team-name">${t.name}</div>
+    <div class="team-stats">
+      <div><div class="ts">Tickets</div><div class="tsv">${t.tickets}</div></div>
+      <div><div class="ts">SLA</div><div class="tsv" style="color:var(--amber)">${t.sla}</div></div>
+      <div><div class="ts">CSAT</div><div class="tsv" style="color:var(--violet)">${t.csat}</div></div>
+    </div>
+  </div>`;
+});
+
+/* CSAT */
+const ratings = [{stars:'5★',pct:48,cnt:578},{stars:'4★',pct:30,cnt:361},{stars:'3★',pct:13,cnt:157},{stars:'2★',pct:6,cnt:72},{stars:'1★',pct:3,cnt:36}];
+const cb = document.getElementById('csatBars');
+ratings.forEach(r => {
+  cb.innerHTML += `<div class="csat-bar-row">
+    <span class="csat-star-lbl">${r.stars}</span>
+    <div class="csat-track"><div class="csat-fill" style="width:${r.pct}%"></div></div>
+    <span class="csat-cnt">${r.cnt}</span>
+  </div>`;
+});
+
+/* Charts */
+const wks = ['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12'];
+new Chart(document.getElementById('slaChart'),{
+  type:'line',
+  data:{labels:['Jan','Feb','Mar','Apr','May','Jun'],datasets:[
+    {label:'SLA %',data:[84,86,81,80,78,78],borderColor:'#D97706',backgroundColor:'rgba(217,119,6,.08)',fill:true,tension:.4,pointRadius:4,pointBackgroundColor:'#D97706'},
+    {label:'Target',data:[85,85,85,85,85,85],borderColor:'#DC2626',borderDash:[4,4],pointRadius:0,fill:false,tension:0},
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:'#F3F4F6'},ticks:{font:{size:10},color:'#9CA3AF'}},y:{grid:{color:'#F3F4F6'},ticks:{font:{size:10},color:'#9CA3AF',callback:v=>v+'%'},min:70,max:95}}}
+});
+
+new Chart(document.getElementById('volChart'),{
+  type:'bar',
+  data:{labels:wks,
+    datasets:[
+      {label:'Opened',data:[120,98,145,132,160,118,142,130,155,148,162,170],backgroundColor:'rgba(220,38,38,.25)',borderColor:'#DC2626',borderWidth:1},
+      {label:'Resolved',data:[110,105,128,140,145,122,130,138,142,150,155,158],backgroundColor:'rgba(5,150,105,.2)',borderColor:'#059669',borderWidth:1},
+    ]
+  },
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#9CA3AF'}},y:{grid:{color:'#F3F4F6'},ticks:{font:{size:10},color:'#9CA3AF'}}}}
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRM Analytics · Odoo Power BI</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --navy: #0A0F1E;
+    --navy2: #111827;
+    --navy3: #1C2537;
+    --teal: #00D4AA;
+    --teal2: #00B891;
+    --teal-dim: rgba(0,212,170,0.12);
+    --teal-glow: rgba(0,212,170,0.25);
+    --amber: #F59E0B;
+    --rose: #F43F5E;
+    --violet: #8B5CF6;
+    --text: #E8EAF0;
+    --muted: #6B7280;
+    --border: rgba(255,255,255,0.07);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--navy);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated background grid */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,170,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,170,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .shell { position: relative; z-index: 1; display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+
+  /* Header */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,15,30,0.85);
+    backdrop-filter: blur(12px);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-dot {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--teal), #005F50);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; color: #fff;
+  }
+  .brand-name { font-size: 14px; font-weight: 600; }
+  .brand-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .badge-live {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--teal); font-weight: 500;
+    background: var(--teal-dim); border: 1px solid rgba(0,212,170,0.2);
+    padding: 4px 10px; border-radius: 20px;
+  }
+  .badge-live::before {
+    content:''; width:6px; height:6px; border-radius:50%;
+    background:var(--teal);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .filter-row { display: flex; gap: 6px; }
+  .fpill {
+    font-size: 11px; padding: 4px 10px; border-radius: 20px;
+    border: 1px solid var(--border); background: transparent;
+    color: var(--muted); cursor: pointer; transition: all .2s;
+  }
+  .fpill:hover, .fpill.on { background: var(--teal-dim); border-color: var(--teal); color: var(--teal); }
+
+  /* Main content */
+  main { padding: 24px 28px; display: flex; flex-direction: column; gap: 20px; }
+
+  /* KPI strip */
+  .kpi-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .kpi {
+    background: var(--navy2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    position: relative; overflow: hidden;
+    cursor: pointer; transition: border-color .2s, transform .15s;
+  }
+  .kpi:hover { border-color: rgba(0,212,170,0.3); transform: translateY(-1px); }
+  .kpi::after {
+    content:''; position:absolute; bottom:0; left:0; right:0; height:2px;
+    background: var(--accent, var(--teal));
+  }
+  .kpi-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
+  .kpi-val { font-size: 26px; font-weight: 700; line-height: 1; font-family: 'JetBrains Mono', monospace; }
+  .kpi-delta {
+    margin-top: 6px; font-size: 11px; display: flex; align-items: center; gap: 4px;
+  }
+  .up { color: var(--teal); } .down { color: var(--rose); } .neu { color: var(--muted); }
+  .kpi-spark { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); opacity: .35; }
+
+  /* Two-col layout */
+  .row2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+  /* Cards */
+  .card {
+    background: var(--navy2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .card-title { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .card-action { font-size: 11px; color: var(--teal); cursor: pointer; }
+
+  /* Funnel bars */
+  .funnel { display: flex; flex-direction: column; gap: 8px; }
+  .funnel-stage { position: relative; }
+  .funnel-label { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; }
+  .funnel-name { color: var(--text); }
+  .funnel-count { color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+  .funnel-track { height: 22px; background: var(--navy3); border-radius: 4px; overflow: hidden; }
+  .funnel-fill {
+    height: 100%; border-radius: 4px;
+    display: flex; align-items: center; padding-left: 8px;
+    font-size: 10px; font-weight: 600; color: rgba(255,255,255,.8);
+    transition: width .8s cubic-bezier(.4,0,.2,1);
+  }
+
+  /* Pipeline table */
+  .pipe-table { width: 100%; border-collapse: collapse; }
+  .pipe-table th {
+    font-size: 10px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .5px; text-align: left; padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pipe-table td { padding: 10px 8px; font-size: 12px; border-bottom: 1px solid rgba(255,255,255,.04); }
+  .pipe-table tr:last-child td { border-bottom: none; }
+  .stage-badge {
+    display: inline-block; font-size: 10px; padding: 2px 8px;
+    border-radius: 20px; font-weight: 500;
+  }
+  .s-new { background: rgba(139,92,246,.2); color: #C4B5FD; }
+  .s-qual { background: rgba(0,212,170,.15); color: var(--teal); }
+  .s-prop { background: rgba(245,158,11,.15); color: var(--amber); }
+  .s-won  { background: rgba(34,197,94,.15); color: #4ADE80; }
+  .s-lost { background: rgba(244,63,94,.15); color: var(--rose); }
+  .prob-bar { height: 4px; background: var(--navy3); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+  .prob-fill { height: 100%; background: var(--teal); border-radius: 2px; }
+
+  /* Win rate gauge area */
+  .gauge-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .gauge-val { font-size: 42px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--teal); }
+  .gauge-label { font-size: 11px; color: var(--muted); }
+
+  /* Source breakdown */
+  .source-list { display: flex; flex-direction: column; gap: 10px; }
+  .source-row { display: flex; align-items: center; gap: 10px; }
+  .source-icon {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+  }
+  .source-name { flex: 1; font-size: 12px; }
+  .source-bar-wrap { width: 80px; height: 4px; background: var(--navy3); border-radius: 2px; overflow: hidden; }
+  .source-bar { height: 100%; border-radius: 2px; }
+  .source-pct { font-size: 11px; color: var(--muted); font-family: 'JetBrains Mono', monospace; min-width: 32px; text-align: right; }
+
+  /* Rep performance */
+  .rep-list { display: flex; flex-direction: column; gap: 8px; }
+  .rep-row { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 8px; background: var(--navy3); }
+  .rep-avatar {
+    width: 30px; height: 30px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 11px; font-weight: 600;
+    flex-shrink: 0;
+  }
+  .rep-info { flex: 1; }
+  .rep-name { font-size: 12px; font-weight: 500; }
+  .rep-deals { font-size: 10px; color: var(--muted); }
+  .rep-rev { font-size: 13px; font-weight: 600; font-family: 'JetBrains Mono', monospace; color: var(--teal); }
+
+  /* Footer */
+  footer {
+    padding: 12px 28px;
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 10px; color: var(--muted);
+  }
+  .odoo-tag {
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(113,75,192,.2); border: 1px solid rgba(113,75,192,.3);
+    padding: 4px 10px; border-radius: 20px; color: #C4B5FD; font-size: 10px;
+  }
+
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<div class="shell">
+<header>
+  <div class="brand">
+    <div class="brand-dot">CRM</div>
+    <div>
+      <div class="brand-name">CRM Analytics</div>
+      <div class="brand-sub">Odoo · Power BI Integration</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="filter-row">
+      <button class="fpill on">Q2 2026</button>
+      <button class="fpill">All Teams</button>
+      <button class="fpill">All Stages</button>
+    </div>
+    <div class="badge-live">Live</div>
+  </div>
+</header>
+
+<main>
+  <!-- KPIs -->
+  <div class="kpi-strip">
+    <div class="kpi" style="--accent:var(--teal)">
+      <div class="kpi-label">Pipeline Value</div>
+      <div class="kpi-val" style="color:var(--teal)">$4.7M</div>
+      <div class="kpi-delta up">↑ 18.4% vs last quarter</div>
+    </div>
+    <div class="kpi" style="--accent:var(--violet)">
+      <div class="kpi-label">Active Leads</div>
+      <div class="kpi-val" style="color:var(--violet)">1,248</div>
+      <div class="kpi-delta up">↑ 312 new this month</div>
+    </div>
+    <div class="kpi" style="--accent:var(--amber)">
+      <div class="kpi-label">Win Rate</div>
+      <div class="kpi-val" style="color:var(--amber)">38.2%</div>
+      <div class="kpi-delta up">↑ 3.1pp vs target</div>
+    </div>
+    <div class="kpi" style="--accent:#4ADE80">
+      <div class="kpi-label">Avg Deal Size</div>
+      <div class="kpi-val" style="color:#4ADE80">$18.4K</div>
+      <div class="kpi-delta down">↓ 2.1% vs Q1</div>
+    </div>
+    <div class="kpi" style="--accent:var(--rose)">
+      <div class="kpi-label">Avg Sales Cycle</div>
+      <div class="kpi-val" style="color:var(--rose)">24d</div>
+      <div class="kpi-delta up">↑ 3d faster than avg</div>
+    </div>
+  </div>
+
+  <!-- Row 2: Funnel + Pipeline -->
+  <div class="row2">
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Opportunity Pipeline</span>
+        <span class="card-action">Drill through ↗</span>
+      </div>
+      <table class="pipe-table">
+        <thead>
+          <tr>
+            <th>Opportunity</th>
+            <th>Customer</th>
+            <th>Value</th>
+            <th>Stage</th>
+            <th>Close</th>
+            <th>Prob.</th>
+          </tr>
+        </thead>
+        <tbody id="pipe-body"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Conversion Funnel</span>
+        <span class="card-action">by stage</span>
+      </div>
+      <div class="funnel" id="funnel"></div>
+    </div>
+  </div>
+
+  <!-- Row 3: WinRate + Source + Reps + Trend -->
+  <div class="row3">
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Revenue Trend</span>
+      </div>
+      <div style="position:relative;height:180px">
+        <canvas id="trendChart" role="img" aria-label="Revenue trend line chart by month"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Lead Sources</span>
+      </div>
+      <div class="source-list" id="sources"></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Top Sales Reps</span>
+      </div>
+      <div class="rep-list" id="reps"></div>
+    </div>
+  </div>
+
+  <!-- Row 2: Stage distribution + Activity -->
+  <div class="row2" style="grid-template-columns:1fr 1.6fr">
+    <div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+      <div class="card-hdr" style="width:100%"><span class="card-title">Win Rate</span></div>
+      <div class="gauge-wrap">
+        <div style="position:relative;width:160px;height:160px">
+          <canvas id="gaugeChart" role="img" aria-label="Win rate donut gauge"></canvas>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+            <div class="gauge-val">38%</div>
+            <div class="gauge-label">win rate</div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:16px;margin-top:12px">
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:700;color:#4ADE80;font-family:'JetBrains Mono',monospace">247</div>
+          <div style="font-size:10px;color:var(--muted)">Won</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:700;color:var(--rose);font-family:'JetBrains Mono',monospace">401</div>
+          <div style="font-size:10px;color:var(--muted)">Lost</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:700;color:var(--amber);font-family:'JetBrains Mono',monospace">600</div>
+          <div style="font-size:10px;color:var(--muted)">Active</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Monthly Revenue by Sales Rep (Stacked)</span></div>
+      <div style="position:relative;height:200px">
+        <canvas id="stackedChart" role="img" aria-label="Stacked bar chart of monthly revenue by rep"></canvas>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span>Data source: Odoo CRM module · PostgreSQL · Refreshed 5 min ago</span>
+  <div class="odoo-tag">⬡ Odoo 17 · Power BI Embedded</div>
+</footer>
+</div>
+
+<script>
+const C = Chart;
+const dark = '#1C2537';
+const grid = 'rgba(255,255,255,0.05)';
+
+/* Funnel */
+const stages = [
+  {name:'New / Qualified', count: 1248, pct: 100, color:'#8B5CF6'},
+  {name:'Proposition Sent', count: 820,  pct: 65.7, color:'#00D4AA'},
+  {name:'Meeting Scheduled',count: 530,  pct: 42.5, color:'#F59E0B'},
+  {name:'Negotiation',      count: 310,  pct: 24.8, color:'#F97316'},
+  {name:'Won',              count: 247,  pct: 19.8, color:'#4ADE80'},
+];
+const fEl = document.getElementById('funnel');
+stages.forEach(s => {
+  fEl.innerHTML += `<div class="funnel-stage">
+    <div class="funnel-label"><span class="funnel-name">${s.name}</span><span class="funnel-count">${s.count.toLocaleString()}</span></div>
+    <div class="funnel-track"><div class="funnel-fill" style="width:${s.pct}%;background:${s.color}">${s.pct.toFixed(1)}%</div></div>
+  </div>`;
+});
+
+/* Pipeline table */
+const deals = [
+  {opp:'ERP Rollout Phase 2', cust:'Meridian Corp', val:'$340K', stage:'Negotiation', close:'Jul 15', prob:75, sc:'s-prop'},
+  {opp:'Cloud Migration',     cust:'Axeon Ltd',     val:'$220K', stage:'Proposition', close:'Jul 28', prob:55, sc:'s-prop'},
+  {opp:'CRM Implementation',  cust:'Forte Group',   val:'$185K', stage:'Qualified',   close:'Aug 3',  prob:40, sc:'s-qual'},
+  {opp:'HR Module Deploy',    cust:'Nexus BPO',     val:'$95K',  stage:'Won',         close:'Jun 30', prob:100,sc:'s-won'},
+  {opp:'Odoo Support SLA',    cust:'Pulsar Inc',    val:'$48K',  stage:'New',         close:'Aug 20', prob:20, sc:'s-new'},
+  {opp:'Inventory Upgrade',   cust:'TradeFlow SA',  val:'$130K', stage:'Lost',        close:'—',      prob:0,  sc:'s-lost'},
+];
+const tbody = document.getElementById('pipe-body');
+deals.forEach(d => {
+  tbody.innerHTML += `<tr>
+    <td style="font-weight:500">${d.opp}</td>
+    <td style="color:#9CA3AF">${d.cust}</td>
+    <td style="font-family:'JetBrains Mono',monospace;color:#00D4AA">${d.val}</td>
+    <td><span class="stage-badge ${d.sc}">${d.stage}</span></td>
+    <td style="color:#6B7280;font-size:11px">${d.close}</td>
+    <td><div style="font-size:11px;font-family:'JetBrains Mono',monospace">${d.prob}%</div><div class="prob-bar"><div class="prob-fill" style="width:${d.prob}%"></div></div></td>
+  </tr>`;
+});
+
+/* Lead Sources */
+const sources = [
+  {icon:'🌐', name:'Website',       pct:34, color:'#00D4AA'},
+  {icon:'📧', name:'Email Campaign',pct:22, color:'#8B5CF6'},
+  {icon:'🤝', name:'Referrals',     pct:18, color:'#F59E0B'},
+  {icon:'📱', name:'Social Media',  pct:14, color:'#F43F5E'},
+  {icon:'📞', name:'Cold Outreach', pct:12, color:'#4ADE80'},
+];
+const srcEl = document.getElementById('sources');
+sources.forEach(s => {
+  srcEl.innerHTML += `<div class="source-row">
+    <div class="source-icon" style="background:rgba(255,255,255,.06)">${s.icon}</div>
+    <span class="source-name">${s.name}</span>
+    <div class="source-bar-wrap"><div class="source-bar" style="width:${s.pct}%;background:${s.color}"></div></div>
+    <span class="source-pct">${s.pct}%</span>
+  </div>`;
+});
+
+/* Reps */
+const reps = [
+  {init:'AS', name:'Amir Shah',    deals:28, rev:'$892K', bg:'rgba(0,212,170,.2)',   tc:'#00D4AA'},
+  {init:'PK', name:'Priya Kiran',  deals:22, rev:'$741K', bg:'rgba(139,92,246,.2)',  tc:'#C4B5FD'},
+  {init:'MT', name:'Marco Torres', deals:19, rev:'$610K', bg:'rgba(245,158,11,.2)',  tc:'#FCD34D'},
+  {init:'SL', name:'Sara Lee',     deals:16, rev:'$489K', bg:'rgba(244,63,94,.2)',   tc:'#FB7185'},
+  {init:'RJ', name:'Raj Jain',     deals:14, rev:'$377K', bg:'rgba(74,222,128,.2)',  tc:'#4ADE80'},
+];
+const repEl = document.getElementById('reps');
+reps.forEach(r => {
+  repEl.innerHTML += `<div class="rep-row">
+    <div class="rep-avatar" style="background:${r.bg};color:${r.tc}">${r.init}</div>
+    <div class="rep-info"><div class="rep-name">${r.name}</div><div class="rep-deals">${r.deals} deals closed</div></div>
+    <div class="rep-rev">${r.rev}</div>
+  </div>`;
+});
+
+/* Charts */
+const months = ['Jan','Feb','Mar','Apr','May','Jun'];
+
+new C(document.getElementById('trendChart'), {
+  type: 'line',
+  data: {
+    labels: months,
+    datasets: [
+      {label:'Won Revenue', data:[520,480,610,590,720,860], borderColor:'#00D4AA', backgroundColor:'rgba(0,212,170,0.08)', fill:true, tension:0.4, pointRadius:4, pointBackgroundColor:'#00D4AA'},
+      {label:'Pipeline',    data:[1200,1050,1380,1600,1520,1740], borderColor:'#8B5CF6', backgroundColor:'rgba(139,92,246,0.08)', fill:true, tension:0.4, pointRadius:4, pointBackgroundColor:'#8B5CF6', borderDash:[4,3]},
+    ]
+  },
+  options: {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{display:true, labels:{color:'#6B7280',font:{size:10},boxWidth:10}}},
+    scales:{
+      x:{grid:{color:grid},ticks:{color:'#6B7280',font:{size:10}}},
+      y:{grid:{color:grid},ticks:{color:'#6B7280',font:{size:10},callback:v=>'$'+v+'K'}}
+    }
+  }
+});
+
+new C(document.getElementById('gaugeChart'), {
+  type:'doughnut',
+  data:{
+    datasets:[{data:[38,62],backgroundColor:['#00D4AA','#1C2537'],borderWidth:0,cutout:'78%'}]
+  },
+  options:{plugins:{legend:{display:false}},responsive:true,maintainAspectRatio:true}
+});
+
+new C(document.getElementById('stackedChart'), {
+  type:'bar',
+  data:{
+    labels:months,
+    datasets:[
+      {label:'Amir',  data:[142,120,160,140,180,210], backgroundColor:'rgba(0,212,170,.7)', stack:'s'},
+      {label:'Priya', data:[110,100,130,120,160,180], backgroundColor:'rgba(139,92,246,.7)',stack:'s'},
+      {label:'Marco', data:[90,85,105,100,120,140],   backgroundColor:'rgba(245,158,11,.7)',stack:'s'},
+      {label:'Sara',  data:[70,65,80,75,90,110],      backgroundColor:'rgba(244,63,94,.7)', stack:'s'},
+      {label:'Raj',   data:[55,50,65,60,75,90],       backgroundColor:'rgba(74,222,128,.7)',stack:'s'},
+    ]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{labels:{color:'#6B7280',font:{size:10},boxWidth:10}}},
+    scales:{
+      x:{stacked:true,grid:{color:grid},ticks:{color:'#6B7280',font:{size:10}}},
+      y:{stacked:true,grid:{color:grid},ticks:{color:'#6B7280',font:{size:10},callback:v=>'$'+v+'K'}}
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales Analytics · Odoo Power BI</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap');
+  :root{
+    --bg:#0D1117;--s1:#161B22;--s2:#1E2530;--s3:#252D3A;
+    --green:#22C55E;--green2:#16A34A;--glow:rgba(34,197,94,.15);
+    --gold:#F59E0B;--sky:#38BDF8;--rose:#FB7185;
+    --text:#CDD5E0;--muted:#6B7897;--border:rgba(255,255,255,.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Sora',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+  header{background:var(--s1);border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+  .hlogo{display:flex;align-items:center;gap:12px}
+  .hmark{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--green2));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff}
+  .htitle{font-size:15px;font-weight:600}
+  .hsub{font-size:11px;color:var(--muted);margin-top:1px}
+  .hright{display:flex;align-items:center;gap:14px}
+  .target-pill{background:var(--glow);border:1px solid rgba(34,197,94,.3);border-radius:8px;padding:6px 14px;font-size:12px}
+  .target-pill span{color:var(--green);font-weight:600;font-family:'Roboto Mono',monospace}
+  .progress-wrap{width:120px}
+  .progress-label{font-size:10px;color:var(--muted);display:flex;justify-content:space-between;margin-bottom:4px}
+  .progress-track{height:6px;background:var(--s3);border-radius:3px;overflow:hidden}
+  .progress-fill{height:100%;background:var(--green);border-radius:3px;transition:width 1s}
+
+  main{padding:22px 28px;display:flex;flex-direction:column;gap:18px}
+
+  /* Revenue hero */
+  .hero{background:var(--s1);border:1px solid var(--border);border-radius:14px;padding:24px 28px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:0;position:relative;overflow:hidden}
+  .hero::before{content:'';position:absolute;top:-80px;right:-80px;width:300px;height:300px;background:radial-gradient(circle,rgba(34,197,94,.08),transparent 70%);pointer-events:none}
+  .hero-main{border-right:1px solid var(--border);padding-right:32px}
+  .hero-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px}
+  .hero-val{font-size:44px;font-weight:700;font-family:'Roboto Mono',monospace;color:var(--green);line-height:1}
+  .hero-target{font-size:13px;color:var(--muted);margin-top:6px}
+  .hero-stat{padding:0 24px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center}
+  .hero-stat:last-child{border-right:none}
+  .hs-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+  .hs-val{font-size:26px;font-weight:700;font-family:'Roboto Mono',monospace}
+  .hs-delta{font-size:11px;margin-top:4px}
+  .green{color:var(--green)} .gold{color:var(--gold)} .rose{color:var(--rose)} .sky{color:var(--sky)}
+
+  .row2{display:grid;grid-template-columns:1.8fr 1fr;gap:16px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+  .card{background:var(--s1);border:1px solid var(--border);border-radius:12px;padding:18px}
+  .card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .card-title{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .card-link{font-size:11px;color:var(--green);cursor:pointer}
+
+  /* Product table */
+  .prod-table{width:100%;border-collapse:collapse}
+  .prod-table th{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;text-align:left;padding:6px 8px;border-bottom:1px solid var(--border)}
+  .prod-table td{padding:10px 8px;font-size:12px;border-bottom:1px solid rgba(255,255,255,.04)}
+  .prod-table tr:last-child td{border:none}
+  .prod-table tr:hover td{background:var(--s2);cursor:pointer}
+  .spark-bars{display:flex;align-items:flex-end;gap:1px;height:24px}
+  .spark-bar{width:5px;border-radius:1px;background:var(--green);opacity:.6}
+  .trend-up{color:var(--green)} .trend-dn{color:var(--rose)}
+  .rank-num{width:22px;height:22px;border-radius:6px;background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--muted)}
+  .rank-1{background:rgba(245,158,11,.2);color:var(--gold)}
+
+  /* Geo rings */
+  .geo-list{display:flex;flex-direction:column;gap:10px}
+  .geo-row{display:flex;align-items:center;gap:10px}
+  .geo-flag{font-size:18px;width:28px}
+  .geo-info{flex:1}
+  .geo-name{font-size:12px;font-weight:500}
+  .geo-bar{height:4px;background:var(--s3);border-radius:2px;margin-top:4px;overflow:hidden}
+  .geo-fill{height:100%;border-radius:2px;background:var(--green)}
+  .geo-val{font-size:12px;font-family:'Roboto Mono',monospace;color:var(--green)}
+
+  /* Channel donut center */
+  .donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .donut-total{font-size:20px;font-weight:700;font-family:'Roboto Mono',monospace;color:var(--green)}
+  .donut-sub{font-size:9px;color:var(--muted);margin-top:2px}
+
+  /* Order status */
+  .order-status{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .os-card{background:var(--s2);border-radius:8px;padding:12px;text-align:center}
+  .os-num{font-size:28px;font-weight:700;font-family:'Roboto Mono',monospace}
+  .os-label{font-size:10px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.4px}
+
+  /* Quota meter */
+  .quota-rings{display:flex;justify-content:space-around}
+  .qr{text-align:center}
+  .qr-name{font-size:10px;color:var(--muted);margin-top:6px}
+  .qr-val{font-size:12px;font-weight:600;color:var(--green);font-family:'Roboto Mono',monospace}
+
+  footer{padding:12px 28px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:10px;color:var(--muted)}
+  .o-tag{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.2);color:var(--green);padding:3px 10px;border-radius:20px;font-size:10px}
+</style>
+</head>
+<body>
+<header>
+  <div class="hlogo">
+    <div class="hmark">SL</div>
+    <div><div class="htitle">Sales Analytics</div><div class="hsub">Odoo Sales · Power BI</div></div>
+  </div>
+  <div class="hright">
+    <div class="target-pill">Q2 Target: <span>$5.2M</span></div>
+    <div class="progress-wrap">
+      <div class="progress-label"><span>Quota attained</span><span style="color:var(--green)">82%</span></div>
+      <div class="progress-track"><div class="progress-fill" style="width:82%"></div></div>
+    </div>
+    <select style="background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:6px 10px;font-size:12px;cursor:pointer">
+      <option>Q2 2026</option><option>Q1 2026</option><option>Full Year</option>
+    </select>
+  </div>
+</header>
+
+<main>
+  <!-- Revenue Hero -->
+  <div class="hero">
+    <div class="hero-main">
+      <div class="hero-label">Total Revenue (Q2 YTD)</div>
+      <div class="hero-val">$4.26M</div>
+      <div class="hero-target">vs $5.2M target · 82% attained</div>
+      <div style="margin-top:12px;height:4px;background:var(--s3);border-radius:2px;overflow:hidden"><div style="height:100%;width:82%;background:var(--green);border-radius:2px"></div></div>
+    </div>
+    <div class="hero-stat">
+      <div class="hs-label">Orders Confirmed</div>
+      <div class="hs-val sky">2,841</div>
+      <div class="hs-delta green">↑ +14.2% YoY</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hs-label">Avg Order Value</div>
+      <div class="hs-val gold">$1,499</div>
+      <div class="hs-delta green">↑ +$120 vs Q1</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hs-label">Gross Margin</div>
+      <div class="hs-val green">41.8%</div>
+      <div class="hs-delta rose">↓ -1.2pp vs target</div>
+    </div>
+  </div>
+
+  <!-- Row 2: Revenue trend + top products -->
+  <div class="row2">
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Revenue vs Target — Monthly</span><span class="card-link">Export ↗</span></div>
+      <div style="height:220px;position:relative"><canvas id="revChart" role="img" aria-label="Revenue vs target bar chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Sales by Channel</span></div>
+      <div style="position:relative;width:180px;height:180px;margin:0 auto">
+        <canvas id="chanChart" role="img" aria-label="Sales channel donut chart"></canvas>
+        <div class="donut-center"><div class="donut-total">$4.26M</div><div class="donut-sub">total sales</div></div>
+      </div>
+      <div id="chanLegend" style="display:flex;flex-direction:column;gap:8px;margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- Row 3: Products + Geo + Orders -->
+  <div class="row3">
+    <div class="card" style="grid-column:span 2">
+      <div class="card-hdr"><span class="card-title">Top 8 Products by Revenue</span><span class="card-link">Full list ↗</span></div>
+      <table class="prod-table">
+        <thead><tr><th>#</th><th>Product</th><th>Category</th><th>Units</th><th>Revenue</th><th>Margin</th><th>Trend</th></tr></thead>
+        <tbody id="prodBody"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Revenue by Region</span></div>
+      <div class="geo-list" id="geoList"></div>
+    </div>
+  </div>
+
+  <!-- Row 2: Order status + Quota -->
+  <div class="row2">
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Order Status Breakdown</span></div>
+      <div class="order-status">
+        <div class="os-card"><div class="os-num sky">1,402</div><div class="os-label">Confirmed</div></div>
+        <div class="os-card"><div class="os-num gold">384</div><div class="os-label">Invoiced</div></div>
+        <div class="os-card"><div class="os-num green">891</div><div class="os-label">Delivered</div></div>
+        <div class="os-card"><div class="os-num rose">164</div><div class="os-label">Cancelled</div></div>
+      </div>
+      <div style="height:120px;margin-top:14px;position:relative"><canvas id="orderChart" role="img" aria-label="Order trend chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Rep Quota Attainment</span></div>
+      <div class="quota-rings" id="quotaRings"></div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span>Source: Odoo Sales module · PostgreSQL view · Last refresh: 2 min ago</span>
+  <span class="o-tag">⬡ Odoo 17 · Power BI Embedded</span>
+</footer>
+
+<script>
+const grid='rgba(255,255,255,.05)';
+
+/* Revenue chart */
+const months=['Jan','Feb','Mar','Apr','May','Jun'];
+new Chart(document.getElementById('revChart'),{
+  type:'bar',
+  data:{labels:months,datasets:[
+    {label:'Revenue',data:[580,640,720,780,820,720],backgroundColor:'rgba(34,197,94,.7)',borderRadius:6,order:2},
+    {label:'Target', data:[867,867,867,867,867,867],type:'line',borderColor:'#F59E0B',borderDash:[4,4],pointRadius:0,fill:false,order:1},
+    {label:'Last Year',data:[490,520,610,650,680,600],backgroundColor:'rgba(56,189,248,.25)',borderRadius:6,order:3},
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#6B7897',font:{size:10},boxWidth:10}}},scales:{x:{grid:{display:false},ticks:{color:'#6B7897',font:{size:10}}},y:{grid:{color:grid},ticks:{color:'#6B7897',font:{size:10},callback:v=>'$'+v+'K'}}}}
+});
+
+/* Channel donut */
+const chans=['Direct','Online','Resellers','Events'];
+const chanV=[42,31,18,9];
+const chanC=['#22C55E','#38BDF8','#F59E0B','#FB7185'];
+new Chart(document.getElementById('chanChart'),{
+  type:'doughnut',
+  data:{datasets:[{data:chanV,backgroundColor:chanC,borderWidth:0,cutout:'70%',hoverOffset:6}]},
+  options:{plugins:{legend:{display:false}},responsive:false,maintainAspectRatio:true}
+});
+const cL=document.getElementById('chanLegend');
+chans.forEach((c,i)=>{cL.innerHTML+=`<div style="display:flex;align-items:center;gap:8px;font-size:11px"><span style="width:8px;height:8px;border-radius:50%;background:${chanC[i]};flex-shrink:0"></span><span style="flex:1">${c}</span><span style="font-family:'Roboto Mono',monospace;color:var(--green)">${chanV[i]}%</span></div>`;});
+
+/* Products */
+const prods=[
+  {rank:1,name:'Enterprise ERP Suite',cat:'Software',units:48,rev:'$1.24M',margin:'58%',trend:[60,55,70,65,80,72]},
+  {rank:2,name:'CRM Professional',    cat:'Software',units:124,rev:'$680K', margin:'62%',trend:[40,50,55,60,65,70]},
+  {rank:3,name:'Warehouse Mgmt',      cat:'Software',units:87, rev:'$521K', margin:'54%',trend:[45,42,50,55,58,60]},
+  {rank:4,name:'Support SLA Gold',    cat:'Service', units:210,rev:'$410K', margin:'48%',trend:[30,35,38,40,42,45]},
+  {rank:5,name:'HR Module',           cat:'Software',units:69, rev:'$342K', margin:'60%',trend:[20,25,30,32,35,38]},
+  {rank:6,name:'Accounting Module',   cat:'Software',units:58, rev:'$290K', margin:'56%',trend:[25,28,30,28,32,30]},
+  {rank:7,name:'Implementation Pack', cat:'Service', units:32, rev:'$256K', margin:'38%',trend:[18,20,22,24,20,22]},
+  {rank:8,name:'Training Bundle',     cat:'Service', units:96, rev:'$144K', margin:'72%',trend:[10,12,15,14,16,18]},
+];
+const pb=document.getElementById('prodBody');
+prods.forEach(p=>{
+  const mx=Math.max(...p.trend);
+  const bars=p.trend.map(v=>`<div class="spark-bar" style="height:${(v/mx*22).toFixed(0)}px"></div>`).join('');
+  const rankCls=p.rank===1?'rank-1':'';
+  pb.innerHTML+=`<tr>
+    <td><div class="rank-num ${rankCls}">${p.rank}</div></td>
+    <td style="font-weight:500">${p.name}</td>
+    <td style="font-size:10px;color:var(--muted)">${p.cat}</td>
+    <td style="font-family:'Roboto Mono',monospace;font-size:11px">${p.units}</td>
+    <td style="font-family:'Roboto Mono',monospace;color:var(--green)">${p.rev}</td>
+    <td style="font-size:11px;color:var(--sky)">${p.margin}</td>
+    <td><div class="spark-bars">${bars}</div></td>
+  </tr>`;
+});
+
+/* Geo */
+const geos=[
+  {flag:'🇮🇳',name:'India',     rev:'$1.84M',pct:43},
+  {flag:'🌏',name:'SE Asia',    rev:'$920K', pct:22},
+  {flag:'🇦🇪',name:'Middle East',rev:'$630K',pct:15},
+  {flag:'🌍',name:'Africa',     rev:'$504K', pct:12},
+  {flag:'🇩🇪',name:'Europe',    rev:'$336K', pct:8},
+];
+const gL=document.getElementById('geoList');
+geos.forEach(g=>{gL.innerHTML+=`<div class="geo-row"><div class="geo-flag">${g.flag}</div><div class="geo-info"><div style="display:flex;justify-content:space-between"><span class="geo-name">${g.name}</span><span class="geo-val">${g.rev}</span></div><div class="geo-bar"><div class="geo-fill" style="width:${g.pct}%"></div></div></div></div>`;});
+
+/* Order trend */
+new Chart(document.getElementById('orderChart'),{
+  type:'line',
+  data:{labels:months,datasets:[
+    {label:'Confirmed',data:[420,480,510,540,580,520],borderColor:'#38BDF8',fill:false,tension:.4,pointRadius:3,pointBackgroundColor:'#38BDF8'},
+    {label:'Delivered',data:[380,420,460,500,520,480],borderColor:'#22C55E',fill:false,tension:.4,pointRadius:3,pointBackgroundColor:'#22C55E'},
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#6B7897',font:{size:10},boxWidth:10}}},scales:{x:{grid:{display:false},ticks:{color:'#6B7897',font:{size:10}}},y:{grid:{color:grid},ticks:{color:'#6B7897',font:{size:10}}}}}
+});
+
+/* Quota rings */
+const reps=[{init:'AS',name:'Amir',val:94,color:'#22C55E'},{init:'PK',name:'Priya',val:87,color:'#38BDF8'},{init:'MT',name:'Marco',val:76,color:'#F59E0B'},{init:'SL',name:'Sara',val:68,color:'#FB7185'},{init:'RJ',name:'Raj',val:103,color:'#A78BFA'}];
+const qr=document.getElementById('quotaRings');
+reps.forEach((r,i)=>{
+  const id='qr'+i;
+  qr.innerHTML+=`<div class="qr"><div style="position:relative;width:70px;height:70px;margin:0 auto"><canvas id="${id}" width="70" height="70" role="img" aria-label="${r.name} quota ${r.val}%"></canvas><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:${r.color};font-family:'Roboto Mono',monospace">${r.val}%</div></div><div class="qr-name">${r.name}</div></div>`;
+  setTimeout(()=>{
+    const clamp=Math.min(r.val,100);
+    new Chart(document.getElementById(id),{type:'doughnut',data:{datasets:[{data:[clamp,100-clamp],backgroundColor:[r.color,'#1E2530'],borderWidth:0,cutout:'70%'}]},options:{plugins:{legend:{display:false}},responsive:false,maintainAspectRatio:true}});
+  },50);
+});
+</script>
+</body>
+</html>

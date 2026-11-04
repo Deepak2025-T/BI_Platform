@@ -6,6 +6,7 @@ import AskFlow from "./pages/AskFlow";
 import BuildDashboard from "./pages/BuildDashboard";
 import Chat from "./pages/Chat";
 import Connections from "./pages/Connections";
+import DataModel from "./pages/DataModel";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import MyReports from "./pages/MyReports";
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="reports/:id/edit" element={<ReportEditor />} />
         <Route path="templates" element={<Templates />} />
         <Route path="build-chart" element={<VisualBuilder />} />
+        <Route path="data-model" element={<DataModel />} />
 
         {/* Manager-only pages */}
         <Route path="manage/users" element={<RequireAuth role="manager"><Users /></RequireAuth>} />

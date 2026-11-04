@@ -22,6 +22,8 @@ import FilterColumnsDialog from "./FilterColumnsDialog";
 import FullscreenButton from "./FullscreenButton";
 import MediaTile, { LogoMark, LogoPicker } from "./MediaTile";
 import Icon from "./Icon";
+import Modal from "./Modal";
+import PalettePicker from "./PalettePicker";
 import PublishDialog from "./PublishDialog";
 import RefreshSchedule from "./RefreshSchedule";
 import TableChanges from "./TableChanges";
@@ -167,6 +169,7 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
   const [editingChart, setEditingChart] = useState<string | null>(null);
   const [filterDialog, setFilterDialog] = useState<{ filter?: DashboardFilter } | null>(null);
   const [duplicating, setDuplicating] = useState(false);
+  const [palettePanel, setPalettePanel] = useState(false);
   // Drag and drop: a tile becomes draggable while its handle is held, so text in its inputs can still be selected.
   const [armed, setArmed] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -241,6 +244,14 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
     toast("Every chart now uses this colour");
   };
 
+  /** The dashboard's palette: remembered on the config, and copied onto every chart so each one
+   *  keeps its colours even if the palette is later changed or deleted. */
+  const paletteAll = (palette: string[] | undefined) => {
+    commit({ ...config, palette,
+             widgets: config.widgets.map((w) => (w.kind === "text" ? w : { ...w, style: { ...w.style, palette } })) });
+    toast(palette ? "Every chart now uses this palette" : "Charts are back to the default colours");
+  };
+
   // In edit mode changes autosave. From the preview, a chart edited with its Edit button is saved straight away.
   const commit = (next: DashboardConfig) => {
     setConfig(next);
@@ -306,6 +317,7 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
             <span className="muted small" aria-live="polite">
               {saveState === "saving" ? "Saving…" : saveState === "error" ? "Couldn't save. Check your connection." : report.status === "published" ? "Published, changes saved" : "Draft, saved"}
             </span>
+            <button className="btn btn-ghost" onClick={() => setPalettePanel(true)}>Colour palette</button>
             <button className="btn btn-ghost" onClick={duplicateReport} disabled={duplicating}>{duplicating ? "Duplicating…" : "Duplicate"}</button>
             <FullscreenButton />
             <button className="btn btn-ghost" onClick={() => navigate(`/reports/${report.id}`)}>See it as viewers will</button>
@@ -564,6 +576,13 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
         )}
       </div>
 
+      {palettePanel && (
+        <Modal title="Colour palette" size="lg" onClose={() => setPalettePanel(false)}
+          footer={<button type="button" className="btn" onClick={() => setPalettePanel(false)}>Done</button>}>
+          <PalettePicker value={config.palette} onChange={paletteAll}
+            hint="Charts use these colours in order. A chart given its own colour or palette keeps it." />
+        </Modal>
+      )}
       {editingChart && config.widgets.some((w) => w.id === editingChart) && (
         <ChartEditor reportId={report.id} widget={config.widgets.find((w) => w.id === editingChart)!} data={data[editingChart]}
           onClose={() => setEditingChart(null)} onSave={saveChart} onApplyColorToAll={colorAll}

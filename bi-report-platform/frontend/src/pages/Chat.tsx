@@ -2,15 +2,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { type ChatSummary, type SavedMessage, chatsApi } from "../api/chats";
 import { errorMessage } from "../api/client";
-import { aiModelsApi, assistantApi } from "../api/endpoints";
-import type { AIModelPublic, ChatResult, DataSourceInfo, Widget } from "../api/types";
+import { aiModelsApi, assistantApi, dataModelsApi } from "../api/endpoints";
+import type { AIModelPublic, ChatResult, DataModelSummary, DataSourceInfo, Widget } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import DataChart from "../components/DataChart";
+import Modal from "../components/Modal";
+import PalettePicker from "../components/PalettePicker";
 import Icon from "../components/Icon";
 import AddToReport from "../components/AddToReport";
 import ResultTable from "../components/ResultTable";
 import { useToast } from "../components/Toast";
 import { rememberModel, rememberedModel } from "../lib/aiModels";
+import { bySolution, rememberModel as rememberDataModel, rememberedModel as rememberedDataModel } from "../lib/dataModel";
 import { shortDate } from "../lib/format";
 import { CHART_LABELS, rememberSource, rememberedSource, retype, sourceIdOf, sourceValue } from "../lib/sources";
 
@@ -36,13 +39,18 @@ export default function Chat() {
   const { isManager } = useAuth();
   const routeId = useParams().id;
   const chatId = routeId ? Number(routeId) : null;
-  const start = location.state as { source?: string; model?: string; question?: string } | null;
+  const start = location.state as { source?: string; model?: string; question?: string;
+                                    dataModel?: string | null } | null;
 
   const [sources, setSources] = useState<DataSourceInfo[] | null>(null);
   const [models, setModels] = useState<AIModelPublic[] | null>(null);
   const [source, setSource] = useState(start?.source ?? "");
   const [sourceName, setSourceName] = useState(""); // a saved chat's database, even if it was removed since
   const [model, setModel] = useState(start?.model ?? "");
+  // The OpenPages object model this chat is held to. Fixed once the chat has started, because
+  // every answer in it was written against those object types.
+  const [dataModel, setDataModel] = useState(start?.dataModel ?? "");
+  const [dataModels, setDataModels] = useState<DataModelSummary[]>([]);
   const [chats, setChats] = useState<ChatSummary[] | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [opening, setOpening] = useState(false);
@@ -70,6 +78,7 @@ export default function Chat() {
       });
     }).catch((e) => { toast(errorMessage(e)); setSources([]); });
     aiModelsApi.available().then(setModels).catch(() => setModels([]));
+    dataModelsApi.list().then(setDataModels).catch(() => setDataModels([]));
   }, [toast, refreshList]);
 
   // Use a model that is turned on: the chat's or the picked one, else the last used, else the default.
@@ -95,6 +104,7 @@ export default function Chat() {
       setMessages(c.messages.map(toMessage));
       setSource(c.source_id === null ? "builtin" : String(c.source_id));
       setSourceName(c.source_name);
+      setDataModel(c.data_model || "");
       if (c.model_id !== null) setModel(String(c.model_id));
     }).catch((e) => { setMessages([]); setOpenError(errorMessage(e)); }).finally(() => setOpening(false));
   }, [chatId]);
@@ -111,6 +121,9 @@ export default function Chat() {
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [messages]);
 
   const sourceInfo = sources?.find((s) => sourceValue(s) === source);
+  // Only OpenPages has an object model, so the picker and what it sends are both conditional.
+  const isOpenPages = sourceInfo?.db_type === "openpages";
+  const dataModelSent = isOpenPages && dataModel ? dataModel : null;
   const shownSourceName = sourceInfo?.name ?? sourceName;
   const modelInfo = models?.find((m) => String(m.id) === model);
   const busy = messages.some((m) => m.status === "pending");
@@ -121,6 +134,7 @@ export default function Chat() {
     rememberSource(v);
     setMessages([]);
     setPinned([]);
+    setDataModel(rememberedDataModel(v));
     if (chatId !== null) navigate("/chat");
   }
 
@@ -140,7 +154,8 @@ export default function Chat() {
       let id = chatId;
       if (id === null) {
         // The first question starts a saved chat.
-        const created = await chatsApi.start({ source_id: sourceIdOf(source), model_id: Number(model) });
+        const created = await chatsApi.start({ source_id: sourceIdOf(source), model_id: Number(model),
+                                               data_model: dataModelSent });
         id = created.id;
         createdId.current = id;
         navigate(`/chat/${id}`, { replace: true });
@@ -158,11 +173,25 @@ export default function Chat() {
       ? { ...m, result: { ...m.result, ...change(m.result) } as ChatResult } : m)));
   }
 
+  // The palette every answer here is drawn with, and that pinned charts carry onto a report.
+  // Remembered, because a palette is a house style rather than a per-question choice.
+  const [palette, setPalette] = useState<string[] | undefined>(() => {
+    try { const saved = localStorage.getItem("chartPalette"); return saved ? JSON.parse(saved) : undefined; }
+    catch { return undefined; }
+  });
+  const choosePalette = (next: string[] | undefined) => {
+    setPalette(next);
+    try { next ? localStorage.setItem("chartPalette", JSON.stringify(next)) : localStorage.removeItem("chartPalette"); }
+    catch { /* a browser with storage switched off still gets the palette for this visit */ }
+  };
+  const [palettePanel, setPalettePanel] = useState(false);
+
   const widgetsFrom = (ids: number[]): Widget[] => messages
     .filter((m) => ids.includes(m.id) && m.result?.kind === "result")
     .map((m) => {
       const r = m.result as Extract<ChatResult, { kind: "result" }>;
-      return { id: `c${m.id}`, title: r.title, question: m.question, sql: r.sql, chart: r.chart };
+      return { id: `c${m.id}`, title: r.title, question: m.question, sql: r.sql, chart: r.chart,
+               ...(palette?.length ? { style: { palette } } : {}) };
     });
 
   return (
@@ -184,6 +213,24 @@ export default function Chat() {
                 {!sourceInfo && source && sourceName && <option value={source}>{sourceName} (no longer available)</option>}
               </select>
             </label>
+            {isOpenPages && dataModels.length > 0 && (
+              <label className="model-picker">
+                <span className="muted small">Data model</span>
+                <select value={dataModel} aria-label="OpenPages data model"
+                  onChange={(e) => { setDataModel(e.target.value); rememberDataModel(source, e.target.value); }}
+                  disabled={messages.length > 0}
+                  title={messages.length > 0 ? "The model is fixed once a chat has started. Start a new chat to change it."
+                    : "Which object types this chat may use, and how they join."}>
+                  <option value="">Every shared object type</option>
+                  {bySolution(dataModels).map(([solution, list]) => (
+                    <optgroup key={solution} label={solution}>
+                      {list.map((m) => <option key={m.key} value={m.key}>{m.namespace}{m.is_default ? " (default)" : ""}</option>)}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+            )}
+            <button type="button" className="btn btn-ghost" onClick={() => setPalettePanel(true)}>Colour palette</button>
             <label className="model-picker">
               <span className="muted small">AI model</span>
               <select value={model} onChange={(e) => changeModel(e.target.value)} disabled={!models?.length}>
@@ -192,6 +239,14 @@ export default function Chat() {
             </label>
           </div>
         </header>
+
+        {palettePanel && (
+          <Modal title="Colour palette" size="lg" onClose={() => setPalettePanel(false)}
+            footer={<button type="button" className="btn" onClick={() => setPalettePanel(false)}>Done</button>}>
+            <PalettePicker value={palette} onChange={choosePalette}
+              hint="Used for every answer here, and kept when you pin one onto a report." />
+          </Modal>
+        )}
 
         <div className="chat-body">
           {models !== null && models.length === 0 && (
@@ -233,6 +288,7 @@ export default function Chat() {
                 <Answer result={m.result} pinned={pinned.includes(m.id)}
                   onPin={() => setPinned((p) => (p.includes(m.id) ? p.filter((x) => x !== m.id) : [...p, m.id]))}
                   onSave={() => { setPinned([m.id]); setSaving(true); }}
+                  palette={palette}
                   onRetype={(type) => updateResult(m.id, (r) => ({ chart: retype(r.chart, type, r.columns, r.rows) }))} />
               )}
             </div>
@@ -333,8 +389,8 @@ function ChatHistory({ chats, current, onChanged, onDeleted }: {
   );
 }
 
-function Answer({ result, pinned, onPin, onSave, onRetype }: {
-  result: ChatResult; pinned: boolean; onPin: () => void; onSave: () => void; onRetype: (t: keyof typeof CHART_LABELS) => void;
+function Answer({ result, pinned, palette, onPin, onSave, onRetype }: {
+  result: ChatResult; pinned: boolean; palette?: string[]; onPin: () => void; onSave: () => void; onRetype: (t: keyof typeof CHART_LABELS) => void;
 }) {
   const [show, setShow] = useState<"" | "table" | "sql" | "tries">("");
   const failedTries = result.attempts.filter((a) => !a.ok).length;
@@ -352,7 +408,8 @@ function Answer({ result, pinned, onPin, onSave, onRetype }: {
           {Object.entries(CHART_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
       </div>
-      <DataChart columns={result.columns} rows={result.rows} chart={result.chart} height={260} truncated={result.truncated} />
+      <DataChart columns={result.columns} rows={result.rows} chart={result.chart} style={{ palette }}
+        height={260} truncated={result.truncated} />
       <div className="row-wrap answer-actions">
         <button className="link-btn" aria-expanded={show === "table"} onClick={() => toggle("table")}>{show === "table" ? "Hide" : "Show"} the rows ({result.row_count}{result.truncated ? "+" : ""})</button>
         <button className="link-btn" aria-expanded={show === "sql"} onClick={() => toggle("sql")}>{show === "sql" ? "Hide" : "Show"} the SQL</button>
