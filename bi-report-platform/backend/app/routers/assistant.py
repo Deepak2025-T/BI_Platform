@@ -16,6 +16,7 @@ from ..deps import get_current_user
 from ..models import AIModel, Report, User
 from ..prompt_ideas import ideas_for
 from ..excel_export import dashboard_workbook
+from ..ppt_export import dashboard_deck
 from ..schemas import (AddWidgetsIn, ChatIn, DashboardDataIn, DashboardIn, DrillIn, FilterMapIn, ReportOut,
                        SaveDashboardIn, SourceOut, WidgetIn)
 from ..refresh import RefreshFailed, as_utc, latest_snapshot, refresh_report, snapshot_matches
@@ -244,6 +245,24 @@ def dashboard_export(report_id: int, body: DashboardDataIn | None = None, db: Se
     name = " ".join(re.sub(r'[\\/:*?"<>|]+', " ", report.title).split())[:80] or "Dashboard"
     return Response(content, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename=\"dashboard.xlsx\"; filename*=UTF-8''{quote(name)}.xlsx"})
+
+
+@router.post("/api/reports/{report_id}/export-ppt")
+def dashboard_export_ppt(report_id: int, body: DashboardDataIn | None = None, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    """The dashboard as a PowerPoint deck, one slide per chart, with the same filters as the viewer.
+
+    The charts are real PowerPoint charts, so a slide can be restyled or pasted into another deck
+    with its numbers intact."""
+    report, source = _dashboard(db, report_id, user)
+    body = body or DashboardDataIn()
+    results = _run_widgets(report.config, source, body)
+    content = dashboard_deck(report.title, report.config, source.name, results, body.model_dump(mode="json")["filters"])
+    name = " ".join(re.sub(r'[\\/:*?"<>|]+', " ", report.title).split())[:80] or "Dashboard"
+    return Response(content,
+                    media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    headers={"Content-Disposition": f"attachment; filename=\"dashboard.pptx\"; "
+                                                    f"filename*=UTF-8''{quote(name)}.pptx"})
 
 
 @router.post("/api/reports/{report_id}/filters/map")

@@ -462,10 +462,30 @@ class DashboardIn(BaseModel):
     data_model: str | None = Field(default=None, max_length=120)
 
 
+def clip(text, limit: int):
+    """Trims a label to fit instead of refusing it.
+
+    Titles, questions and prompts describe a chart or a report; they are not the thing itself.
+    Someone pinning an answer to a long request would otherwise be told "String should have at
+    most 500 characters", with nothing they can do about it and the chart lost. The backend
+    already clips these when it builds a widget itself (ai.assistant.new_widget), so this only
+    makes what arrives from a browser behave the same way.
+    """
+    if not isinstance(text, str):
+        return text
+    text = text.strip()
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
 class Widget(BaseModel):
     id: str = Field(min_length=1, max_length=40)
     title: str = Field(max_length=120)
     question: str = Field(default="", max_length=500)
+
+    @field_validator("title", "question", mode="before")
+    @classmethod
+    def _clip(cls, value, info):
+        return clip(value, 120 if info.field_name == "title" else 500)
     sql: str = Field(min_length=1, max_length=8000)
     chart: dict
     # How the chart looks, and how wide it sits on the dashboard.
@@ -488,6 +508,13 @@ class SaveDashboardIn(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     prompt: str = Field(default="", max_length=2000)
     widgets: list[Widget] = Field(min_length=1, max_length=12)
+
+    # The same reasoning as Widget: a report named after a long question is still a report worth
+    # saving. 2000 is also the prompt column's width, so clipping keeps the insert from failing.
+    @field_validator("title", "prompt", mode="before")
+    @classmethod
+    def _clip(cls, value, info):
+        return clip(value, 200 if info.field_name == "title" else 2000)
 
 
 class FilterValue(BaseModel):

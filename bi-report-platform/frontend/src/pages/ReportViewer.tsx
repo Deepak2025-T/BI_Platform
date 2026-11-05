@@ -12,6 +12,7 @@ import RefreshSchedule from "../components/RefreshSchedule";
 import ReportBody from "../components/ReportBody";
 import { useToast } from "../components/Toast";
 import { shortDate } from "../lib/format";
+import { printReport } from "../lib/print";
 import { ALL_REGIONS, PERIOD_OPTIONS } from "../lib/report";
 import { useQueryResult, useReport } from "../lib/useReport";
 
@@ -99,7 +100,7 @@ export default function ReportViewer() {
             )}
           </div>
           <div className="row-wrap no-print">
-            <button className="btn btn-ghost" onClick={() => window.print()}>Download PDF</button>
+            <button className="btn btn-ghost" onClick={printReport}>Download PDF</button>
             <button className="btn btn-ghost" aria-expanded={schedOpen} onClick={() => setSchedOpen((s) => !s)}>Email it to me</button>
             <button className="btn btn-ghost" onClick={duplicate} disabled={duplicating}
               title="Copy this report into a new draft of your own">{duplicating ? "Duplicating…" : "Duplicate"}</button>

@@ -19,3 +19,5 @@ sqlglot==30.23.0
 python-multipart==0.0.20
 # Excel export of dashboards
 XlsxWriter==3.2.0
+# PowerPoint export of dashboards
+python-pptx==1.0.2

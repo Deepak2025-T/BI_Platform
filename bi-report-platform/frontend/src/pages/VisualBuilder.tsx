@@ -99,6 +99,8 @@ export default function VisualBuilder() {
   const visual = VISUAL_BY_ID[visualId];
   const chartStyle = palette?.length ? { ...visual.style, palette } : visual.style;
   const sourceId = source ? sourceIdOf(source) : null;
+  // OpenPages charts read one object type and can only count, so the builder offers less there.
+  const openPages = sources.find((s) => sourceValue(s) === source)?.db_type === "openpages";
   const table = picked[0] ?? "";
   const fields = useMemo(() => picked.flatMap((t) => fieldsByTable[t] ?? []), [picked, fieldsByTable]);
 
@@ -216,7 +218,8 @@ export default function VisualBuilder() {
     }).map((f) => ({ ...f, values: (f.values ?? []).filter((v) => String(v).trim() !== "") }));
     // A table with no condition yet would only make the query fail, so wait for it.
     if (joins.some((j) => j.on.length === 0 || j.on.some((c) => !c.left.column || !c.right.column))) return null;
-    const built = buildSpec(visual, wells, buckets, { table, joins, filters: ready, order: [], limit: 500 });
+    const built = buildSpec(visual, wells, buckets, { table, joins, filters: ready, order: [], limit: 500 },
+                            openPages);
 
     // A query comes back in whatever order the database likes, so the chart has to ask. Dates read
     // in time order; everything else reads best ranked by its first number, as Power BI does.
@@ -254,7 +257,9 @@ export default function VisualBuilder() {
       if (!def) return w;
       if (def.accepts === "measure") {
         const field = fields.find((f) => fieldKey(f.table, f.name) === key);
-        const agg: Agg = field?.is_number ? "sum" : "count";
+        // OpenPages can only count, so a number dropped there starts as a count rather than
+        // a sum the backend would have to refuse.
+        const agg: Agg = field?.is_number && !openPages ? "sum" : "count";
         return { ...w, [well]: [...(w[well] as never[]), { column: key, agg }] };
       }
       return { ...w, [well]: [...(w[well] as string[]), key] };
@@ -452,10 +457,13 @@ export default function VisualBuilder() {
           {table && (
             <label className="field">
               Join another
-              <select value="" aria-label="Join another table" disabled={picked.length >= MAX_TABLES}
+              <select value="" aria-label="Join another table"
+                disabled={openPages || picked.length >= MAX_TABLES}
+                title={openPages ? "OpenPages joins by hierarchy rather than by matching columns, so a chart here reads one object type. Ask a question to build one across types." : undefined}
                 onChange={(e) => addTable(e.target.value)}>
                 <option value="">
-                  {picked.length >= MAX_TABLES ? `${MAX_TABLES} tables is the most` : "Add a table…"}
+                  {openPages ? "One object type at a time"
+                    : picked.length >= MAX_TABLES ? `${MAX_TABLES} tables is the most` : "Add a table…"}
                 </option>
                 {allTables.filter((t) => !picked.includes(t.table))
                   .map((t) => <option key={t.table} value={t.table}>{t.table}</option>)}
@@ -588,7 +596,8 @@ export default function VisualBuilder() {
                 <div>
                   <div className="field-group-label">{visual.label}</div>
                   <VisualWells visual={visual} wells={wells} fields={fields} buckets={buckets}
-                    tableCount={picked.length} onDrop={addTo} onRemove={removeFrom} onAgg={setAgg}
+                    tableCount={picked.length} openPages={openPages}
+                    onDrop={addTo} onRemove={removeFrom} onAgg={setAgg}
                     onBucket={(key, bucket) => setBuckets((b) => ({ ...b, [key]: bucket }))}
                     onRefuse={setNote} />
                 </div>

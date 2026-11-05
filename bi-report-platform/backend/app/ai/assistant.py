@@ -114,13 +114,15 @@ def _chart_rules(types: list[str] | None = None) -> str:
 _CHART_RULES = _chart_rules()
 
 
-def _sql_rules(source: DataSource) -> str:
+def _sql_rules(source: DataSource, question: str = "") -> str:
+    """The schema and the rules for writing against it. `question` is passed on to describe(),
+    which uses it to choose which tables to show when there are more than the context holds."""
     today = dt.date.today()
     return f"""Database: {source.name} ({source.type_label}). Write {source.type_label} SQL.
 Tables you may use, and nothing else (write table names exactly as listed). Text after "--" describes
 a column; follow it exactly, for example whether an amount is money or a percentage:
 
-{describe(source)}
+{describe(source, question)}
 
 Today is {today.isoformat()} ({today:%A}). Use this date for words like "this year", "last month" or "today".
 
@@ -147,7 +149,7 @@ def chat(spec: ModelSpec, source: DataSource, question: str, history: list[dict]
     system = f"""You are a data analyst inside a BI tool. People ask questions about their database in plain
 language, and you answer them.
 
-{_sql_rules(source)}
+{_sql_rules(source, question)}
 
 Decide the action:
 - "query" when the question needs data: write sql, a short title for the result, and a chart.
@@ -171,7 +173,7 @@ def write_widget(spec: ModelSpec, source: DataSource, question: str) -> dict:
     """One dashboard widget for a question ("add a widget by asking"). Raises AssistantError."""
     system = f"""You write one SQL query for one chart on a BI dashboard.
 
-{_sql_rules(source)}
+{_sql_rules(source, question)}
 
 Always use action "query". {_CHART_RULES}"""
     answer, data, attempts = _query_with_retries(spec, source, system, f"Chart request: {question}")
@@ -189,7 +191,7 @@ def revise_widget(spec: ModelSpec, source: DataSource, widget: dict, instruction
 answers, and its SQL. Rewrite them so the chart does what the change asks, keeping everything the
 change doesn't mention. Give a short new title.
 
-{_sql_rules(source)}
+{_sql_rules(source, f"{widget.get('question', '')} {instruction}")}
 
 Always use action "query". {_CHART_RULES}"""
     prompt = (f"Current title: {widget.get('title', '')}\nCurrent question: {widget.get('question', '')}\n"
@@ -303,7 +305,7 @@ Never more than {MAX_WIDGETS}. Start with the headline numbers as "kpi" charts, 
 Do NOT write any SQL here. For each chart give only a short title, the one-line question it answers,
 and which chart shape fits. The queries are written separately.
 
-{_sql_rules(source)}
+{_sql_rules(source, prompt)}
 {params_text}
 {_chart_rules(wanted)}"""
     outline = complete_json(spec, system, f"Dashboard request: {prompt}", outline_schema)

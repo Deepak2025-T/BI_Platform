@@ -20,12 +20,18 @@ LONG_LABELS = {"Risks by category", "Management responses", "Root causes", "Issu
 
 
 def _count_by(type_name: str, field: str, title: str, chart: str = "bar", where: str = "", size: str = "auto",
-              question: str = "", by_value: bool = False) -> dict:
-    """A count per value of one field, largest first (by_value: in the field's order, for years)."""
+              question: str = "", by_value: bool = False, skip_nulls: bool = True) -> dict:
+    """A count per value of one field, largest first (by_value: in the field's order, for years).
+
+    skip_nulls=False leaves out the "IS NOT NULL" guard: some object types, custom ones especially,
+    answer IS NULL on their own field groups with "columnReference cannot be null" and refuse the
+    whole query. Those charts then show a blank slice for items where nobody filled the field in,
+    which is honest about the data rather than quietly dropping it."""
     ref = f"[{type_name}].[{field}]"
-    conditions = [f"{ref} IS NOT NULL"] + ([where] if where else [])
-    sql = (f"SELECT {ref}, COUNT([{type_name}].[Resource ID]) FROM [{type_name}] WHERE {' AND '.join(conditions)} "
-           f"GROUP BY {ref} ORDER BY " + (ref if by_value else f"COUNT([{type_name}].[Resource ID]) DESC"))
+    conditions = ([f"{ref} IS NOT NULL"] if skip_nulls else []) + ([where] if where else [])
+    sql = (f"SELECT {ref}, COUNT([{type_name}].[Resource ID]) FROM [{type_name}] "
+           + (f"WHERE {' AND '.join(conditions)} " if conditions else "")
+           + f"GROUP BY {ref} ORDER BY " + (ref if by_value else f"COUNT([{type_name}].[Resource ID]) DESC"))
     widget = {"title": title, "question": question or title, "sql": sql, "size": size,
               "chart": {"type": chart, "x": field, "y": [COUNT]}}
     if title in LONG_LABELS:
@@ -68,6 +74,10 @@ CTL, ISS, FND, AUD, RSK, KRI, POL, OBL = ("SOXControl", "SOXIssue", "Finding", "
 # carries the entity and geography fields. Installations rename or drop some of these, and any
 # chart whose type or field is missing is left out when the dashboard is built.
 LOSS, LIMP, LREC, ACT, ENT = "LossEvent", "LossImpact", "LossRecovery", "ActionItem", "SOXBusEntity"
+# Internal Audit's plan items. The object type's name has spaces in it, and its fields sit in the
+# IAM-PlanItem-FG group rather than an OPSS one, because it is part of the Internal Audit solution
+# rather than the shared GRC model.
+API, APIF = "Audit Plan Item", "IAM-PlanItem-FG:"
 
 # Public names for the builders above, used by openpages_modules.
 count_by, count_by_two, total, table_of, heading, filter_on = (_count_by, _count_by_two, _total, _list,
@@ -343,6 +353,63 @@ OPENPAGES_TEMPLATES = [
         "filters": [_filter("Compliance status", FND, "OPSS-Finding:Compliance Status"),
                     _filter("Finding category", FND, "OPSS-Finding:Category")],
     },
+    {
+        # The "Audit Plan Item Overview" report, as an OpenPages dashboard: the same six breakdowns
+        # across the top and the same list of plans underneath. Audit Plan Item refuses IS NULL on
+        # its own field group, so these counts keep the unfilled items as a blank slice instead
+        # (see _count_by), which is also what the original report shows.
+        "name": "OpenPages: Audit plan item overview",
+        "description": "Audit plan items by status, type, risk level, priority, quarter and auditable unit",
+        "color": "#1B3A5C",
+        "prompt": "Give me an audit plan item overview: status, type, risk level, priority, planned "
+                  "quarter and auditable unit, with the plan items listed by estimated effort",
+        "widgets": [
+            _count_by(API, f"{APIF}Status", "Audit plan item — status", "pie", size="third", skip_nulls=False),
+            _count_by(API, f"{APIF}Type", "Audit plan item — type", "pie", size="third", skip_nulls=False),
+            _count_by(API, f"{APIF}RskLvl", "Audit plan item — risk level", size="third", skip_nulls=False),
+            _count_by(API, f"{APIF}Prty", "Audit plan item — priority", size="third", skip_nulls=False),
+            _count_by(API, f"{APIF}PlnQtr", "Audit plan item — planned quarter", "pie", size="third",
+                      skip_nulls=False),
+            _count_by(API, f"{APIF}AudUnt", "Audit plan item — auditable unit", size="third", skip_nulls=False),
+            # No LIMIT in OpenPages SQL, so the whole list comes back with the largest effort first
+            # rather than only the top ten.
+            _list("Audit plans by estimated effort, largest first",
+                  f"SELECT [{API}].[Name], [{API}].[Description], [{API}].[{APIF}Status], "
+                  f"[{API}].[{APIF}EstmtdEfrt], [{API}].[{APIF}PlnQtr], [{API}].[{APIF}Prty], "
+                  f"[{API}].[{APIF}PlndStrt], [{API}].[{APIF}PlndEnd], [{API}].[{APIF}Type], "
+                  f"[{API}].[{APIF}RskLvl], [{API}].[Creation Date] FROM [{API}] "
+                  f"ORDER BY [{API}].[{APIF}EstmtdEfrt] DESC"),
+        ],
+        "filters": [_filter("Plan item status", API, f"{APIF}Status"),
+                    _filter("Risk level", API, f"{APIF}RskLvl")],
+    },
+    {
+        # The "Action Item Monitoring Dashboard" report. The ageing chart needs a field holding the
+        # bucket an item falls in: OpenPages SQL has no date arithmetic, so ageing cannot be worked
+        # out in the query. Installations that compute it elsewhere have no such field, and that one
+        # chart is then left out when the dashboard is built, with the reason shown.
+        "name": "OpenPages: Action item monitoring dashboard",
+        "description": "Total, open and closed action items, with status, ageing and approval, and the longest open",
+        "color": "#2E8B9B",
+        "prompt": "Track the status, progress and ageing of management action items: total, open and "
+                  "closed counts, a status breakdown, an ageing analysis and what is awaiting approval",
+        "widgets": [
+            _total(ACT, "Total action items", size="third"),
+            _total(ACT, "Open action items", f"[{ACT}].[OPSS-ActItem:Status] = 'Open'", size="third"),
+            _total(ACT, "Closed action items", f"[{ACT}].[OPSS-ActItem:Status] = 'Closed'", size="third"),
+            _count_by(ACT, "OPSS-ActItem:Status", "Action items by status", "pie", size="third"),
+            _count_by(ACT, "OPSS-ActItem:Aging Bucket", "Action item ageing analysis", size="third"),
+            _count_by(ACT, "OPSS-ActItem:Submit for Approval", "Action item submit for approval", "pie",
+                      size="third"),
+            _list("Action items with the highest open duration",
+                  f"SELECT [{ACT}].[Name], [{ACT}].[Description], [{ACT}].[OPSS-ActItem:Status], "
+                  f"[{ACT}].[OPSS-ActItem:Start Date], [{ACT}].[OPSS-ActItem:Due Date] FROM [{ACT}] "
+                  f"WHERE [{ACT}].[OPSS-ActItem:Status] <> 'Closed' "
+                  f"ORDER BY [{ACT}].[OPSS-ActItem:Start Date]"),
+        ],
+        "filters": [_filter("Action item status", ACT, "OPSS-ActItem:Status"),
+                    _filter("Due", ACT, "OPSS-ActItem:Due Date", "date")],
+    },
 ]
 
 
@@ -360,6 +427,8 @@ TEMPLATE_MODULES = {
     "OpenPages: Risk assessment overview": "ORM",
     "OpenPages: Audit coverage by geography": "IAM",
     "OpenPages: Compliance findings": "PCM",
+    "OpenPages: Audit plan item overview": "IAM",
+    "OpenPages: Action item monitoring dashboard": "ORM",
 }
 
 

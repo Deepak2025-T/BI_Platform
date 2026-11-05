@@ -531,12 +531,56 @@ body.focus-mode .sidebar { display: none; }
 body.focus-mode .main { flex-basis: 100%; }
 .sched { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; background: #F7FAFC; border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
 
-/* ===== Print = Download PDF ===== */
+/* ===== Print = Download PDF =====
+   The printed page has to look like the dashboard on screen, so this block has two jobs.
+
+   A printed page is about 800 CSS pixels wide, which is under the 900px the layout treats as a
+   phone: without the rules below every tile would come out stacked one per row, which is why the
+   PDF used to look nothing like the screen. The grid spans are therefore asserted again here, and
+   the page is printed landscape so twelve columns have room.
+
+   Colours are the other half of it. Browsers drop backgrounds when they print unless the page says
+   it means them, so print-color-adjust is set on everything a chart or a card paints. */
+@page { size: A4 landscape; margin: 10mm; }
+
+/* While "Download PDF" is preparing (see lib/print.ts), the dashboard is laid out at the width of
+   a printed sheet and the charts are redrawn to match. Charts are drawn on a canvas sized in
+   pixels, so without this they would keep their on-screen width and be cut off at the edge of the
+   paper. 1047px is A4 landscape less its margins; it stays above the 900px the layout treats as a
+   phone, so the twelve columns survive. */
+body.printing .sidebar { display: none; }
+body.printing .main, body.printing .shell { display: block; width: 1047px; max-width: 1047px; }
+body.printing .viewer-body { padding: 0; }
+
 @media print {
-  .sidebar, .no-print, .toast { display: none !important; }
+  .sidebar, .no-print, .toast, .widget-tools, .resize-handle, .filter-bar, .drag-handle { display: none !important; }
   .shell, .main { display: block; }
   :root { background: #FFFFFF; }
-  .card { break-inside: avoid; }
+  html, body, .main, .viewer { width: auto; height: auto; overflow: visible; background: #FFFFFF; }
+  .viewer-body { padding: 0; }
+
+  /* Keep the dashboard's own shape instead of the narrow-screen stack. */
+  .dash-grid { display: grid !important; grid-template-columns: repeat(12, minmax(0, 1fr)) !important; gap: 10px; }
+  .widget, .section { grid-column: span 6; }
+  .widget.w-kpi { grid-column: span 4; }
+  .widget.w-table, .section.size-full, .widget.size-full { grid-column: span 12; }
+  .widget.size-quarter, .section.size-quarter { grid-column: span 3; }
+  .widget.size-third, .section.size-third { grid-column: span 4; }
+  .widget.size-half, .section.size-half { grid-column: span 6; }
+  .widget.size-twothird, .section.size-twothird { grid-column: span 8; }
+
+  /* Paint what the screen paints. */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  .card, .widget, .kpi, .chip, .badge { box-shadow: none; }
+  .widget-title-input { background: transparent !important; border-color: transparent !important; }
+
+  /* A tile split across two sheets is unreadable; a long table may break between rows. */
+  .card, .widget, .kpi { break-inside: avoid; page-break-inside: avoid; }
+  .widget.w-table, .table-scroll { break-inside: auto; page-break-inside: auto; overflow: visible !important; }
+  .table-scroll table { width: 100%; }
+  thead { display: table-header-group; }  /* column headings repeat on each sheet */
+  tr, img, canvas { break-inside: avoid; page-break-inside: avoid; }
+  a[href]::after { content: ""; }  /* no "(https://…)" after every link */
 }
 
 /* ===== Home: hero, flow diagram and motion ===== */

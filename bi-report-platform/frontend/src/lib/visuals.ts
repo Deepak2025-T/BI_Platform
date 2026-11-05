@@ -183,8 +183,16 @@ function unique(name: string, taken: Set<string>): string {
 /** Shapes that show every field at once, so extra axis fields are not drill levels. */
 const NO_DRILL = new Set<ChartType>(["table", "matrix", "heatmap"]);
 
+/**
+ * OpenPages Query Service SQL has no AS, so a result column keeps the field's own name and a
+ * count always arrives as "Count_Resource ID". The chart has to point at those names, not at the
+ * aliases used everywhere else, or it looks for a column the rows don't have and draws nothing.
+ */
+export const OPENPAGES_COUNT_COLUMN = "Count_Resource ID";
+
 export function buildSpec(visual: VisualDef, wells: Wells, buckets: Record<string, DateBucket | undefined>,
-                          base: Pick<VisualSpec, "table" | "joins" | "filters" | "order" | "limit">):
+                          base: Pick<VisualSpec, "table" | "joins" | "filters" | "order" | "limit">,
+                          openPages = false):
                           { spec: VisualSpec; chart: ChartSpec } {
   const taken = new Set<string>();
   // Rows and axis share a well in the data, so a matrix and a bar chart compile the same way.
@@ -208,7 +216,7 @@ export function buildSpec(visual: VisualDef, wells: Wells, buckets: Record<strin
 
   const measure = (m: VisualMeasure) => ({
     ...m, ...splitKey(m.column),
-    alias: unique(m.alias?.trim() || defaultMeasureName(m), taken),
+    alias: openPages ? OPENPAGES_COUNT_COLUMN : unique(m.alias?.trim() || defaultMeasureName(m), taken),
   });
   const values = wells.values.map(measure);
   const values2 = wells.values2.map(measure);

@@ -1,3 +1,5 @@
+import logging
+import threading
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -8,7 +10,8 @@ from ..connections import connection_spec as spec_of
 from ..connections import crypto, openpages, openpages_spec
 from ..connections.engines import DB_TYPES, ConnSpec, dispose_engine, friendly_error, get_engine, make_engine, run_test
 from ..connections.engines import list_tables as read_tables
-from ..database import get_db
+from ..database import SessionLocal, get_db
+from ..datasources import forget_schema, get_source, warm_schema
 from ..deps import get_current_user, require_manager
 from ..models import DataConnection, User
 from ..schemas import (ConnectionDraft, ConnectionIn, ConnectionOut, ConnectionPublic, ConnectionTestOut,
@@ -18,6 +21,28 @@ router = APIRouter(prefix="/api/connections", tags=["connections"])
 
 # Changing any of these means the old test result no longer applies.
 CONNECT_FIELDS = {"db_type", "host", "port", "database", "username", "password", "options"}
+
+log = logging.getLogger("uvicorn.error")
+
+
+def warm_in_background(connection_id: int):
+    """Reads the chosen tables' columns now, so the first question doesn't have to.
+
+    It matters most for OpenPages, where describing the schema is one request per object type and
+    a connection commonly shares well over a hundred - a minute or more that would otherwise land
+    on whoever asks the first question. Failures are logged and dropped: this is a head start, not
+    a step that may stop a connection being saved.
+    """
+    def run():
+        try:
+            with SessionLocal() as db:
+                source = get_source(db, connection_id)
+                count = warm_schema(source)
+            log.info("Schema ready for connection %s: %s tables", connection_id, count)
+        except Exception as err:  # any failure here costs only the head start
+            log.warning("Couldn't read the schema for connection %s ahead of time: %s", connection_id, err)
+
+    threading.Thread(target=run, name=f"warm-schema-{connection_id}", daemon=True).start()
 
 
 def to_out(c: DataConnection) -> ConnectionOut:
@@ -131,14 +156,21 @@ def update_connection(connection_id: int, body: ConnectionUpdate, db: Session = 
         raise key_error(err)
     if changes.get("schemas") is not None:
         c.schemas = [s.strip() for s in changes["schemas"] if s.strip()]
-    if changes.get("allowed_tables") is not None:
+    tables_changed = changes.get("allowed_tables") is not None
+    if tables_changed:
         c.allowed_tables = sorted({t.strip() for t in changes["allowed_tables"] if t.strip()})
     changed = set(changes) - ({"password"} if changes.get("password") is None else set())
-    if CONNECT_FIELDS & changed or changes.get("client_key") is not None:
+    reconnected = bool(CONNECT_FIELDS & changed) or changes.get("client_key") is not None
+    if reconnected:
         c.status, c.last_error = "untested", ""
         dispose_engine(c.id)
         openpages.forget_client(c.id)
     db.commit()
+    if tables_changed or reconnected:
+        # Whatever was cached describes the old choice of tables, or the old server.
+        forget_schema(c.id)
+        if c.allowed_tables:
+            warm_in_background(c.id)
     return to_out(c)
 
 

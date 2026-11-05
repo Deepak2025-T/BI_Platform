@@ -124,6 +124,8 @@ class OpenPagesClient:
         self.base = normalize_base(spec.base_url)
         self._token: tuple[str, float] | None = None
         self._lock = threading.Lock()
+        # types/<name> payloads, so the field list and the enum labels cost one request between them.
+        self._types: dict[str, dict] = {}
         self._verify = self._ssl_context()
 
     def _ssl_context(self):
@@ -287,8 +289,7 @@ class OpenPagesClient:
         can't be read."""
         fields: list[dict] = []
         try:
-            payload = self.get(f"types/{type_name}")
-            for f in _find_field_definitions(payload):
+            for f in _find_field_definitions(self._type_payload(type_name)):
                 fields.append({"name": str(f["name"]), "type": str(f.get("dataType", "")).replace("_TYPE", "").lower(),
                                "values": _enum_names(f)})
         except OpenPagesError:
@@ -297,6 +298,34 @@ class OpenPagesClient:
         system = [{"name": n, "type": "date" if "Date" in n else "text", "values": []}
                   for n in SYSTEM_FIELDS if n.lower() not in have]
         return system + fields
+
+    def _type_payload(self, type_name: str) -> dict:
+        if type_name not in self._types:
+            self._types[type_name] = self.get(f"types/{type_name}")
+        return self._types[type_name]
+
+    def enum_labels(self, type_name: str) -> dict[str, dict[str, str]]:
+        """{field name: {stored value: label}} for the fields of one object type whose enum values
+        are stored as codes.
+
+        Some installations name an enum's values "1", "2", "3" and carry the words people read in
+        localizedLabel ("Planned", "Scheduled"). A query returns the stored name, so a chart of such
+        a field would be an axis of numbers. Only fields whose labels actually say something more
+        than the stored value are listed, so an installation that stores the words is untouched."""
+        try:
+            payload = self._type_payload(type_name)
+        except OpenPagesError:
+            return {}
+        out: dict[str, dict[str, str]] = {}
+        for f in _find_field_definitions(payload):
+            pairs = {}
+            for v in _enum_values(f):
+                name, label = str(v.get("name") or ""), str(v.get("localizedLabel") or "")
+                if name and label and name != label:
+                    pairs[name] = label
+            if pairs:
+                out[str(f["name"])] = pairs
+        return out
 
     # ---------- Queries ----------
 
@@ -324,7 +353,38 @@ class OpenPagesClient:
                     columns.append(k)
         rows = [[rec.get(c) for c in columns] for rec in records]
         _numbers(rows)
+        self._label_enums(sql, labels, columns, rows)
         return columns, rows, truncated
+
+    def _label_enums(self, sql: str, labels: list[str], columns: list[str], rows: list[list]) -> None:
+        """Replaces stored enum codes with the words people read, in place.
+
+        Where an installation stores an enum as "1", "2", "3", a chart of that field would be an
+        axis of numbers. The SELECT list says which object type and field each column came from, so
+        the field's own labels can be put back (see enum_labels). Anything with no label mapping,
+        including every value the definition doesn't mention, is left exactly as it arrived."""
+        pairs = select_pairs(sql)
+        if not any(pairs):
+            return
+        wanted = {p[0] for p in pairs if p}
+        maps: dict[str, dict[str, dict[str, str]]] = {}
+        for type_name in wanted:
+            try:
+                maps[type_name] = self.enum_labels(type_name)
+            except OpenPagesError:
+                maps[type_name] = {}
+        by_column: dict[int, dict[str, str]] = {}
+        for i, pair in enumerate(pairs):
+            if not pair:
+                continue
+            name = labels[i] if i < len(labels) and labels[i] else pair[1]
+            values = maps.get(pair[0], {}).get(pair[1])
+            if values and name in columns:
+                by_column[columns.index(name)] = values
+        for row in rows:
+            for index, values in by_column.items():
+                if index < len(row) and row[index] is not None:
+                    row[index] = values.get(str(row[index]), row[index])
 
 
 # One client per saved connection, rebuilt when the connection changes.
@@ -430,6 +490,14 @@ def select_labels(sql: str) -> list[str]:
     """For each item in the SELECT list, a column name for joined fields that share a name:
     "[AuditProgram].[Name], [Finding].[Name]" -> ["AuditProgram Name", "Finding Name"]. Other items
     get "" (they keep the name OpenPages gives them)."""
+    parsed = select_pairs(sql)
+    fields = [p[1].lower() for p in parsed if p]
+    return [f"{p[0]} {p[1]}" if p and fields.count(p[1].lower()) > 1 else "" for p in parsed]
+
+
+def select_pairs(sql: str) -> list[tuple[str, str] | None]:
+    """For each item in the SELECT list, the (object type, field) it reads, or None for anything
+    else (a COUNT, say)."""
     masked = mask(sql)
     start = re.match(r"\s*SELECT\b", masked, re.I)  # not \s+: a masked [name] is spaces too
     end = re.search(r"\bFROM\b", masked, re.I)
@@ -448,8 +516,7 @@ def select_labels(sql: str) -> list[str]:
     for item in items:
         m = re.fullmatch(r"\s*\[((?:[^\]]|\]\])+)\]\s*\.\s*\[((?:[^\]]|\]\])+)\]\s*", item)
         parsed.append((m.group(1).replace("]]", "]"), m.group(2).replace("]]", "]")) if m else None)
-    fields = [p[1].lower() for p in parsed if p]
-    return [f"{p[0]} {p[1]}" if p and fields.count(p[1].lower()) > 1 else "" for p in parsed]
+    return parsed
 
 
 # ---------- Dashboard filters ----------
@@ -586,11 +653,17 @@ def _find_field_definitions(payload, depth: int = 0) -> list[dict]:
     return []
 
 
-def _enum_names(f: dict) -> list[str]:
+def _enum_values(f: dict) -> list[dict]:
+    """The enum options of one field definition, however this server nests them."""
     values = f.get("enumValues") or f.get("values") or []
     if isinstance(values, dict):
         values = values.get("enumValue", values.get("items", []))
-    names = [str(v.get("name") or v.get("localizedLabel")) for v in values if isinstance(v, dict) and (v.get("name") or v.get("localizedLabel"))]
+    return [v for v in values if isinstance(v, dict)]
+
+
+def _enum_names(f: dict) -> list[str]:
+    names = [str(v.get("name") or v.get("localizedLabel")) for v in _enum_values(f)
+             if v.get("name") or v.get("localizedLabel")]
     return names[:50]
 
 

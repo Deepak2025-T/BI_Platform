@@ -21,6 +21,7 @@ from sqlalchemy import Engine, MetaData, Table, distinct, func, inspect, select
 from sqlalchemy.orm import Session
 
 from . import openpages_model
+from .config import settings
 from .connections import connection_spec, openpages, openpages_spec
 from .connections.engines import DB_TYPES, friendly_error, get_engine
 from .database import engine as app_engine
@@ -132,29 +133,42 @@ def narrow(source: DataSource, data_model: str | None) -> DataSource:
 
 # ---------- Describing the tables for the model ----------
 
-_schema_cache: dict[tuple, tuple[float, str]] = {}
+# The expensive half: one text block per table, read from the database or OpenPages. Cached as a
+# whole, because for OpenPages it is one HTTP request per object type and a connection may share
+# well over a hundred of them.
+_blocks_cache: dict[tuple, tuple[float, dict[str, str]]] = {}
 
 
 def forget_schema(connection_id: int | None = None):
     """Drops cached schema descriptions so the next one is read from the database again."""
-    for key in [k for k in _schema_cache if connection_id is None or k[0] == connection_id]:
-        del _schema_cache[key]
+    for key in [k for k in _blocks_cache if connection_id is None or k[0] == connection_id]:
+        del _blocks_cache[key]
 
 
-def describe(source: DataSource) -> str:
-    """One block per table: columns with types, and the values of low-cardinality text columns
-    (such as region or status) so the model can filter on them. High-cardinality columns such as
-    names or emails are never sampled."""
-    key = (source.id, source.version, tuple(source.tables))
-    cached = _schema_cache.get(key)
-    if cached and time.time() - cached[0] < SCHEMA_CACHE_SECONDS:
-        return cached[1]
-    if source.is_openpages:
-        text = _describe_openpages(source)
-        _schema_cache[key] = (time.time(), text)
-        return text
+def _cache_key(source: DataSource) -> tuple:
+    return (source.id, source.version, tuple(source.tables))
+
+
+def warm_schema(source: DataSource) -> int:
+    """Reads and caches a source's schema up front. Called when a connection's tables are chosen,
+    so the first question doesn't pay for a hundred requests to OpenPages. Returns the table count."""
+    return len(_schema_blocks(source))
+
+
+def _schema_blocks(source: DataSource) -> dict[str, str]:
+    """{table: its description}, cached. Reading is what costs; choosing what to show is free."""
+    key = _cache_key(source)
+    hit = _blocks_cache.get(key)
+    if hit and time.time() - hit[0] < SCHEMA_CACHE_SECONDS:
+        return hit[1]
+    blocks = _openpages_blocks(source) if source.is_openpages else _sql_blocks(source)
+    _blocks_cache[key] = (time.time(), blocks)
+    return blocks
+
+
+def _sql_blocks(source: DataSource) -> dict[str, str]:
     insp = inspect(source.engine)
-    blocks = []
+    blocks: dict[str, str] = {}
     for qualified in source.tables:
         schema, _, name = qualified.rpartition(".")
         try:
@@ -174,14 +188,12 @@ def describe(source: DataSource) -> str:
                 if values:
                     line += ("; " if "  -- " in line else "  -- ") + "values: " + ", ".join(repr(v) for v in values)
             lines.append(line)
-        blocks.append(f"{qualified}\n" + "\n".join(lines))
-    text = "\n\n".join(blocks) or "(no tables available)"
-    _schema_cache[key] = (time.time(), text)
-    return text
+        blocks[qualified] = f"{qualified}\n" + "\n".join(lines)
+    return blocks
 
 
-def _describe_openpages(source: DataSource) -> str:
-    blocks = []
+def _openpages_blocks(source: DataSource) -> dict[str, str]:
+    blocks: dict[str, str] = {}
     for qualified in source.tables:
         name = qualified.split(".", 1)[-1]
         lines = []
@@ -190,8 +202,110 @@ def _describe_openpages(source: DataSource) -> str:
             if f["values"] and len(f["values"]) <= 15:
                 line += "  -- values: " + ", ".join(repr(v) for v in f["values"])
             lines.append(line)
-        blocks.append(f"[{name}]\n" + "\n".join(lines))
-    text = "\n\n".join(blocks) or "(no object types available)"
+        blocks[qualified] = f"[{name}]\n" + "\n".join(lines)
+    return blocks
+
+
+# ---------- Choosing which tables the model is shown ----------
+
+# Roughly how many characters make a token. Only used to turn a token budget into a character
+# budget, so it needs to be about right rather than exact.
+CHARS_PER_TOKEN = 3.5
+
+_WORD = re.compile(r"[A-Za-z][A-Za-z0-9]*")
+# Words that match almost everything, so they say nothing about which table is wanted.
+_STOP = {"the", "and", "for", "with", "all", "any", "show", "give", "list", "chart", "charts", "report",
+         "reports", "dashboard", "create", "build", "make", "simple", "using", "available", "include",
+         "following", "each", "per", "total", "count", "number", "data", "field", "fields", "object",
+         "objects", "table", "tables", "card", "cards", "kpi", "bar", "pie", "donut", "line", "add",
+         "interactive", "filter", "filters", "value", "values", "name", "names", "from", "where", "ibm",
+         "openpages", "new", "old", "top", "this", "that", "are", "was", "has", "have", "its", "one"}
+
+
+def _terms(text: str) -> set[str]:
+    """The meaningful words in a name or a question, with CamelCase split apart so "SOXProcess"
+    matches someone asking about a "process"."""
+    out = set()
+    for word in _WORD.findall(text):
+        parts = re.findall(r"[A-Z]+(?![a-z])|[A-Z][a-z]+|[a-z]+|\d+", word) or [word]
+        for part in parts:
+            part = part.lower()
+            if len(part) > 2 and part not in _STOP:
+                out.add(part)
+                # "processes" should match "process"; a crude stem is enough here.
+                if part.endswith("es") and len(part) > 5:
+                    out.add(part[:-2])
+                elif part.endswith("s") and len(part) > 4:
+                    out.add(part[:-1])
+    return out
+
+
+def _score(qualified: str, block: str, wanted: set[str]) -> float:
+    """How well one table answers the question. The table's own name counts for far more than a
+    field name, because a question is nearly always about a thing, not about a column."""
+    if not wanted:
+        return 0.0
+    name = qualified.split(".", 1)[-1]
+    name_terms = _terms(name)
+    score = 4.0 * len(name_terms & wanted)
+    # An exact name, as someone would type it: "Action Item", "SOXRisk".
+    if name_terms and name_terms <= wanted:
+        score += 6.0
+    field_terms = _terms(block[len(name):])
+    score += min(3.0, 0.5 * len(field_terms & wanted))
+    return score
+
+
+def _fit(blocks: dict[str, str], question: str, budget: int) -> tuple[list[str], list[str]]:
+    """Splits the tables into the ones described in full and the ones only named.
+
+    Everything fits for most databases and this does nothing. It matters for a connection sharing
+    a hundred-odd OpenPages object types, where describing them all comes to tens of thousands of
+    tokens: the model's context would silently drop whatever didn't fit, keeping the tail, and the
+    model would then insist that perfectly real object types don't exist. Choosing what to send
+    beats letting the context window choose by truncation.
+    """
+    order = list(blocks)
+    total = sum(len(blocks[t]) + 2 for t in order)
+    if total <= budget:
+        return order, []
+    wanted = _terms(question)
+    # Best match first, and by the connection's own order among equals so it stays predictable.
+    ranked = sorted(order, key=lambda t: (-_score(t, blocks[t], wanted), order.index(t)))
+    kept, used = [], 0
+    for table in ranked:
+        cost = len(blocks[table]) + 2
+        if used + cost > budget and kept:
+            continue
+        kept.append(table)
+        used += cost
+    keeping = set(kept)
+    return [t for t in order if t in keeping], [t for t in order if t not in keeping]
+
+
+def describe(source: DataSource, question: str = "") -> str:
+    """The tables, as the model is shown them: columns with types, and the values of
+    low-cardinality text columns (such as region or status) so the model can filter on them.
+
+    `question` is what is being asked. When a source shares more tables than fit the model's
+    context, it decides which ones are described in full; the rest are listed by name so the model
+    knows they exist and can say it needs one.
+    """
+    blocks = _schema_blocks(source)
+    if not blocks:
+        return "(no object types available)" if source.is_openpages else "(no tables available)"
+    budget = int(settings.ai_schema_budget_tokens * CHARS_PER_TOKEN)
+    kept, left_out = _fit(blocks, question, budget)
+    text = "\n\n".join(blocks[t] for t in kept)
+    if left_out:
+        names = ", ".join(t.split(".", 1)[-1] for t in left_out)
+        text += (f"\n\nAlso available, but not described above because there are too many to list "
+                 f"({len(left_out)}): {names}.\nIf the question needs one of these, say so in reply "
+                 f"rather than guessing its field names.")
+    return _openpages_preamble(source, text) if source.is_openpages else text
+
+
+def _openpages_preamble(source: DataSource, text: str) -> str:
     model = openpages_model.get(source.options.get("data_model"))
     if model is not None:
         text += "\n" + openpages_model.model_note(model)
@@ -364,12 +478,33 @@ def column_values(source: DataSource, qualified: str, column: str, limit: int = 
     return [str(v)[:100] for v in values]
 
 
+def openpages_labels(source: DataSource, type_name: str, field: str) -> dict[str, str]:
+    """{label people read: value OpenPages stores} for one enum field, empty when it stores the
+    words already. Results come back labelled (see openpages.query), so a filter has to offer the
+    same labels and turn the chosen one back into the stored value before it reaches the SQL."""
+    if not source.is_openpages:
+        return {}
+    try:
+        by_field = source.client.enum_labels(type_name)
+    except openpages.OpenPagesError:
+        return {}
+    pairs = next((v for k, v in by_field.items() if k.lower() == field.lower()), {})
+    return {label: stored for stored, label in pairs.items()}
+
+
+def openpages_stored(source: DataSource, type_name: str, field: str, value: str) -> str:
+    """The value to write into the SQL for what someone picked in a filter."""
+    return openpages_labels(source, type_name, field).get(value, value)
+
+
 def _openpages_values(source: DataSource, type_name: str, field: str, limit: int) -> list[str]:
     """A field's choices from its definition, or else the values in the data."""
     try:
         f = next((x for x in source.client.type_fields(type_name) if x["name"].lower() == field.lower()), None)
         if f and f["values"]:
-            return sorted(f["values"])[:limit]
+            labels = openpages_labels(source, type_name, field)
+            stored_to_label = {stored: label for label, stored in labels.items()}
+            return sorted({stored_to_label.get(v, v) for v in f["values"]})[:limit]
         ref = openpages.field_ref(type_name, field)
         _, rows, _ = source.client.query(f"SELECT {ref} FROM [{type_name}]", MAX_ROWS)
     except openpages.OpenPagesError:

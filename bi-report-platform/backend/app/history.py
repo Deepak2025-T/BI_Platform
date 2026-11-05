@@ -119,10 +119,15 @@ def snapshot_at(db: Session, report: Report, at: dt.datetime | None) -> ReportSn
     """at=None: the snapshot before the newest one. Otherwise the newest snapshot at or before `at`,
     or the oldest one after it when history doesn't go back that far."""
     base = select(ReportSnapshot).where(ReportSnapshot.report_id == report.id)
+    # Two refreshes within the same second share a created_at, and then "the one before the newest"
+    # would be whichever the database happened to return first - sometimes the newest itself, which
+    # reads as nothing to compare with. The id is in the order they were taken, so it breaks the tie.
+    newest_first = (ReportSnapshot.created_at.desc(), ReportSnapshot.id.desc())
+    oldest_first = (ReportSnapshot.created_at, ReportSnapshot.id)
     if at is None:
-        return db.scalar(base.order_by(ReportSnapshot.created_at.desc()).offset(1).limit(1))
-    before = db.scalar(base.where(ReportSnapshot.created_at <= at).order_by(ReportSnapshot.created_at.desc()).limit(1))
-    return before or db.scalar(base.order_by(ReportSnapshot.created_at).limit(1))
+        return db.scalar(base.order_by(*newest_first).offset(1).limit(1))
+    before = db.scalar(base.where(ReportSnapshot.created_at <= at).order_by(*newest_first).limit(1))
+    return before or db.scalar(base.order_by(*oldest_first).limit(1))
 
 
 def comparable(report: Report, snap: ReportSnapshot) -> list[dict]:

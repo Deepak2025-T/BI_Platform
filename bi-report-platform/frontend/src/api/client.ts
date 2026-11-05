@@ -2,6 +2,16 @@ import axios from "axios";
 
 export const TOKEN_KEY = "bi_token";
 
+/**
+ * How long to wait for one AI model call.
+ *
+ * It must be longer than the backend's AI_TIMEOUT_SECONDS, or the browser gives up on a call the
+ * backend is still working on: the answer is written and saved, and the person is told the server
+ * never replied. It lives here rather than next to one group of endpoints because chat, the
+ * dashboard builder and "change this chart" all make the same kind of call and have to agree.
+ */
+export const AI_WAIT = 430000;
+
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "",
   timeout: 30000,

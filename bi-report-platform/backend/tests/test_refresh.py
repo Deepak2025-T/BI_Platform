@@ -241,3 +241,23 @@ def test_history_needs_a_dashboard_and_a_valid_retention(client, user, make_repo
     assert res.status_code == 422
     res = client.put(f"/api/reports/{dashboard['id']}/schedule", headers=user, json={"every": "daily", "history_days": 365})
     assert res.json()["report"]["history_days"] == 365
+
+
+def test_two_refreshes_in_the_same_second_still_compare(client, user, dashboard):
+    """Refreshing twice quickly puts two snapshots on the same timestamp. The comparison is then
+    with the one before the newest, not with nothing at all."""
+    rid = dashboard["id"]
+    taken = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    with SessionLocal() as db:
+        for value in (150, 175, 180):
+            db.add(ReportSnapshot(report_id=rid, created_at=taken, trigger="schedule",
+                                  data={"sql": {"w": "SELECT 1"},
+                                        "widgets": [{"id": "w", "ok": True, "columns": ["n"], "rows": [[value]]}]}))
+        db.commit()
+        report = db.get(Report, rid)
+        report.config = {**report.config, "widgets": [{"id": "w", "title": "W", "sql": "SELECT 1",
+                                                       "chart": {"type": "kpi", "x": "", "y": ["n"]}}]}
+        db.commit()
+
+    prev = client.get(f"/api/reports/{rid}/history/compare", headers=user).json()
+    assert prev is not None and prev["widgets"][0]["rows"] == [[175]]

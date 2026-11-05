@@ -11,6 +11,7 @@ import { rememberedModel } from "../lib/aiModels";
 import { cardLook } from "../lib/cardColors";
 import { columnLabel, shortDate } from "../lib/format";
 import { COMPARE_OPTIONS, type CompareWith, type HistoryPoint, compareAt, timeLabels } from "../lib/history";
+import { printReport } from "../lib/print";
 import { useAutosave } from "../lib/useAutosave";
 import { HEIGHT, WIDTHS, hasHeight, sizeForCols, tileCols } from "../lib/tileSize";
 import { CHART_LABELS, retype } from "../lib/sources";
@@ -58,7 +59,7 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
   const failed = (location.state as { failed?: { title: string; error: string }[] } | null)?.failed ?? [];
   const [values, setValues] = useState<Record<string, FilterValue>>({});
   const [updating, setUpdating] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<"xlsx" | "pptx" | null>(null);
   const latest = useRef(0);
   const [schedule, setSchedule] = useState<Report>(report); // the report's refresh schedule, updated in place
   const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
@@ -139,20 +140,24 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
     return f.kind === "date" ? !!(v?.date_from || v?.date_to) : !!v?.values?.length;
   });
 
-  async function exportExcel() {
-    setExporting(true);
+  /** Downloads the dashboard as a file, with whatever filters are set, the way the viewer shows it. */
+  async function exportFile(kind: "xlsx" | "pptx") {
+    const label = kind === "xlsx" ? "Excel file" : "PowerPoint deck";
+    setExporting(kind);
     try {
-      const blob = await assistantApi.exportExcel(report.id, { filters: values });
+      const blob = kind === "xlsx"
+        ? await assistantApi.exportExcel(report.id, { filters: values })
+        : await assistantApi.exportPowerPoint(report.id, { filters: values });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${(title || "Dashboard").replace(/[\\/:*?"<>|]+/g, " ").trim()}.xlsx`;
+      a.download = `${(title || "Dashboard").replace(/[\\/:*?"<>|]+/g, " ").trim()}.${kind}`;
       a.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch {
-      toast("Couldn't create the Excel file. Try again.");
+      toast(`Couldn't create the ${label}. Try again.`);
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   }
 
@@ -336,9 +341,13 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
               </div>
             </div>
             <div className="row-wrap no-print">
-              <button className="btn btn-ghost" onClick={() => window.print()}>Download PDF</button>
-              <button className="btn btn-ghost" onClick={exportExcel} disabled={exporting || loading}>
-                {exporting ? "Preparing Excel…" : "Download Excel"}
+              <button className="btn btn-ghost" onClick={printReport}>Download PDF</button>
+              <button className="btn btn-ghost" onClick={() => exportFile("xlsx")} disabled={!!exporting || loading}>
+                {exporting === "xlsx" ? "Preparing Excel…" : "Download Excel"}
+              </button>
+              <button className="btn btn-ghost" onClick={() => exportFile("pptx")} disabled={!!exporting || loading}
+                title="One slide per chart, as PowerPoint charts you can restyle">
+                {exporting === "pptx" ? "Preparing PowerPoint…" : "Export PowerPoint"}
               </button>
               <button className="btn btn-ghost" onClick={duplicateReport} disabled={duplicating}
                 title="Copy this dashboard into a new draft of your own">{duplicating ? "Duplicating…" : "Duplicate"}</button>

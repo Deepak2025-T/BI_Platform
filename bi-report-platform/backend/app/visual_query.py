@@ -38,6 +38,7 @@ from sqlglot import exp
 from sqlalchemy import inspect
 from sqlglot.errors import SqlglotError
 
+from .connections import openpages
 from .datasources import DataSource, table_columns
 from .sql_guard import DIALECTS
 
@@ -118,9 +119,6 @@ class SpecError(Exception):
 
 
 def _dialect(source: DataSource) -> str:
-    if source.is_openpages:
-        raise SpecError("The visual builder doesn't support IBM OpenPages connections yet. "
-                        "Build this chart by asking a question instead.")
     try:
         return DIALECTS[source.db_type]
     except KeyError:
@@ -499,6 +497,10 @@ def compile_spec(source: DataSource, spec: dict, *, inline: bool = False) -> tup
     something the data doesn't support. The SQL still goes through sql_guard when it runs."""
     if not isinstance(spec, dict):
         raise SpecError("The chart is missing.")
+    if source.is_openpages:
+        # Its SQL is a different language, not a dialect, so it gets its own compiler. Filter
+        # values are always written in: the Query Service takes no bound parameters.
+        return _compile_openpages(source, spec)
     dialect = _dialect(source)
     model = _Model(source, spec)
 
@@ -554,6 +556,142 @@ def compile_spec(source: DataSource, spec: dict, *, inline: bool = False) -> tup
     except SqlglotError as err:
         raise SpecError(f"The chart can't be turned into a query: {err}") from err
     return sql, binder.params
+
+
+# ---------- IBM OpenPages ----------
+
+# What the visual builder can offer on an OpenPages connection, and why it is less than elsewhere.
+#
+# OpenPages Query Service SQL is not database SQL (see connections/openpages.py). Three limits
+# shape everything below:
+#   * COUNT is the only function. Nothing can be summed or averaged.
+#   * COUNT works on one object type and never alongside a JOIN, so a counted chart reads a
+#     single type.
+#   * There is no AS, so a column arrives named after the field it came from, and a count arrives
+#     as "Count_Resource ID". The chart's columns are therefore named here to match what comes
+#     back, rather than being aliased in the query.
+# Values are written into the SQL, quoted, because the Query Service takes no bound parameters;
+# openpages.quote escapes them. The SQL still goes through openpages.check_sql before it runs.
+
+_OP_COUNT_COLUMN = "Count_Resource ID"
+_OP_FILTER_OPS = {"=", "!=", ">", ">=", "<", "<=", "contains", "starts", "in", "not_in",
+                  "is_null", "not_null"}
+
+
+def _op_field(type_name: str, field: str) -> str:
+    return f"[{type_name}].[{field}]"
+
+
+def _op_condition(item: dict, type_name: str, columns: _Columns) -> str:
+    column = columns.real(item.get("column"))
+    op = str(item.get("op") or "=").strip().lower()
+    if op not in _OP_FILTER_OPS:
+        raise SpecError(f'"{op}" isn\'t a filter OpenPages understands. '
+                        f'Use one of: {", ".join(sorted(_OP_FILTER_OPS))}.')
+    ref = _op_field(type_name, column)
+    if op == "is_null":
+        return f"{ref} IS NULL"
+    if op == "not_null":
+        return f"{ref} IS NOT NULL"
+
+    raw = item.get("values", item.get("value"))
+    values = [v for v in (raw if isinstance(raw, list) else [raw]) if v is not None and str(v) != ""]
+    if not values:
+        raise SpecError(f'The filter on "{column}" has no value to compare against.')
+    if op in ("in", "not_in"):
+        if len(values) > MAX_IN_VALUES:
+            raise SpecError(f'The filter on "{column}" lists {len(values)} values; at most {MAX_IN_VALUES}.')
+        joined = ", ".join(openpages.quote(str(v)) for v in values)
+        return f"{ref} {'NOT IN' if op == 'not_in' else 'IN'} ({joined})"
+    one = str(values[0])
+    if op == "contains":
+        return f"{ref} LIKE {openpages.quote('%' + one + '%')}"
+    if op == "starts":
+        return f"{ref} LIKE {openpages.quote(one + '%')}"
+    return f"{ref} {'<>' if op == '!=' else op} {openpages.quote(one)}"
+
+
+def _compile_openpages(source: DataSource, spec: dict) -> tuple[str, dict]:
+    """One visual-builder chart as OpenPages Query Service SQL."""
+    table = _resolve_table(source, spec.get("table"))
+    type_name = source.op_type(table)
+    if spec.get("joins"):
+        raise SpecError("OpenPages charts read one object type at a time, because its SQL joins by "
+                        "hierarchy rather than by matching columns. Remove the joined table, or "
+                        "build this chart by asking a question.")
+    columns = _Columns(source, table)
+
+    dimension_items = spec.get("dimensions") or []
+    measure_items = spec.get("measures") or []
+    filter_items = spec.get("filters") or []
+    for name, items, cap in (("fields", dimension_items, MAX_DIMENSIONS), ("numbers", measure_items, MAX_MEASURES),
+                             ("filters", filter_items, MAX_FILTERS)):
+        if not isinstance(items, list):
+            raise SpecError(f"The chart's {name} must be a list.")
+        if len(items) > cap:
+            raise SpecError(f"A chart can use at most {cap} {name}; this one has {len(items)}.")
+    if not dimension_items and not measure_items:
+        raise SpecError("Drag at least one field onto the chart.")
+    if len(measure_items) > 1:
+        raise SpecError("An OpenPages chart shows one number, because COUNT is the only thing its "
+                        "SQL can work out. Keep one and remove the rest.")
+
+    selects, groups = [], []
+    for item in dimension_items:
+        if not isinstance(item, dict):
+            raise SpecError("Each field must say which column it uses.")
+        if str(item.get("bucket") or "").strip():
+            raise SpecError("OpenPages SQL has no date functions, so a date can't be grouped by "
+                            "month or year here. Put the date on the chart as it is, or ask for "
+                            "the chart as a question instead.")
+        column = columns.real(item.get("column"))
+        ref = _op_field(type_name, column)
+        selects.append(ref)
+        groups.append(ref)
+
+    counted = False
+    for item in measure_items:
+        if not isinstance(item, dict):
+            raise SpecError("Each number must say which column it uses.")
+        agg = str(item.get("agg") or "count").strip().lower()
+        if agg not in ("count", "count_distinct"):
+            raise SpecError(f"OpenPages can only count, so \"{AGGS.get(agg, agg)}\" isn't available "
+                            f"here. Change it to Count.")
+        # Counting the resource id counts the objects, whichever field was dragged on.
+        selects.append(f"COUNT({_op_field(type_name, 'Resource ID')})")
+        counted = True
+
+    sql = f"SELECT {', '.join(selects)} FROM [{type_name}]"
+    conditions = [_op_condition(f, type_name, columns) for f in filter_items if isinstance(f, dict)]
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    if groups and counted:
+        sql += " GROUP BY " + ", ".join(groups)
+
+    order = _op_order(spec, type_name, columns, counted)
+    if order:
+        sql += " ORDER BY " + order
+    return sql, {}
+
+
+def _op_order(spec: dict, type_name: str, columns: _Columns, counted: bool) -> str:
+    """ORDER BY for an OpenPages chart. A count is ordered by the count expression itself, since
+    there is no alias to order by."""
+    parts = []
+    for item in (spec.get("order") or [])[:MAX_DIMENSIONS]:
+        if not isinstance(item, dict):
+            continue
+        ref = str(item.get("ref") or "").strip()
+        direction = "DESC" if str(item.get("dir") or "").lower() == "desc" else "ASC"
+        if counted and (ref == _OP_COUNT_COLUMN or not columns.has(ref)):
+            parts.append(f"COUNT({_op_field(type_name, 'Resource ID')}) {direction}")
+        elif columns.has(ref):
+            parts.append(f"{_op_field(type_name, columns.real(ref))} {direction}")
+    if parts:
+        return ", ".join(parts)
+    # Biggest first is what a chart almost always wants, and OpenPages has no LIMIT to make it
+    # matter less.
+    return f"COUNT({_op_field(type_name, 'Resource ID')}) DESC" if counted else ""
 
 
 def relationships(source: DataSource, tables: list[str]) -> list[dict]:

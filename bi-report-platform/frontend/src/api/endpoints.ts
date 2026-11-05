@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { AI_WAIT, api } from "./client";
 import type {
   ChatResult, DashboardConfig, DashboardDataRequest, DashboardFilter, DrillResult, DashboardParameters, DataModelDetail, DataModelSummary, DataSourceInfo, QueryData, Widget, WidgetData,
   AIModel, AIModelInput, ColorPalette, PaletteInput, AIModelPublic, AIModelTestResult, AIProvider, AIProviderInfo, Category, CategoryInput, ConnectionInput, ConnectionTestResult, DataConnection, QueryParams, QueryResult, Report,
@@ -10,15 +10,6 @@ export const authApi = {
     api.post<{ access_token: string; user: User }>("/api/auth/login", { email, password }).then((r) => r.data),
   me: () => api.get<User>("/api/auth/me").then((r) => r.data),
 };
-
-/**
- * How long to wait for one model call, a little longer than the backend's own AI_TIMEOUT_SECONDS
- * (300s by default). The browser must not give up first: the backend keeps going, saves the
- * answer, and the person is told the server didn't answer when in fact it did.
- */
-// Matches AI_TIMEOUT_SECONDS in backend/.env (300s) plus a little. A dashboard gets four times
-// this, because it is an outline call plus one call per chart (AI_DASHBOARD_BUDGET_SECONDS).
-const AI_WAIT = 310000;
 
 export const queryApi = {
   /** modelId null uses the built-in keyword engine. Local models can be slow, so allow 2 minutes. */
@@ -142,6 +133,9 @@ export const assistantApi = {
   /** The dashboard as an .xlsx file, one sheet per chart, with the same filters. */
   exportExcel: (reportId: number, body: DashboardDataRequest) =>
     api.post<Blob>(`/api/reports/${reportId}/export`, body, { timeout: 180000, responseType: "blob" }).then((r) => r.data),
+  /** The dashboard as a .pptx deck, one slide per chart, with the same filters. */
+  exportPowerPoint: (reportId: number, body: DashboardDataRequest) =>
+    api.post<Blob>(`/api/reports/${reportId}/export-ppt`, body, { timeout: 180000, responseType: "blob" }).then((r) => r.data),
   /** Design time: the AI model picks the column each chart filters on. Nothing is saved. */
   mapFilter: (reportId: number, body: { model_id: number; label: string; kind: DashboardFilter["kind"]; id?: string; widgets: Widget[] }) =>
     api.post<DashboardFilter>(`/api/reports/${reportId}/filters/map`, body, { timeout: AI_WAIT }).then((r) => r.data),

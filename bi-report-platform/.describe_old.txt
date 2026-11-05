@@ -1,0 +1,76 @@
+# ---------- Describing the tables for the model ----------
+
+_schema_cache: dict[tuple, tuple[float, str]] = {}
+
+
+def forget_schema(connection_id: int | None = None):
+    """Drops cached schema descriptions so the next one is read from the database again."""
+    for key in [k for k in _schema_cache if connection_id is None or k[0] == connection_id]:
+        del _schema_cache[key]
+
+
+def describe(source: DataSource) -> str:
+    """One block per table: columns with types, and the values of low-cardinality text columns
+    (such as region or status) so the model can filter on them. High-cardinality columns such as
+    names or emails are never sampled."""
+    key = (source.id, source.version, tuple(source.tables))
+    cached = _schema_cache.get(key)
+    if cached and time.time() - cached[0] < SCHEMA_CACHE_SECONDS:
+        return cached[1]
+    if source.is_openpages:
+        text = _describe_openpages(source)
+        _schema_cache[key] = (time.time(), text)
+        return text
+    insp = inspect(source.engine)
+    blocks = []
+    for qualified in source.tables:
+        schema, _, name = qualified.rpartition(".")
+        try:
+            columns = insp.get_columns(name, schema=schema or None)
+        except Exception:
+            continue  # dropped since it was chosen, or no longer visible to the account
+        lines = []
+        table, reflected = None, False
+        for col in columns:
+            line = f"  {col['name']} {col['type']}"
+            if col.get("comment"):
+                line += f"  -- {' '.join(str(col['comment']).split())[:200]}"
+            if _is_text(col["type"]) and len(blocks) < 30:
+                if not reflected:
+                    table, reflected = _reflect(source.engine, name, schema), True
+                values = _few_values(source.engine, table, col["name"]) if table is not None else None
+                if values:
+                    line += ("; " if "  -- " in line else "  -- ") + "values: " + ", ".join(repr(v) for v in values)
+            lines.append(line)
+        blocks.append(f"{qualified}\n" + "\n".join(lines))
+    text = "\n\n".join(blocks) or "(no tables available)"
+    _schema_cache[key] = (time.time(), text)
+    return text
+
+
+def _describe_openpages(source: DataSource) -> str:
+    blocks = []
+    for qualified in source.tables:
+        name = qualified.split(".", 1)[-1]
+        lines = []
+        for f in source.client.type_fields(name)[:80]:
+            line = f"  [{f['name']}] {f['type']}"
+            if f["values"] and len(f["values"]) <= 15:
+                line += "  -- values: " + ", ".join(repr(v) for v in f["values"])
+            lines.append(line)
+        blocks.append(f"[{name}]\n" + "\n".join(lines))
+    text = "\n\n".join(blocks) or "(no object types available)"
+    model = openpages_model.get(source.options.get("data_model"))
+    if model is not None:
+        text += "\n" + openpages_model.model_note(model)
+    audit_id, audit_name = source.options.get("audit_id", ""), source.options.get("audit_name", "")
+    if audit_id or audit_name:
+        which = " and ".join(x for x in (f"Resource ID {audit_id}" if audit_id else "",
+                                          f"name '{audit_name}'" if audit_name else "") if x)
+        text += (f"\n\nDefault audit: the business entity with {which}. When a question is about \"the audit\" "
+                 "or doesn't name one, limit results to it, e.g. JOIN [SOXBusEntity] ON CHILD([Finding]) WHERE "
+                 + (f"[SOXBusEntity].[Resource ID] = {audit_id}" if audit_id else
+                    f"[SOXBusEntity].[Name] = {openpages.quote(audit_name)}") + ".")
+    return openpages.SQL_GUIDE + "\n\nObject types and their fields:\n\n" + text
+
+

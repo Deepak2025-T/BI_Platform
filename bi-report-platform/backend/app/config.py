@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     # default is 4096 whatever the model supports, which a dozen tables of schema will fill.
     # More costs memory; less cuts answers short.
     ollama_num_ctx: int = 16384
+    # How much of that window the table descriptions may take. A connection can share far more
+    # tables than any model's context holds - 164 OpenPages object types come to about 33,000
+    # tokens - and a context that overflows is truncated silently, so the model ends up insisting
+    # that real tables don't exist. Past this budget the most relevant tables are described and
+    # the rest are listed by name.
+    ai_schema_budget_tokens: int = 6000
     # Runs scheduled report refreshes inside the API process.
     scheduler_enabled: bool = True
 

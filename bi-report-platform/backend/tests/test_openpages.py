@@ -350,3 +350,24 @@ def test_template_needs_its_object_types_and_connection_type(client, manager, op
     assert res.status_code == 400 and "[SOXControl] isn't one of the types" in res.json()["detail"]
     res = client.post(f"/api/templates/{controls['id']}/build", headers=manager, json={"source_id": None})
     assert res.status_code == 400 and "IBM OpenPages" in res.json()["detail"]
+
+
+def test_the_grc_reports_ship_as_templates(client, user):
+    """The two reports in frontend/Template: Audit Plan Item Overview and the Action Item
+    Monitoring Dashboard, filed under GRC in the Internal Audit and Operational Risk folders."""
+    plan = _template(client, user, "OpenPages: Audit plan item overview")
+    action = _template(client, user, "OpenPages: Action item monitoring dashboard")
+    assert (plan["category"], plan["module"]) == ("GRC", "IAM")
+    assert (action["category"], action["module"]) == ("GRC", "ORM")
+
+    titles = [w["title"] for w in plan["layout"]["widgets"]]
+    for part in ("status", "type", "risk level", "priority", "planned quarter", "auditable unit"):
+        assert any(part in t.lower() for t in titles), part
+    assert any(w["chart"]["type"] == "table" for w in plan["layout"]["widgets"])
+    # Audit Plan Item refuses IS NULL on its own field group, so these counts must not ask.
+    for w in plan["layout"]["widgets"]:
+        if w["chart"]["type"] != "table":
+            assert "IS NOT NULL" not in w["sql"]
+
+    assert [w["chart"]["type"] for w in action["layout"]["widgets"]][:3] == ["kpi"] * 3
+    assert any("ageing" in w["title"].lower() for w in action["layout"]["widgets"])

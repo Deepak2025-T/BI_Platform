@@ -26,7 +26,7 @@ from sqlglot.errors import SqlglotError
 
 from .ai.providers import ModelSpec, complete_json
 from .connections import openpages
-from .datasources import DataSource, column_values, table_columns
+from .datasources import DataSource, column_values, openpages_stored, table_columns
 from .sql_guard import DIALECTS
 
 KINDS = ("date", "category")
@@ -157,7 +157,9 @@ def _apply_openpages(sql: str, source: DataSource, active: list[dict], values: d
                 parts.append(f"{ref} < {openpages.quote((_date(value['date_to']) + dt.timedelta(days=1)).isoformat())}")
             conditions.append(" AND ".join(parts))
         else:
-            vals = [str(v) for v in value["values"]]
+            # Filters offer the words people read; the SQL needs what OpenPages stores, which on
+            # some installations is a code ("1" for "Planned").
+            vals = [openpages_stored(source, source.op_type(table), column, str(v)) for v in value["values"]]
             conditions.append(" OR ".join(f"{ref} = {openpages.quote(v)}" for v in vals))
         applied.append(f["id"])
     return openpages.add_conditions(sql, conditions), {}, applied, skipped

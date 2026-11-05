@@ -7,6 +7,7 @@ import uuid
 import zipfile
 
 import pytest
+from pptx import Presentation
 
 from app import dashboard_filters
 from app.datasources import DataSource, _bind
@@ -140,10 +141,25 @@ def test_excel_export_has_a_sheet_per_chart(client, user, dashboard):
     assert "Filter: Region" in strings and "not filtered by Region" in strings
 
 
+def test_powerpoint_export_has_a_slide_per_chart(client, user, dashboard):
+    res = client.post(f"/api/reports/{dashboard['id']}/export-ppt", headers=user,
+                      json={"filters": {dashboard["region"]["id"]: {"values": ["North"]}}})
+    assert res.status_code == 200, res.text
+    assert res.headers["content-type"].startswith("application/vnd.openxmlformats")
+    assert "Shop%20sales%20regions.pptx" in res.headers["content-disposition"]
+    deck = Presentation(io.BytesIO(res.content))
+    assert len(deck.slides) == 4  # the cover, then the three charts
+    text = " ".join(s.text_frame.text for slide in deck.slides for s in slide.shapes if s.has_text_frame)
+    for title in ("Shop: sales/regions", "Total sales", "By region", "Customers"):
+        assert title in text
+    assert "Region: North" in text  # the filters the viewer had are on the cover
+
+
 def test_export_needs_access(client, manager, user, source):
     report = client.post("/api/assistant/save", headers=manager, json={
         "source_id": source, "title": "private", "widgets": [_widget("a", "A", TOTAL)]}).json()
     assert client.post(f"/api/reports/{report['id']}/export", headers=user).status_code == 404
+    assert client.post(f"/api/reports/{report['id']}/export-ppt", headers=user).status_code == 404
 
 
 def test_others_cannot_map_filters_on_a_private_draft(client, manager, user, model_id, source):  # noqa: F811
@@ -226,3 +242,63 @@ def test_only_someone_who_can_edit_the_report_may_add_to_it(client, manager, das
     res = _add(client, {"Authorization": f"Bearer {token}"}, dashboard["id"],
                [_widget("x", "Nope", TOTAL, "kpi")], source)
     assert res.status_code in (403, 404)
+
+
+# ---------- Long titles and questions ----------
+
+def test_adding_a_pinned_chart_to_an_existing_report_is_not_refused(client, user, dashboard, source):
+    """The "Add to a report" dialog, which is where this showed up: a chart pinned from a chat of
+    a long request was refused with "String should have at most 500 characters"."""
+    widget = _widget("pinned", "Action items by status", TOTAL, "kpi")
+    widget["question"] = "Create an IBM OpenPages Action Item Dashboard. " * 60
+    res = _add(client, user, dashboard["id"], [widget], source)
+    assert res.status_code == 200, res.text
+    added = res.json()["config"]["widgets"][-1]
+    assert len(added["question"]) == 500 and added["question"].endswith("…")
+
+
+def test_pinning_an_answer_to_a_long_request_is_not_refused(client, user):
+    """A chart pinned from a chat carries the whole request as its question.
+
+    That request is routinely longer than 500 characters - a dashboard asked for with a list of
+    KPIs and charts easily runs to a few thousand - and the answer being described is perfectly
+    good. Refusing the save loses the chart over the length of its label, so the label is trimmed.
+    """
+    question = "Create an IBM OpenPages Action Item Dashboard. " * 60
+    assert len(question) > 500
+    widget = {"id": "w1", "title": "Action items by status", "question": question,
+              "sql": "SELECT region, SUM(amount) AS total FROM sales GROUP BY region",
+              "chart": {"type": "bar", "x": "region", "y": ["total"]}}
+    res = client.post("/api/assistant/save", headers=user,
+                      json={"source_id": None, "title": "Action items", "prompt": question[:2000],
+                            "widgets": [widget]})
+    assert res.status_code == 201, res.text
+    saved = res.json()["config"]["widgets"][0]
+    assert len(saved["question"]) == 500
+    assert saved["question"].endswith("\u2026")
+    assert saved["title"] == "Action items by status"
+
+
+def test_a_report_named_after_a_long_question_is_trimmed_not_refused(client, user):
+    widget = {"id": "w1", "title": "Totals", "question": "totals",
+              "sql": "SELECT region, SUM(amount) AS total FROM sales GROUP BY region",
+              "chart": {"type": "bar", "x": "region", "y": ["total"]}}
+    res = client.post("/api/assistant/save", headers=user,
+                      json={"source_id": None, "title": "T" * 900, "prompt": "P" * 9000,
+                            "widgets": [widget]})
+    assert res.status_code == 201, res.text
+    assert len(res.json()["title"]) == 200
+    # The prompt column is 2000 wide, so clipping is what keeps the insert from failing too.
+    assert len(res.json()["prompt"]) == 2000
+
+
+def test_a_label_that_already_fits_is_left_exactly_as_it_was(client, user):
+    widget = {"id": "w1", "title": "Open items", "question": "How many are open?",
+              "sql": "SELECT region, SUM(amount) AS total FROM sales GROUP BY region",
+              "chart": {"type": "bar", "x": "region", "y": ["total"]}}
+    res = client.post("/api/assistant/save", headers=user,
+                      json={"source_id": None, "title": "Items", "prompt": "a short prompt",
+                            "widgets": [widget]})
+    assert res.status_code == 201, res.text
+    saved = res.json()["config"]["widgets"][0]
+    assert saved["question"] == "How many are open?" and saved["title"] == "Open items"

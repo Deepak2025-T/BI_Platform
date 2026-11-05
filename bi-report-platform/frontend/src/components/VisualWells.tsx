@@ -6,6 +6,9 @@ import { FIELD_DRAG_TYPE } from "./VisualFields";
 import Icon from "./Icon";
 
 const AGGS: Agg[] = ["sum", "avg", "min", "max", "count", "count_distinct"];
+// OpenPages Query Service SQL has COUNT and nothing else, and no date functions at all, so those
+// choices are not offered rather than offered and then refused by the backend.
+const OPENPAGES_AGGS: Agg[] = ["count", "count_distinct"];
 const BUCKETS: DateBucket[] = ["year", "quarter", "month", "week", "day"];
 
 interface Props {
@@ -16,6 +19,8 @@ interface Props {
   buckets: Record<string, DateBucket | undefined>;
   /** How many tables the chart reads: with more than one, each field says where it came from. */
   tableCount?: number;
+  /** IBM OpenPages can only count, and can't group dates, so it is offered less. */
+  openPages?: boolean;
   onDrop: (well: WellId, column: string) => void;
   onRemove: (well: WellId, index: number) => void;
   onAgg: (well: WellId, index: number, agg: Agg) => void;
@@ -30,7 +35,8 @@ interface Props {
  * A well only takes what it can draw, so dropping text on Values is refused with a reason rather
  * than accepted and left to fail when the query runs.
  */
-export default function VisualWells({ visual, wells, fields, buckets, tableCount = 1, onDrop, onRemove, onAgg, onBucket, onRefuse }: Props) {
+export default function VisualWells({ visual, wells, fields, buckets, tableCount = 1, openPages = false,
+                                      onDrop, onRemove, onAgg, onBucket, onRefuse }: Props) {
   const [over, setOver] = useState<WellId | null>(null);
   const fieldOf = (key: string) => fields.find((f) => fieldKey(f.table, f.name) === key);
 
@@ -73,7 +79,8 @@ export default function VisualWells({ visual, wells, fields, buckets, tableCount
                       <>
                         <select aria-label={`How to summarise ${column}`} value={(item as VisualMeasure).agg}
                           onChange={(e) => onAgg(def.id, i, e.target.value as Agg)}>
-                          {AGGS.filter((a) => a === "count" || a === "count_distinct" || field?.is_number)
+                          {(openPages ? OPENPAGES_AGGS : AGGS)
+                            .filter((a) => a === "count" || a === "count_distinct" || field?.is_number)
                             .map((a) => <option key={a} value={a}>{AGG_LABELS[a]}</option>)}
                         </select>
                         <span className="well-item-name" title={defaultMeasureName(item as VisualMeasure)}>
@@ -87,7 +94,7 @@ export default function VisualWells({ visual, wells, fields, buckets, tableCount
                           {column}
                           {tableCount > 1 && <span className="well-item-table"> · {tableOf(key).split(".").pop()}</span>}
                         </span>
-                        {field?.is_date && (
+                        {field?.is_date && !openPages && (
                           <select aria-label={`How to group ${column}`} value={buckets[key] ?? ""}
                             onChange={(e) => onBucket(key, (e.target.value || undefined) as DateBucket | undefined)}>
                             <option value="">Each value</option>

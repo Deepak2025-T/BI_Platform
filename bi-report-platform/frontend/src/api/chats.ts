@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { AI_WAIT, api } from "./client";
 import type { ChatResult } from "./types";
 
 /** A saved chat, as listed in the chat history. */
@@ -41,5 +41,5 @@ export const chatsApi = {
   remove: (id: number) => api.delete(`/api/chats/${id}`),
   /** Asks the AI model and saves the turn. A failed answer comes back with status "error". */
   send: (id: number, question: string, modelId: number | null) =>
-    api.post<SavedMessage>(`/api/chats/${id}/messages`, { question, model_id: modelId }, { timeout: 240000 }).then((r) => r.data),
+    api.post<SavedMessage>(`/api/chats/${id}/messages`, { question, model_id: modelId }, { timeout: AI_WAIT }).then((r) => r.data),
 };
