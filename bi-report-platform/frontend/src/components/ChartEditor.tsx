@@ -4,7 +4,7 @@ import { aiModelsApi } from "../api/endpoints";
 import { reportToolsApi } from "../api/reportTools";
 import type { AIModelPublic, ChartType, QueryData, Widget, WidgetData, WidgetSize, WidgetStyle } from "../api/types";
 import { rememberedModel } from "../lib/aiModels";
-import { columnLabel } from "../lib/format";
+import { CURRENCIES, SCALES, columnLabel, formatValue } from "../lib/format";
 import { CHART_LABELS, retype } from "../lib/sources";
 import { ColorPicker, Seg } from "./Controls";
 import { HEIGHT, HEIGHTS, WIDTHS, clampHeight, hasHeight } from "../lib/tileSize";
@@ -22,6 +22,11 @@ type Tab = "chart" | "style" | "data" | "ai";
 const FORMATS: [NonNullable<WidgetStyle["format"]>, string][] = [
   ["auto", "Short (1.2M)"], ["full", "Full (1,234,567)"], ["currency", "Currency"], ["percent", "Percent (0.25 = 25%)"],
 ];
+const NUMERALS: [NonNullable<WidgetStyle["numerals"]>, string][] = [
+  ["international", "International (1,234,567)"], ["indian", "Indian (12,34,567)"],
+];
+/** The number a person can read to check the format is the one they meant. */
+const SAMPLE = 12_345_678.9;
 const SORTS: [NonNullable<WidgetStyle["sort"]>, string][] = [["none", "As the query returns"], ["desc", "Largest first"], ["asc", "Smallest first"]];
 
 interface Props {
@@ -265,10 +270,38 @@ export default function ChartEditor({ reportId, widget, data, onClose, onSave, o
                 </label>
               )}
               {style.format === "currency" && (
-                <label className="field">Currency symbol
-                  <input value={style.currency ?? "£"} maxLength={4} onChange={(e) => setStyle({ currency: e.target.value })} />
+                <label className="field">Currency
+                  <select value={CURRENCIES.some((c) => c.symbol === (style.currency ?? "£")) ? style.currency ?? "£" : ""}
+                    onChange={(e) => setStyle({ currency: e.target.value || " " })}>
+                    {CURRENCIES.map((c) => <option key={c.symbol} value={c.symbol}>{c.label}</option>)}
+                    <option value="">Something else…</option>
+                  </select>
                 </label>
               )}
+              {style.format === "currency" && !CURRENCIES.some((c) => c.symbol === (style.currency ?? "£")) && (
+                <label className="field">Symbol
+                  <input value={style.currency ?? ""} maxLength={6} placeholder="e.g. R$"
+                    onChange={(e) => setStyle({ currency: e.target.value })} />
+                </label>
+              )}
+              {style.format !== "percent" && (
+                <>
+                  <label className="field">Shorten numbers to
+                    <select value={style.scale ?? "auto"} onChange={(e) => setStyle({ scale: e.target.value as WidgetStyle["scale"] })}>
+                      {SCALES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  </label>
+                  <label className="field">Digit grouping
+                    <select value={style.numerals ?? "international"}
+                      onChange={(e) => setStyle({ numerals: e.target.value as WidgetStyle["numerals"] })}>
+                      {NUMERALS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  </label>
+                </>
+              )}
+              <div className="field">A number in this format
+                <output className="format-sample">{formatValue(SAMPLE, style)}</output>
+              </div>
               {draft.chart.type !== "kpi" && (
                 <label className="field">Order
                   <select value={style.sort ?? "none"} onChange={(e) => setStyle({ sort: e.target.value as WidgetStyle["sort"] })}>

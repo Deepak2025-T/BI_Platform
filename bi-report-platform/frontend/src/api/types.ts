@@ -579,8 +579,12 @@ export interface WidgetStyle {
   /** Show the legend when there are several series or a pie (default true). */
   legend?: boolean;
   format?: "auto" | "full" | "currency" | "percent";
-  /** Symbol for the currency format, e.g. £, $, ₹. */
+  /** Symbol for the currency format, e.g. £, $, ₹, "AED ". */
   currency?: string;
+  /** How far numbers are shortened: automatic, every digit, or a named unit such as crore. */
+  scale?: "auto" | "none" | "thousand" | "lakh" | "crore" | "million" | "billion";
+  /** How digits are grouped: 1,234,567 or the Indian 12,34,567. Missing means international. */
+  numerals?: "international" | "indian";
   sort?: "none" | "desc" | "asc";
   horizontal?: boolean;
   stacked?: boolean;

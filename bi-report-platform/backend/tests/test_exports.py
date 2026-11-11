@@ -208,3 +208,66 @@ def test_a_value_with_no_code_behind_it_goes_through_unchanged():
     from app.datasources import openpages_stored
     source = FakeSource(client_with(ISSUE))
     assert openpages_stored(source, "SOXIssue", "OPSS-Iss:Status", "Open") == "Open"
+
+
+# ---------- Numbers on the slide ----------
+
+def test_a_pie_carries_its_figures_and_shares():
+    # A pie of five coloured wedges and no numbers is the thing that sent this back.
+    deck = deck_of([widget("a", "Receivables by ageing", "pie", "Bucket", ["outstanding"])],
+                   [result("a", ["Bucket", "outstanding"], [["0-30", 7830951], ["180+", 102391482.95]])])
+    labels = next(s.chart for s in deck.slides[1].shapes if s.has_chart).plots[0].data_labels
+    assert labels.show_value and labels.show_percentage
+
+
+def test_a_bar_carries_its_figures():
+    deck = deck_of([widget("a", "By stage", "bar", "Stage", ["n"])],
+                   [result("a", ["Stage", "n"], [["New", 42], ["Won", 31]])])
+    chart = next(s.chart for s in deck.slides[1].shapes if s.has_chart)
+    assert chart.plots[0].data_labels.show_value
+    assert chart.plots[0].data_labels.show_percentage is False  # a share of what, on a bar?
+    assert chart.has_title is False  # the slide heading already names it
+
+
+def test_the_labels_are_in_the_chart_s_own_number_format():
+    deck = deck_of([widget("a", "Receivables", "pie", "Bucket", ["outstanding"],
+                           style={"format": "currency", "currency": "₹", "numerals": "indian"})],
+                   [result("a", ["Bucket", "outstanding"], [["0-30", 7830951]])])
+    code = next(s.chart for s in deck.slides[1].shapes if s.has_chart).plots[0].data_labels.number_format
+    assert "₹" in code and "##\,##\,##0" in code  # rupees, grouped 12,34,567
+
+
+def test_a_number_tile_reads_the_way_its_tile_reads():
+    deck = deck_of([widget("a", "Total outstanding", "kpi", "", ["outstanding"],
+                           style={"format": "currency", "currency": "₹", "numerals": "indian",
+                                  "scale": "crore"})],
+                   [result("a", ["outstanding"], [[140942433.95]])])
+    assert "₹14.09 Cr" in [s.text_frame.text for s in deck.slides[1].shapes if s.has_text_frame]
+
+
+def test_every_number_format_has_an_excel_code():
+    from app.ppt_export import _number_format
+    assert _number_format({}) == "#,##0"
+    assert _number_format({"format": "percent"}) == "0.0%"
+    assert _number_format({"format": "currency", "currency": "$"}) == '"$"#,##0'
+    assert _number_format({"scale": "million", "format": "currency", "currency": "€"}) == '"€"#,##0.0,,"M"'
+    # A condition has to open its own section, so the symbol follows it rather than leading the code.
+    indian = _number_format({"format": "currency", "currency": "₹", "numerals": "indian"})
+    assert indian.startswith('[>=10000000]"₹"')
+
+
+def test_the_backend_reads_numbers_the_same_way_the_browser_does():
+    """These are the outputs of formatValue in frontend/src/lib/format.ts for the same inputs. A
+    tile and the slide made from it have to say the same thing."""
+    from app.ppt_export import format_value as f
+    assert f(1234, {}) == "1,234"                                   # under ten thousand: every digit
+    assert f(12345678.9, {}) == "12.3M"
+    assert f(12345678.9, {"format": "full"}) == "12,345,678.9"
+    assert f(12345678.9, {"format": "currency", "currency": "$"}) == "$12.3M"
+    assert f(1234567, {"numerals": "indian"}) == "12.3 L"
+    assert f(12345678.9, {"format": "full", "numerals": "indian"}) == "1,23,45,678.9"
+    assert f(12345678.9, {"format": "currency", "currency": "₹", "numerals": "indian",
+                          "scale": "crore"}) == "₹1.23 Cr"
+    assert f(12345678.9, {"format": "currency", "currency": "AED "}) == "AED 12.3M"
+    assert f(0.2567, {"format": "percent"}) == "25.7%"
+    assert f(-4500000, {"format": "currency", "currency": "€"}) == "-€4.5M"

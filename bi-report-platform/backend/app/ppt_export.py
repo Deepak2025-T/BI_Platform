@@ -120,6 +120,51 @@ def _series(columns: list[str], rows: list[list], chart: dict) -> tuple[str, lis
     return x, categories, series
 
 
+# Digit grouping the Indian way, as an Excel format code: 12,34,567 rather than 1,234,567. Excel
+# groups in threes unless the code says otherwise, and these conditional sections are the usual way
+# of asking for it. A condition has to come first in its own section, so a currency symbol goes
+# after it, which is why this is a template rather than a prefix and a body.
+_INDIAN = ('[>=10000000]{s}##\\,##\\,##\\,##0;'
+           '[>=100000]{s}##\\,##\\,##0;'
+           '{s}#,##0')
+
+
+def _number_format(style: dict) -> str:
+    """An Excel number format for a chart's data labels, from the chart's own number format.
+
+    PowerPoint formats the real value rather than a string, so a label stays right if the numbers
+    behind the slide are ever changed. Two of the app's formats have no Excel equivalent: lakh and
+    crore are not powers of a thousand, so Excel cannot divide down to them with its trailing-comma
+    trick. Those fall back to the full number with Indian grouping, which is still read correctly -
+    it is the unit that is missing, not the value."""
+    kind = str(style.get("format") or "auto")
+    if kind == "percent":
+        return "0.0%"
+    indian = style.get("numerals") == "indian"
+    scale = str(style.get("scale") or "auto")
+    symbol = str(style.get("currency") or "") if kind == "currency" else ""
+    quoted = f'"{symbol}"' if symbol else ""
+    body = {"thousand": '#,##0,"K"', "million": '#,##0.0,,"M"', "billion": '#,##0.0,,,"B"'}.get(scale)
+    if body is not None:
+        return quoted + body
+    return _INDIAN.format(s=quoted) if indian else quoted + "#,##0"
+
+
+def _label(plot, style: dict, *, percentage: bool = False) -> None:
+    """Writes the numbers onto the chart. Without this a pie is five coloured wedges and no figures,
+    which is the one thing a slide has to carry."""
+    plot.has_data_labels = True
+    labels = plot.data_labels
+    labels.number_format = _number_format(style)
+    labels.number_format_is_linked = False
+    labels.show_value = True
+    labels.show_percentage = percentage
+    labels.show_category_name = False
+    labels.show_series_name = False
+    labels.font.size = Pt(11)
+    labels.font.bold = True
+
+
 def _chart_slide(slide, widget: dict, columns: list[str], rows: list[list]) -> bool:
     kind = str((widget.get("chart") or {}).get("type") or "bar").lower()
     chart_type = CHART_TYPES.get(kind)
@@ -135,16 +180,23 @@ def _chart_slide(slide, widget: dict, columns: list[str], rows: list[list]) -> b
     graphic = slide.shapes.add_chart(chart_type, MARGIN, BODY_TOP, BODY_W, BODY_H, data)
     chart = graphic.chart
     chart.font.size = Pt(12)
+    # The slide's heading already names the chart, so PowerPoint's own title would only repeat the
+    # series name over the top of it.
+    chart.has_title = False
+    style = widget.get("style") or {}
     colours = _palette(widget)
     if kind in ("pie", "donut"):
         chart.has_legend = True
         chart.legend.position = XL_LEGEND_POSITION.RIGHT
         chart.legend.include_in_layout = False
+        # A slice is worth both its figure and its share of the whole.
+        _label(chart.plots[0], style, percentage=True)
         # A pie has one series, and each slice is a point of it that carries its own colour.
         for i, point in enumerate(chart.series[0].points):
             point.format.fill.solid()
             point.format.fill.fore_color.rgb = RGBColor.from_string(colours[i % len(colours)])
     else:
+        _label(chart.plots[0], style)
         chart.has_legend = len(series) > 1
         if chart.has_legend:
             chart.legend.position = XL_LEGEND_POSITION.BOTTOM
@@ -155,13 +207,51 @@ def _chart_slide(slide, widget: dict, columns: list[str], rows: list[list]) -> b
     return True
 
 
-def _kpi_slide(slide, columns: list[str], rows: list[list]) -> bool:
-    """One big number: the first number in the result."""
+def _group(number: float, digits: int, indian: bool) -> str:
+    """The digits of one number, grouped in threes or the Indian way (12,34,567)."""
+    text = f"{abs(number):,.{digits}f}".rstrip("0").rstrip(".") if digits else f"{abs(number):,.0f}"
+    if not indian:
+        return text
+    whole, dot, rest = text.replace(",", "").partition(".")
+    if len(whole) > 3:
+        head, tail = whole[:-3], whole[-3:]
+        pairs = [head[max(i - 2, 0):i] for i in range(len(head), 0, -2)][::-1]
+        whole = ",".join(pairs + [tail])
+    return whole + dot + rest
+
+
+def format_value(number: float, style: dict) -> str:
+    """One number the way the chart shows it on screen, for the slide that stands in for the tile.
+
+    This is the same reckoning as formatValue in frontend/src/lib/format.ts, and the two have to
+    agree: a tile reading "₹1.2 Cr" that exports as "12345678" is a slide nobody trusts."""
+    kind = str(style.get("format") or "auto")
+    indian = style.get("numerals") == "indian"
+    if kind == "percent":
+        return f"{number * 100:,.1f}".rstrip("0").rstrip(".") + "%"
+    scale = str(style.get("scale") or ("none" if kind == "full" else "auto"))
+    units = {"thousand": (1e3, "K"), "lakh": (1e5, " L"), "crore": (1e7, " Cr"),
+             "million": (1e6, "M"), "billion": (1e9, "B")}
+    divisor, suffix = 1.0, ""
+    if scale in units:
+        divisor, suffix = units[scale]
+    elif scale == "auto" and abs(number) >= 10_000:
+        for step in (("crore", "lakh", "thousand") if indian else ("billion", "million", "thousand")):
+            if abs(number) >= units[step][0]:
+                divisor, suffix = units[step]
+                break
+    shown = number / divisor
+    digits = 2 if not suffix else 1 if scale == "auto" else (2 if abs(shown) < 100 else 1)
+    symbol = str(style.get("currency") or "") if kind == "currency" else ""
+    return f"{'-' if number < 0 else ''}{symbol}{_group(shown, digits, indian)}{suffix}"
+
+
+def _kpi_slide(slide, columns: list[str], rows: list[list], style: dict) -> bool:
+    """One big number: the first number in the result, read the way the tile reads it."""
     value = next((v for row in rows for v in row if _numeric(v) is not None), None)
     if value is None:
         return False
-    number = _numeric(value)
-    shown = f"{number:,.0f}" if number == int(number) else f"{number:,.2f}"
+    shown = format_value(_numeric(value), style)
     _box(slide, MARGIN, Inches(2.4), BODY_W, Inches(1.8), shown, 96, bold=True, align=PP_ALIGN.CENTER)
     if columns:
         _box(slide, MARGIN, Inches(4.2), BODY_W, Inches(0.5), str(columns[0]), 16, color=MUTED,
@@ -228,7 +318,7 @@ def dashboard_deck(title: str, config: dict, source_name: str, results: list[dic
         if not rows:
             _box(slide, MARGIN, BODY_TOP, BODY_W, Inches(1.0), "This chart has no rows to show.", 14, color=MUTED)
             continue
-        drawn = (_kpi_slide(slide, columns, rows) if kind == "kpi"
+        drawn = (_kpi_slide(slide, columns, rows, w.get("style") or {}) if kind == "kpi"
                  else _chart_slide(slide, w, columns, rows) if kind in CHART_TYPES
                  else False)
         if not drawn:
