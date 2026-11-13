@@ -419,6 +419,9 @@ _WRITE_WORDS = re.compile(r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|E
                           r"REVOKE|INTO|UNION|INTERSECT|EXCEPT|WITH)\b", re.I)
 _TYPE_REF = re.compile(r"\b(FROM|JOIN)\s+(\[(?:[^\]]|\]\])+\]|\S+)", re.I)
 _FUNCTION = re.compile(r"\b([A-Za-z_]+)\s*\(")
+# The join predicates the Query Service grammar defines are PARENT, CHILD and ANCESTOR. DESCENDANT
+# is accepted here but never written by this app: a server that has it should not be refused by us,
+# and one that doesn't will say so itself.
 _HIERARCHY = {"PARENT", "CHILD", "ANCESTOR", "DESCENDANT"}
 _KEYWORDS = {"SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "IN", "ON", "BY", "HAVING", "IS", "LIKE", "JOIN"}
 
@@ -584,14 +587,47 @@ def _rows(payload, labels: list[str] | None = None) -> list[dict]:
                 name = labels[i]
             while name in rec:
                 name += " (2)"
-            value = f.get("value", f.get("enumValue", f.get("values", f.get("currencyValue"))))
-            if isinstance(value, dict):
-                value = value.get("name", value.get("localizedLabel", value.get("baseAmount", value.get("amount"))))
-            elif isinstance(value, list):
-                value = ", ".join(str(v.get("name", v)) if isinstance(v, dict) else str(v) for v in value)
-            rec[name] = value
+            rec[name] = _field_value(f)
         out.append(rec)
     return out
+
+
+# Where each OpenPages data type keeps its value. A field that holds nothing leaves all of them
+# out, so they are tried in turn: an element that is present but null is not a value either.
+_VALUE_KEYS = ("value", "enumValue", "multiEnumValue", "currencyValue", "objectValue", "values")
+
+
+def _field_value(f: dict):
+    """The value of one field of one row, whichever element the Query Service wrapped it in.
+
+    A MULTI_VALUE_ENUM - a field like Domain that a record can hold several of at once - keeps its
+    values in multiEnumValue.enumValue rather than in "value". Reading only "value" left every such
+    field null, and a chart of it came out as a row of nameless bars."""
+    for key in _VALUE_KEYS:
+        value = _plain(f.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _plain(value):
+    """One readable value out of the wrapper OpenPages returns it in: the stored name of an enum
+    (enum_labels puts the words people read back later), the amount of a currency, or the values of
+    a multi-value field joined into one cell."""
+    if isinstance(value, dict):
+        for key in ("enumValue", "values", "value"):  # a multi-value field nests one level deeper
+            if key in value:
+                inner = _plain(value[key])
+                if inner is not None:
+                    return inner
+        for key in ("name", "localizedLabel", "baseAmount", "amount"):
+            if value.get(key) is not None:
+                return value[key]
+        return None
+    if isinstance(value, list):
+        parts = [p for p in (_plain(v) for v in value) if p is not None and p != ""]
+        return ", ".join(str(p) for p in parts) if parts else None
+    return value
 
 
 def _next_link(payload) -> str | None:

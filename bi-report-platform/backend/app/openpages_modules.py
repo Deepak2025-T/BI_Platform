@@ -21,7 +21,8 @@ OpenPages SQL has no AS, no SUM and no date functions; COUNT works on one object
 never alongside a JOIN. Totals are therefore counts, and amounts appear in lists rather than charts.
 """
 
-from .openpages_templates import COUNT, ENT, count_by, count_by_two, filter_on, heading, table_of, total
+from .openpages_templates import (COUNT, ENT, Field, count_by, count_by_two, field_pairs, filter_on, heading,
+                                  summary_table, table_of, total)
 
 # ---------- object types, from the shipped object models and solution profiles ----------
 
@@ -54,29 +55,52 @@ ROOT_FILTER = {"label": "Business entity", "kind": "category", "type": "*", "fie
 
 
 def rooted(child: str, title: str, fields: list[str], direct: bool = False, size: str = "full") -> dict:
-    """A list that starts at the root object and walks down to `child`, so every row names the
-    business entity it belongs to. PARENT is for a direct child; ANCESTOR reaches any depth."""
-    join = f"PARENT([{ENT}])" if direct else f"ANCESTOR([{ENT}])"
-    columns = ", ".join([f"[{ENT}].[Name]"] + [f"[{child}].[{f}]" for f in ["Name"] + fields])
-    return table_of(title, f"SELECT {columns} FROM [{ENT}] JOIN [{child}] ON {join}", size=size)
+    """A list of `child` records that names the business entity each one belongs to.
+
+    A direct child is read with a PARENT join, which may select the parent's own fields. Anything
+    deeper cannot be: the Query Service's indirect join (ANCESTOR) "may only have one JOIN", must
+    carry a Resource ID filter on the ancestor type, and allows no ancestor field in the SELECT
+    besides it, so a list of "every X under its entity" is not a join at all. It doesn't need to
+    be - [Location] is a system field on every object holding the entity path it hangs under, so
+    reading one object type gives each row its entity and costs the server nothing."""
+    # A column may be given as the several names installations know it by; the list is read down
+    # in step, so each variant is one consistent set of names (see openpages_templates.Field).
+    depth = max([len(f) for f in fields if isinstance(f, list)] or [1])
+    variants = []
+    for i in range(depth):
+        picked = [f[min(i, len(f) - 1)] if isinstance(f, list) else f for f in fields]
+        if direct:
+            columns = ", ".join([f"[{ENT}].[Name]"] + [f"[{child}].[{f}]" for f in ["Name"] + picked])
+            variants.append(f"SELECT {columns} FROM [{ENT}] JOIN [{child}] ON PARENT([{ENT}])")
+        else:
+            columns = ", ".join([f"[{child}].[Location]"] + [f"[{child}].[{f}]" for f in ["Name"] + picked])
+            variants.append(f"SELECT {columns} FROM [{child}]")
+    widget = table_of(title, variants[0], size=size)
+    if len(variants) > 1:
+        widget["alt_sql"] = variants[1:]
+    return widget
 
 
 def entity_section(what: str) -> list[dict]:
     """The business entity header every dashboard opens with."""
     return [heading("Business entities", f"Everything below hangs under these entities. {what}"),
             total(ENT, "Business entities", size="quarter"),
-            count_by(ENT, "OPSS-Ent:Entity Type", "Entities by type", "pie", size="third"),
-            count_by(ENT, "OPSS-Ent:Status", "Entities by status", "pie", size="third")]
+            count_by(ENT, ENT_TYPE, "Entities by type", "pie", size="third"),
+            count_by(ENT, ENT_STATUS, "Entities by status", "pie", size="third")]
 
 
 def report(module: str, name: str, description: str, color: str, prompt: str, body: list[dict],
-           filters: list[dict] | None = None, intro: str = "") -> dict:
-    return {"module": module, "name": f"{module}: {name}", "description": description, "color": color,
-            "prompt": prompt, "widgets": entity_section(intro) + body,
-            "filters": [ROOT_FILTER] + list(filters or [])}
+           filters: list[dict] | None = None, intro: str = "", theme: str = "") -> dict:
+    out = {"module": module, "name": f"{module}: {name}", "description": description, "color": color,
+           "prompt": prompt, "widgets": entity_section(intro) + body,
+           "filters": [ROOT_FILTER] + list(filters or [])}
+    if theme:
+        out["theme"] = theme
+    return out
 
 
-def kpis(type_name: str, items: list[tuple[str, str]]) -> list[dict]:
+def kpis(type_name: str, items: list[tuple[str, str | list[str]]]) -> list[dict]:
+    """Number tiles. A condition may be given as several, one per name the field is known by."""
     return [total(type_name, title, where) for title, where in items]
 
 
@@ -90,29 +114,432 @@ def status_set(type_name: str, prefix: str, extra: list[tuple[str, str, str, str
 # ---------- ORM: Operational Risk Management ----------
 
 ORM_COLOR = "#6D597A"
+
+# ---------- ORM overview: the fields, colours and helpers it needs ----------
+#
+# The overview dashboard below reads eight object types at once. Beyond the fields the other ORM
+# dashboards already use, it reads the ones an ORM profile adds (risk domain, tolerance, treatment,
+# scope flags, KRI thresholds, action item ageing).
+#
+# Installations put these in different field groups, and a chart naming only one of them is dropped
+# everywhere else. So each is listed under every name it is known by, newest standard first, and the
+# build step tries them in turn (see openpages_templates.Field). The second names here are the ones
+# an installation with the ORM profile loaded was observed to use. A field known by none of its
+# names is still dropped at build time, with the reason shown.
+DOMAIN = {RSK: ["OPSS-Risk:Risk Domain", "OPSS-Rsk:Domain", "OPSS-Risk:Domain"],
+          CTL: ["OPSS-Ctl:Risk Domain", "OPSS-Ctl:Domain", "OPSS-Control:Domain"],
+          PRC: ["OPSS-Proc:Risk Domain", "OPSS-Process:Domain", "OPSS-Proc:Domain"],
+          KRI: ["OPSS-KRI:Risk Domain", "OPSS-KRI:Domain", "OPSS-KRI-Shared:Domain"],
+          ISS: ["OPSS-Iss:Risk Domain", "OPSS-Iss:Domain", "OPSS-Issue:Domain"]}
+
+# Risk ratings, tolerance and treatment: the qualitative assessment and acceptance groups hold these
+# on an installation that has them.
+INHERENT = ["OPSS-Risk:Inherent Risk Rating", "OPSS-Risk-Qual:Inherent Risk Rating"]
+RESIDUAL = ["OPSS-Risk:Residual Risk Rating", "OPSS-Risk-Qual:Residual Risk Rating"]
+RESID_LIKELIHOOD = ["OPSS-Risk:Residual Likelihood", "OPSS-Risk-Qual:Residual Likelihood"]
+INHER_LIKELIHOOD = ["OPSS-Risk:Inherent Likelihood", "OPSS-Risk-Qual:Inherent Likelihood"]
+TOLERANCE = ["OPSS-Risk:Within Risk Tolerance", "OPSS-Risk-Accp:Within Tolerance"]
+TREATMENT = ["OPSS-Risk:Risk Treatment", "OPSS-Risk-Accp:Acceptance", "OPSS-Risk-Accp:Risk Treatment"]
+RSK_STATUS = ["OPSS-Risk:Status", "OPSS-Rsk:Status"]
+# The Basel event category, with and without the level suffix.
+BASEL_CATEGORY = ["OPSS-Shared-Basel:Risk Category L1", "OPSS-Shared-Basel:Risk Category"]
+# Loss events and indicators. Severity and the loss-collection status come from the loss-collection
+# group on an installation that has it; a KRI's nature, collection status and thresholds sit in the
+# KRI group or the shared one.
+LOSS_SEVERITY = ["OPSS-LossEv:Severity", "OPLC-LossEvent:Severity"]
+KRI_NATURE = ["OPSS-KRI:Indicator Nature", "OPSS-KRI:Nature"]
+KRI_COLLECTION = ["OPSS-KRI:Collection Status", "OPSS-KRI-Shared:Collection Status"]
+KRI_YELLOW = ["OPSS-KRI:Yellow Threshold", "OPSS-KRI-Shared:Yellow Threshold"]
+KRI_RED = ["OPSS-KRI:Red Threshold", "OPSS-KRI-Shared:Red Threshold"]
+
+
+# Processes: the shorter "OPSS-Proc" group and the spelled-out "OPSS-Process" one both occur.
+PRC_STATUS = ["OPSS-Proc:Status", "OPSS-Process:Status"]
+PRC_SCOPE = ["OPSS-Proc:In Scope", "OPSS-Process:In Scope"]
+PRC_CATEGORY = ["OPSS-Proc:Process Category", "OPSS-Process:Category", "OPSS-Process:Process Category"]
+PRC_SOX = ["OPSS-Proc:SOX Status", "OPSS-Process:SOX Status", "OPSS-FCM-cert:Certification Status"]
+
+# Controls and business entities.
+CTL_FREQUENCY = ["OPSS-Ctl:Control Frequency", "OPSS-Ctl:Frequency"]
+ENT_TYPE = ["OPSS-Ent:Entity Type", "OPSS-BusEnt:Entity Type", "OPSS-BE:Entity Type"]
+ENT_STATUS = ["OPSS-Ent:Status", "OPSS-BusEnt:Status"]
+ENT_SCOPE = ["OPSS-Ent:In Scope", "OPSS-BusEnt:In Scope", "OPSS-BE:Entity In Scope"]
+ENT_RCSA = ["OPSS-Ent:RCSA Scope", "OPSS-BusEnt:In RCSA Scope", "OPSS-BusEnt:RCSA Scope"]
+# The framework an entity is assessed against is often an add-on field group named for the
+# regulation itself, so the installation's own name is the last thing tried.
+ENT_FRAMEWORK = ["OPSS-Ent:Framework", "OPSS-BusEnt:Framework", "SEBI CSCRF BE:Framework"]
+
+# Colour coding, as asked for, in the steps the dashboard's design settled on. The obvious hues
+# (#1E8E3E / #F2C200 / #E8740C / #C5192D) failed two checks on a white card: the yellow sat at
+# 1.64:1 against the background, and yellow against orange came out under 10 ΔE, which colour-vision
+# deficiency and ordinary screens both lose. These steps pass the lightness, chroma and separation
+# checks; every chart that uses them also shows its counts, so colour is never the only cue.
+GREEN, AMBER, ORANGE, RED = "#2E7D4F", "#D9A520", "#CC5A11", "#A61326"
+GREY, BLUE = "#6B7785", "#1C6FD0"
+# The neutral breakdowns (type, method, domain, frequency) carry no rating, so they stay in the
+# module's own plum rather than borrowing a rating colour: one hue for bars, its tints for rings.
+PLUM, PLUM_SET = ORM_COLOR, [ORM_COLOR, "#A595AE", BLUE, GREY]
+
+# ruleColor in the viewer matches a rule when the category *contains* the rule's text, first rule
+# first, so the narrower name has to come first: "Ineffective" and "Partially Effective" both
+# contain "Effective", and would otherwise all come out green.
+RISK_COLOURS = [{"match": "Minor", "color": GREEN}, {"match": "Moderate", "color": AMBER},
+                {"match": "Significant", "color": ORANGE}, {"match": "Major", "color": RED}]
+CTL_COLOURS = [{"match": "Not Determined", "color": GREY}, {"match": "Ineffective", "color": RED},
+               {"match": "Partially Effective", "color": ORANGE}, {"match": "Effective", "color": GREEN}]
+KRI_COLOURS = [{"match": "Green", "color": GREEN}, {"match": "Yellow", "color": AMBER},
+               {"match": "Red", "color": RED}]
+ISS_COLOURS = [{"match": "Critical", "color": RED}, {"match": "High", "color": ORANGE},
+               {"match": "Medium", "color": AMBER}, {"match": "Low", "color": GREEN}]
+ACT_COLOURS = [{"match": "Completed", "color": GREEN}, {"match": "In Progress", "color": BLUE},
+               {"match": "Overdue", "color": RED}, {"match": "Pending", "color": ORANGE}]
+LOSS_COLOURS = [{"match": "Low", "color": GREEN}, {"match": "Moderate", "color": AMBER},
+                {"match": "High", "color": ORANGE}, {"match": "Major", "color": RED}]
+
+
+# Scales the design colours that are not one of the six named ratings. Longer names come first,
+# because a rule matches when the category contains its text: "Unlikely" has to be tried before
+# "Likely", and "Within tolerance" before a bare "No".
+TOLERANCE_COLOURS = [{"match": "Within", "color": GREEN}, {"match": "Outside", "color": RED},
+                     {"match": "Yes", "color": GREEN}, {"match": "No", "color": RED}]
+SCOPE_COLOURS = [{"match": "Under review", "color": AMBER}, {"match": "Deferred", "color": AMBER},
+                 {"match": "Out of scope", "color": GREY}, {"match": "In scope", "color": GREEN},
+                 {"match": "Yes", "color": GREEN}, {"match": "No", "color": GREY}]
+TREND_COLOURS = [{"match": "Improving", "color": GREEN}, {"match": "Better", "color": GREEN},
+                 {"match": "Stable", "color": BLUE}, {"match": "Worse", "color": RED}]
+COLLECT_COLOURS = [{"match": "Not started", "color": GREY}, {"match": "Overdue", "color": RED},
+                   {"match": "Collected", "color": GREEN}]
+APPROVAL_COLOURS = [{"match": "Not submitted", "color": GREY}, {"match": "Awaiting", "color": AMBER},
+                    {"match": "Rejected", "color": RED}, {"match": "Approved", "color": GREEN}]
+AGEING_COLOURS = [{"match": "Above 60", "color": RED}, {"match": "31", "color": ORANGE},
+                  {"match": "11", "color": AMBER}, {"match": "10", "color": GREEN}]
+PROB_COLOURS = [{"match": "Unlikely", "color": GREEN}, {"match": "Rare", "color": GREEN},
+                {"match": "Possible", "color": AMBER}, {"match": "Almost certain", "color": RED},
+                {"match": "Likely", "color": ORANGE}]
+
+
+# ---------- the look the ORM overview was designed with ----------
+#
+# The design these two dashboards come from draws every breakdown one of two ways: a ring with the
+# total in the middle and a legend listing each slice with its count and share, or a row of
+# horizontal bars with the figure at the end. Both are shapes the viewer already draws; the styles
+# here ask for them, and the "plex" theme (frontend app.css) carries the typography, the cards and
+# the section rules. A chart styled this way still reads correctly under any other theme.
+RING = {"ringLegend": True, "legend": True}
+ROW = {"horizontal": True, "showValues": True}
+
+
+def ring(widget: dict) -> dict:
+    """A pie becomes the design's ring: hole in the middle, legend down the side."""
+    widget["chart"] = {**(widget.get("chart") or {}), "type": "donut"}
+    widget["style"] = {**(widget.get("style") or {}), **RING}
+    return widget
+
+
+def _kri_thresholds(i: int) -> str:
+    """The indicator list, written against one pairing of the threshold field names."""
+    return (f"SELECT [{KRI}].[Name], [{KRI}].[OPSS-KRI:Value], [{KRI}].[{KRI_YELLOW[i]}], "
+            f"[{KRI}].[{KRI_RED[i]}] FROM [{KRI}] "
+            f"WHERE [{KRI}].[OPSS-KRI:Value] IS NOT NULL ORDER BY [{KRI}].[Name]")
+
+
+def paired(title: str, build, size: str = "half") -> dict:
+    """A list whose SQL names the residual rating, written once per name that field is known by."""
+    widget = table_of(title, build(RESIDUAL[0]), size=size)
+    widget["alt_sql"] = [build(name) for name in RESIDUAL[1:]]
+    return widget
+
+
+def tint(widget: dict, rules: list[dict]) -> dict:
+    """The rating colours on one chart, keeping whatever style the builder already set."""
+    widget["style"] = {**(widget.get("style") or {}), "colorRules": rules, "showValues": True}
+    kind = (widget.get("chart") or {}).get("type")
+    if kind == "bar":
+        widget["style"].update(ROW)
+        return widget
+    return ring(widget) if kind in ("pie", "donut") else widget
+
+
+def plain(widget: dict) -> dict:
+    """A breakdown that carries no rating: one plum hue, the count at the end of each bar."""
+    widget["style"] = {**(widget.get("style") or {}), "color": PLUM, "colorMode": "single", **ROW}
+    return widget
+
+
+def mix(widget: dict) -> dict:
+    """A ring whose slices mean nothing in particular: the plum tints, in order."""
+    widget["style"] = {**(widget.get("style") or {}), "palette": PLUM_SET, "colorMode": "palette"}
+    return ring(widget)
+
+
+def by_month(widget: dict, field: str, title: str = "") -> dict:
+    """A date chart counted per month. OpenPages SQL has no date functions, so the query still
+    groups by the date itself and the rows are folded to mm/yyyy after they come back (see
+    date_rollup); the chart's x stays the same field, so nothing else about the chart changes."""
+    widget["rollup"] = {"column": field, "to": "month", "format": "mm/yyyy"}
+    if title:
+        widget["title"] = widget["question"] = title
+    return widget
+
+
+def heat(type_name: str, row_field: Field, col_field: Field, title: str, size: str = "half",
+         question: str = "") -> dict:
+    """A real heat map: one cell per pair of values, pale to deep plum for how many records fall in
+    it. count_by_two draws the same query as a table; this draws the grid.
+
+    Either field may be a list of the names different installations file it under. The grid has to
+    name the one pair that actually ran - a list would leave the renderer looking for a column
+    called "['OPSS-Risk:Residual Risk Rating', ...]", finding none, and falling back to the rows.
+    So the first pair goes on the chart and the rest ride along as alt_x/alt_legend, which the
+    build step swaps in beside the query it keeps (see routers/templates.first_that_runs)."""
+    widget = count_by_two(type_name, row_field, col_field, title, size=size,
+                          question=question or f"{title}. Count in each cell; darker means more.")
+    pairs = field_pairs(row_field, col_field)
+    widget["chart"] = {"type": "heatmap", "x": pairs[0][0], "y": [COUNT], "legend": pairs[0][1]}
+    widget["alt_x"] = [r for r, _ in pairs[1:]]
+    widget["alt_legend"] = [c for _, c in pairs[1:]]
+    # The design writes the count in each cell and leaves the colour scale off the card, so the
+    # grid reads as a table that happens to be shaded.
+    widget["style"] = {"showValues": True, "color": PLUM, "legend": False}
+    return widget
+
+
+# A section's own card colour: the plum the design uses, at the weight a table can be read on.
+SUMMARY_LOOK = {"cardBg": "#F5F1F9", "headBg": "#EDE7F1"}
+
+
+def summary(type_name: str, title: str, fields: list[Field], question: str) -> dict:
+    """The table that closes a section: one row per record, with the fields that section is about.
+
+    It carries the section's own background so it reads as the band's summary rather than as one
+    more chart, and its columns can be widened or taken off on the report itself."""
+    widget = summary_table(type_name, title, fields, size="full", question=question)
+    widget["style"] = dict(SUMMARY_LOOK)
+    return widget
+
+
+# The ORM overview is two dashboards, the way the design it comes from is two pages: the first
+# covers the standing picture (risks, controls, processes and the entities they hang under), the
+# second what happened and what is being done about it (loss events, indicators, issues, action
+# items). Together they are one reading of a connection, but ~30 charts each is already a long page,
+# and the second half answers a different question from the first.
+
+def where_any(type_name: str, field: list[str] | str, test: str | list[str]) -> list[str]:
+    """The same condition written against each name the field is known by, and each way the value
+    may be worded, so a number tile is not lost on an installation that files the field somewhere
+    else or ends a lifecycle on a different word.
+
+    OpenPages refuses a query naming an enum value it doesn't have ("'Closed' is not a valid value
+    for this enum"), so a wrong guess fails loudly and the next is tried - it never quietly counts
+    the wrong thing."""
+    names = [field] if isinstance(field, str) else field
+    tests = [test] if isinstance(test, str) else test
+    return [f"[{type_name}].[{name}] {t}" for t in tests for name in names]
+
+
+ORM_FIRST_KPIS = (
+    # "Open" is whatever the risk lifecycle has not finished at: some installations close a risk,
+    # others end at approved.
+    kpis(RSK, [("Risks", ""), ("Open risks", where_any(RSK, RSK_STATUS, ["<> 'Closed'", "<> 'Approved'"])),
+               ("Major residual risks", where_any(RSK, RESIDUAL, "= 'Major'"))]) +
+    kpis(CTL, [("Controls", ""),
+               ("Ineffective controls", f"[{CTL}].[OPSS-Ctl:Operating Effectiveness] = 'Ineffective'")]) +
+    kpis(PRC, [("Business processes", "")]) +
+    kpis(ENT, [("Entities in RCSA scope", where_any(ENT, ENT_RCSA, "= 'Yes'"))]))
+
+ORM_SECOND_KPIS = (
+    kpis(LOSS, [("Loss events", "")]) +
+    kpis(KRI, [("Key risk indicators", ""),
+               ("KRIs in red breach", f"[{KRI}].[OPSS-KRI-Shared:Breach Status] = 'Red'")]) +
+    kpis(ISS, [("Issues", ""), ("Open issues", f"[{ISS}].[OPSS-Iss:Status] = 'Open'")]) +
+    kpis(ACT, [("Action items", ""),
+               ("Overdue action items", f"[{ACT}].[OPSS-ActItem:Overdue] = 'Yes'")]))
+
+ORM_FIRST_BODY = (
+    # ---- risks ----
+    [heading("Risk profile", "Where the risks stand, how they are rated and how they are being treated. "
+                      "Minor green, Moderate yellow, Significant orange, Major red."),
+     mix(count_by(RSK, RSK_STATUS, "Risks by status", "pie", size="third")),
+     plain(count_by(RSK, DOMAIN[RSK], "Risks by domain", size="third")),
+     plain(count_by(RSK, BASEL_CATEGORY, "Risks by category", size="third")),
+     tint(count_by(RSK, INHERENT, "Risks by inherent rating", size="third"), RISK_COLOURS),
+     tint(count_by(RSK, RESIDUAL, "Risks by residual rating", size="third"), RISK_COLOURS),
+     mix(count_by(RSK, TREATMENT, "Risks by treatment", "pie", size="third")),
+     tint(count_by(RSK, TOLERANCE, "Risks within tolerance", "pie", size="third"), TOLERANCE_COLOURS),
+     heat(RSK, RESIDUAL, RESID_LIKELIHOOD, "Residual rating against residual likelihood",
+          size="twothird",
+          question="Count of risks in each cell. Darker means more risks sitting there."),
+     summary(RSK, "Risk summary", ["Name", DOMAIN[RSK], INHERENT, RESIDUAL, RSK_STATUS, TREATMENT],
+             "One row per risk, with the fields this section is about. Drag a column's edge to "
+             "widen it, or take a column off with the cross in its heading."),
+     # ---- controls ----
+     heading("Control effectiveness", "Coverage and effectiveness. Effective green, Partially Effective orange, "
+                         "Ineffective red, Not Determined grey."),
+     mix(count_by(CTL, "OPSS-Ctl:Status", "Controls by status", "pie", size="third")),
+     plain(count_by(CTL, "OPSS-Ctl:Control Type", "Controls by type", size="third")),
+     mix(count_by(CTL, "OPSS-Ctl:Control Method", "Controls by method", "pie", size="third")),
+     plain(count_by(CTL, DOMAIN[CTL], "Controls by domain", size="third")),
+     tint(count_by(CTL, "OPSS-Ctl:Design Effectiveness", "Design effectiveness", "pie", size="third"), CTL_COLOURS),
+     tint(count_by(CTL, "OPSS-Ctl:Operating Effectiveness", "Operating effectiveness", "pie", size="third"),
+          CTL_COLOURS),
+     mix(count_by(CTL, "OPSS-Ctl:Classification", "Controls by classification", "pie", size="half")),
+     plain(count_by(CTL, CTL_FREQUENCY, "Controls by frequency", size="half")),
+     summary(CTL, "Control summary",
+             ["Name", DOMAIN[CTL], "OPSS-Ctl:Control Type", "OPSS-Ctl:Control Method",
+              "OPSS-Ctl:Design Effectiveness", "OPSS-Ctl:Operating Effectiveness", "OPSS-Ctl:Status"],
+             "One row per control, with its type, method and how effective it was found to be."),
+     # ---- business processes ----
+     heading("Process coverage", "What the risks and controls hang off, and how much of it is in scope."),
+     mix(count_by(PRC, PRC_STATUS, "Processes by status", "pie", size="third")),
+     plain(count_by(PRC, DOMAIN[PRC], "Processes by domain", size="third")),
+     plain(count_by(PRC, PRC_CATEGORY, "Processes by category", size="third")),
+     tint(count_by(PRC, PRC_SCOPE, "Processes in scope", "pie", size="half"), SCOPE_COLOURS),
+     tint(count_by(PRC, PRC_SOX, "Processes by SOX status", "pie", size="half"), SCOPE_COLOURS),
+     summary(PRC, "Process summary", ["Name", DOMAIN[PRC], PRC_CATEGORY, PRC_STATUS, PRC_SCOPE, PRC_SOX],
+             "One row per business process, with what it covers and whether it is in scope."),
+     # ---- business entities ----
+     heading("Business entity scope", "The hierarchy everything above sits under, and how much of it is "
+                                      "assessed."),
+     tint(count_by(ENT, ENT_SCOPE, "Entities in scope", "pie", size="third"), SCOPE_COLOURS),
+     tint(count_by(ENT, ENT_RCSA, "Entities in RCSA scope", "pie", size="third"), SCOPE_COLOURS),
+     plain(count_by(ENT, ENT_FRAMEWORK, "Entities by framework", size="third")),
+     heat(ENT, ENT_TYPE, ENT_RCSA, "Entity type against RCSA scope", size="half"),
+     summary(ENT, "Business entity summary", ["Name", ENT_TYPE, ENT_SCOPE, ENT_RCSA, ENT_FRAMEWORK],
+             "One row per business entity, with its type, scope and framework.")])
+
+ORM_SECOND_BODY = (
+    # ---- loss events ----
+    [heading("Loss experience", "What actually happened. Low green, Moderate yellow, High orange, Major red."),
+     mix(count_by(LOSS, "OPSS-LossEv:Outcome", "Loss events by outcome", "pie", size="third")),
+     tint(count_by(LOSS, LOSS_SEVERITY, "Loss events by severity", size="third"), LOSS_COLOURS),
+     plain(count_by(LOSS, BASEL_CATEGORY, "Loss events by Basel category", size="third")),
+     heat(LOSS, "OPSS-LossEv:Outcome", LOSS_SEVERITY, "Outcome against severity", size="half"),
+     # ---- key risk indicators ----
+     heading("Indicator performance", "Breach status, trend and collection. Green green, Yellow yellow, Red red."),
+     mix(count_by(KRI, "OPSS-KRI:Status", "KRIs by status", "pie", size="third")),
+     tint(count_by(KRI, "OPSS-KRI-Shared:Breach Status", "KRIs by breach status", "pie", size="third"), KRI_COLOURS),
+     plain(count_by(KRI, DOMAIN[KRI], "KRIs by domain", size="third")),
+     plain(count_by(KRI, "OPSS-KRI:Frequency", "KRIs by frequency", size="third")),
+     tint(count_by(KRI, "OPSS-KRI:Indicator Trend", "KRIs by trend", "pie", size="third"), TREND_COLOURS),
+     tint(count_by(KRI, KRI_COLLECTION, "KRIs by collection status", "pie", size="third"), COLLECT_COLOURS),
+     mix(count_by(KRI, KRI_NATURE, "KRIs by nature", "pie", size="third")),
+     # The thresholds move between the KRI's own group and the shared one, so this query is written
+     # once per pair and the build step keeps the one that runs.
+     {"title": "KRI values against their thresholds", "question": "KRI values against their thresholds",
+      "sql": _kri_thresholds(0), "alt_sql": [_kri_thresholds(1)],
+      "size": "twothird", "height": 320,
+      "chart": {"type": "bar", "x": "Name",
+                "y": ["OPSS-KRI:Value", KRI_YELLOW[0], KRI_RED[0]]},
+      "style": {"palette": [BLUE, AMBER, RED], "legend": True}},
+     # ---- issues ----
+     heading("Issue management", "What assessment and testing turned up. Low green, Medium yellow, High orange, "
+                       "Critical red."),
+     mix(count_by(ISS, "OPSS-Iss:Status", "Issues by status", "pie", size="third")),
+     tint(count_by(ISS, "OPSS-Iss:Priority", "Issues by priority", "pie", size="third"), ISS_COLOURS),
+     plain(count_by(ISS, "OPSS-Iss:Issue Type", "Issues by type", size="third")),
+     plain(count_by(ISS, DOMAIN[ISS], "Issues by domain", size="third")),
+     tint(count_by(ISS, "OPSS-Iss:Impact", "Issues by impact", size="third"), ISS_COLOURS),
+     tint(count_by(ISS, "OPSS-Iss:Probability", "Issues by probability", size="third"), PROB_COLOURS),
+     plain(count_by(ISS, "OPSS-Iss:Root Cause Type", "Issues by root cause", size="half")),
+     # A heat map colours by count, not by category, so the rating colours don't apply to it.
+     heat(ISS, "OPSS-Iss:Status", "OPSS-Iss:Priority", "Issue status against priority", size="half"),
+     # ---- action items ----
+     heading("Remediation", "What is being done about all of it. Completed green, In Progress blue, "
+                             "Overdue red, Pending orange."),
+     tint(count_by(ACT, "OPSS-ActItem:Status", "Action items by status", "pie", size="third"), ACT_COLOURS),
+     plain(count_by(ACT, "OPSS-ActItem:Percent Complete", "Action items by percent complete", size="third",
+              by_value=True)),
+     tint(count_by(ACT, "OPSS-ActItem:Aging Bucket", "Action item ageing", size="third"), AGEING_COLOURS),
+     tint(count_by(ACT, "OPSS-ActItem:Approval Status", "Action items by approval status", "pie", size="third"), APPROVAL_COLOURS),
+     tint(count_by(ACT, "OPSS-ActItem:Overdue", "Overdue against not yet due", "pie", size="third"), ACT_COLOURS),
+     by_month(count_by(ACT, "OPSS-ActItem:Due Date", "Action items by due date", "line", size="third",
+                       by_value=True), "OPSS-ActItem:Due Date", "Action items falling due by month"),
+     # ---- across the ORM objects ----
+     heading("Across ORM", "How the object types line up against each other. OpenPages counts one object "
+                           "type per query, so these are joins down the hierarchy rather than one chart of "
+                           "everything; the number tiles at the top are the object-wise distribution."),
+     by_month(count_by(RSK, "Creation Date", "Risks raised over time", "line", size="third",
+                       by_value=True), "Creation Date", "Risks raised by month"),
+     by_month(count_by(ISS, "Creation Date", "Issues raised over time", "line", size="third",
+                       by_value=True), "Creation Date", "Issues raised by month"),
+     by_month(count_by(LOSS, "Creation Date", "Loss events raised over time", "line", size="third",
+                       by_value=True), "Creation Date", "Loss events raised by month"),
+     paired("Controls on each risk", lambda r:
+            f"SELECT [{RSK}].[Name], [{RSK}].[{r}], [{CTL}].[Name], "
+            f"[{CTL}].[OPSS-Ctl:Operating Effectiveness] FROM [{RSK}] JOIN [{CTL}] ON PARENT([{RSK}])"),
+     paired("KRIs on each risk", lambda r:
+            f"SELECT [{RSK}].[Name], [{RSK}].[{r}], [{KRI}].[Name], "
+            f"[{KRI}].[OPSS-KRI-Shared:Breach Status] FROM [{RSK}] JOIN [{KRI}] ON PARENT([{RSK}])"),
+     table_of("Action items under each issue",
+              f"SELECT [{ISS}].[Name], [{ISS}].[OPSS-Iss:Priority], [{ACT}].[Name], "
+              f"[{ACT}].[OPSS-ActItem:Status], [{ACT}].[OPSS-ActItem:Due Date] "
+              f"FROM [{ISS}] JOIN [{ACT}] ON PARENT([{ISS}])", size="half"),
+     rooted(RSK, "Risks by entity", [RESIDUAL, "OPSS-Risk:Status"], size="half")])
+
+
+ORM_OVERVIEW = report(
+    "ORM", "Operational Risk Management — overview",
+    "Risks, controls, processes and the business entities they hang under, rated and scoped",
+    ORM_COLOR,
+    "Show the operational risk picture: risks by rating and treatment, control effectiveness, "
+    "process coverage and how much of the entity hierarchy is in scope",
+    ORM_FIRST_KPIS + ORM_FIRST_BODY,
+    [filter_on("Residual rating", RSK, RESIDUAL),
+     filter_on("Control effectiveness", CTL, "OPSS-Ctl:Operating Effectiveness")],
+    "Every risk, control and process below hangs under them.", theme="plex")
+
+ORM_EVENTS = report(
+    "ORM", "Events, indicators and remediation",
+    "Loss events, key risk indicators, issues and action items, and how they join up",
+    ORM_COLOR,
+    "Show what went wrong, what is being watched, what was raised and what is being done about it: "
+    "loss events, key risk indicators, issues and action items",
+    ORM_SECOND_KPIS + ORM_SECOND_BODY,
+    [filter_on("Breach status", KRI, "OPSS-KRI-Shared:Breach Status"),
+     filter_on("Issue priority", ISS, "OPSS-Iss:Priority"),
+     filter_on("Action item status", ACT, "OPSS-ActItem:Status")],
+    "Every loss event, indicator, issue and action below hangs under them.", theme="plex")
+
+
+# The number tiles and the trend lines take their ink from what they count: an exception count is
+# red and reads better when it falls, the rest stays in the module's own plum or the page's ink.
+KPI_INK = {"Major residual risks": RED, "Ineffective controls": RED, "KRIs in red breach": RED,
+           "Overdue action items": RED, "Open issues": ORANGE, "Open risks": PLUM}
+LINE_INK = {"Risks raised by month": PLUM, "Issues raised by month": ORANGE,
+            "Loss events raised by month": PLUM, "Action items falling due by month": BLUE}
+for _w in ORM_OVERVIEW["widgets"] + ORM_EVENTS["widgets"]:
+    _colour = KPI_INK.get(_w["title"]) or LINE_INK.get(_w["title"])
+    if _colour:
+        _w["style"] = {**(_w.get("style") or {}), "color": _colour}
+    if _w["title"] in KPI_INK and _colour == RED:
+        _w["style"]["goodWhen"] = "down"
+
+
 ORM = [
+    ORM_OVERVIEW,
+    ORM_EVENTS,
     report("ORM", "Risk and control profile",
            "Risks and the controls on them, by category, rating and effectiveness, under each entity",
            ORM_COLOR, "Show our operational risk and control profile by business entity",
            kpis(RSK, [("Risks", ""), ("Open risks", f"[{RSK}].[OPSS-Risk:Status] <> 'Closed'")]) +
            kpis(CTL, [("Controls", ""),
                       ("Ineffective controls", f"[{CTL}].[OPSS-Ctl:Operating Effectiveness] = 'Ineffective'")]) +
-           [count_by(RSK, "OPSS-Shared-Basel:Risk Category L1", "Risks by Basel category", size="half"),
-            count_by(RSK, "OPSS-Risk:Residual Risk Rating", "Risks by residual rating", size="half"),
+           [count_by(RSK, BASEL_CATEGORY, "Risks by Basel category", size="half"),
+            count_by(RSK, RESIDUAL, "Risks by residual rating", size="half"),
             count_by(CTL, "OPSS-Ctl:Operating Effectiveness", "Control effectiveness", "pie", size="third"),
             count_by(CTL, "OPSS-Ctl:Control Method", "Automated or manual", "pie", size="third"),
             count_by(CTL, "OPSS-Ctl:Classification", "Key against standard controls", "pie", size="third"),
-            count_by_two(RSK, "OPSS-Risk:Residual Likelihood", "OPSS-Risk:Residual Impact",
+            count_by_two(RSK, RESID_LIKELIHOOD, "OPSS-Risk:Residual Impact",
                          "Residual likelihood by impact", size="half"),
-            rooted(RSK, "Risks by entity", ["OPSS-Risk:Residual Risk Rating", "OPSS-Risk:Status"])],
-           [filter_on("Residual rating", RSK, "OPSS-Risk:Residual Risk Rating")]),
+            rooted(RSK, "Risks by entity", [RESIDUAL, "OPSS-Risk:Status"])],
+           [filter_on("Residual rating", RSK, RESIDUAL)]),
     report("ORM", "Loss events",
            "Loss events by status, Basel category, business line and outcome, with impacts and recoveries",
            ORM_COLOR, "Show operational loss events and their impacts by business entity",
            kpis(LOSS, [("Loss events", ""), ("Open loss events", f"[{LOSS}].[OPSS-LossEv:Status] = 'Open'"),
                        ("Near misses", f"[{LOSS}].[OPSS-LossEv:Outcome] = 'Near Miss'"),
                        ("Approved", f"[{LOSS}].[OPSS-LossEv:Approval Status] = 'Approved'")]) +
-           [count_by(LOSS, "OPSS-Shared-Basel:Risk Category L1", "Loss events by Basel category", size="half"),
+           [count_by(LOSS, BASEL_CATEGORY, "Loss events by Basel category", size="half"),
             count_by(LOSS, "OPSS-LossEv:Business Line", "Loss events by business line", size="half"),
             count_by(LOSS, "OPSS-LossEv:Outcome", "Gain, loss or near miss", "pie", size="third"),
             count_by(LIMP, "OPSS-LossImp:Impact Category", "Impact by category", "pie", size="third"),
@@ -161,7 +588,7 @@ ORM = [
            kpis(SRES, [("Scenario results", "")]) +
            [count_by(SCEN, "OPSS-ScenAn:Status", "Scenarios by status", "pie", size="third"),
             count_by(SCEN, "OPSS-ScenAn:Scenario Type", "Scenarios by type", "pie", size="third"),
-            count_by(SCEN, "OPSS-Shared-Basel:Risk Category L1", "Scenarios by Basel category", size="third"),
+            count_by(SCEN, BASEL_CATEGORY, "Scenarios by Basel category", size="third"),
             count_by(SRES, "OPSS-ScenRes:Severity", "Results by severity", size="half"),
             rooted(SCEN, "Scenarios by entity", ["OPSS-ScenAn:Status", "OPSS-ScenAn:Scenario Type"],
                    direct=True)]),
@@ -170,14 +597,17 @@ ORM = [
            ORM_COLOR, "Which processes and sub-processes are covered by risks and controls?",
            kpis(PRC, [("Processes", "")]) + kpis(SUB, [("Sub-processes", "")]) +
            kpis(RSK, [("Risks", "")]) + kpis(CTL, [("Controls", "")]) +
-           [count_by(PRC, "OPSS-Proc:Status", "Processes by status", "pie", size="third"),
+           [count_by(PRC, PRC_STATUS, "Processes by status", "pie", size="third"),
             count_by(PRC, "OPSS-Proc:Process Type", "Processes by type", "pie", size="third"),
             count_by(SUB, "OPSS-Subproc:Status", "Sub-processes by status", "pie", size="third"),
             count_by(PEVAL, "OPSS-ProcEval:Conclusion", "Process evaluation conclusions", size="half"),
-            rooted(PRC, "Processes by entity", ["OPSS-Proc:Status", "OPSS-Proc:Process Type"], direct=True),
+            rooted(PRC, "Processes by entity", [PRC_STATUS, "OPSS-Proc:Process Type"], direct=True),
+            # A risk hangs directly off its process in every shipped object model, so this is a
+            # direct join, which may select the process's own name. An indirect (ANCESTOR) join
+            # may not - see rooted().
             table_of("Risks under each process",
-                     f"SELECT [{PRC}].[Name], [{RSK}].[Name], [{RSK}].[OPSS-Risk:Residual Risk Rating] "
-                     f"FROM [{PRC}] JOIN [{RSK}] ON ANCESTOR([{PRC}])")]),
+                     f"SELECT [{PRC}].[Name], [{RSK}].[Name], [{RSK}].[{RESIDUAL[0]}] "
+                     f"FROM [{PRC}] JOIN [{RSK}] ON PARENT([{PRC}])")]),
     report("ORM", "Control testing",
            "Test plans and their results, by status, conclusion and tester",
            ORM_COLOR, "How is operational control testing going?",
@@ -214,11 +644,11 @@ ORM = [
            kpis(LOSS, [("Internal loss events", "")]) + kpis(ORX, [("ORX losses", "")]) +
            kpis(FIRST, [("FIRST losses", "")]) +
            kpis(LOSS, [("Open internally", f"[{LOSS}].[OPSS-LossEv:Status] = 'Open'")]) +
-           [count_by(ORX, "OPSS-Shared-Basel:Risk Category L1", "ORX losses by Basel category", size="half"),
-            count_by(FIRST, "OPSS-Shared-Basel:Risk Category L1", "FIRST losses by Basel category", size="half"),
+           [count_by(ORX, BASEL_CATEGORY, "ORX losses by Basel category", size="half"),
+            count_by(FIRST, BASEL_CATEGORY, "FIRST losses by Basel category", size="half"),
             count_by(ORX, "OPSS-ORXLoss:Business Line", "ORX losses by business line", size="half"),
             count_by(LOSS, "OPSS-LossEv:Business Line", "Our losses by business line", size="half"),
-            rooted(ORX, "External losses by entity", ["OPSS-Shared-Basel:Risk Category L1"], direct=True)]),
+            rooted(ORX, "External losses by entity", [BASEL_CATEGORY], direct=True)]),
     report("ORM", "Treatments, causes and consequences",
            "How risks are being treated, and the causes and consequences recorded against them",
            ORM_COLOR, "How are we treating our risks, and what causes and consequences are recorded?",
@@ -261,9 +691,8 @@ PCM = [
            [count_by(CAMP, "OPSS-Camp:Status", "Campaigns by status", "pie", size="third"),
             count_by(ATT, "OPSS-Att:Status", "Attestations by status", "pie", size="third"),
             count_by(ATT, "OPSS-Att:Response", "Attestation responses", "pie", size="third"),
-            table_of("Attestations under each campaign",
-                     f"SELECT [{CAMP}].[Name], [{ATT}].[Name], [{ATT}].[OPSS-Att:Status], "
-                     f"[{ATT}].[OPSS-Att:Response] FROM [{CAMP}] JOIN [{ATT}] ON ANCESTOR([{CAMP}])"),
+            table_of("Attestations, with the entity each sits under",
+                     f"SELECT [{ATT}].[Location], [{ATT}].[Name], [{ATT}].[OPSS-Att:Status], [{ATT}].[OPSS-Att:Response] FROM [{ATT}]"),
             rooted(CAMP, "Campaigns by entity", ["OPSS-Camp:Status"])]),
     report("PCM", "Mandates and requirements",
            "The regulatory mandates we are held to and the requirements under them",
@@ -274,9 +703,8 @@ PCM = [
             count_by(MAND, "OPSS-Man:Mandate Type", "Mandates by type", "pie", size="third"),
             count_by(REQ, "OPSS-Req:Status", "Requirements by status", size="third"),
             count_by(REQ, "OPSS-Req:Requirement Type", "Requirements by type", size="half"),
-            table_of("Requirements under each mandate",
-                     f"SELECT [{MAND}].[Name], [{REQ}].[Name], [{REQ}].[OPSS-Req:Status] "
-                     f"FROM [{MAND}] JOIN [{REQ}] ON ANCESTOR([{MAND}])"),
+            table_of("Requirements, with the entity each sits under",
+                     f"SELECT [{REQ}].[Location], [{REQ}].[Name], [{REQ}].[OPSS-Req:Status] FROM [{REQ}]"),
             rooted(MAND, "Mandates by entity", ["OPSS-Man:Status", "OPSS-Man:Mandate Type"], direct=True)]),
     report("PCM", "Obligations",
            "Regulatory obligations by risk area and status, with their evaluations",
@@ -313,9 +741,8 @@ PCM = [
            [count_by(REGTASK, "OPSS-RegTask:Status", "Tasks by status", "pie", size="third"),
             count_by(REGTASK, "OPSS-RegTask:Priority", "Tasks by priority", "pie", size="third"),
             count_by(REGTASK, "OPSS-RegTask:Task Type", "Tasks by type", size="third"),
-            table_of("Tasks under each regulatory change",
-                     f"SELECT [{REGCH}].[Name], [{REGTASK}].[Name], [{REGTASK}].[OPSS-RegTask:Status], "
-                     f"[{REGTASK}].[OPSS-RegTask:Priority] FROM [{REGCH}] JOIN [{REGTASK}] ON ANCESTOR([{REGCH}])"),
+            table_of("Regulatory tasks, with the entity each sits under",
+                     f"SELECT [{REGTASK}].[Location], [{REGTASK}].[Name], [{REGTASK}].[OPSS-RegTask:Status], [{REGTASK}].[OPSS-RegTask:Priority] FROM [{REGTASK}]"),
             rooted(REGTASK, "Tasks by entity", ["OPSS-RegTask:Status", "OPSS-RegTask:Priority"])]),
     report("PCM", "Regulator interactions",
            "Dealings with regulators, by type, status and regulator",
@@ -337,9 +764,8 @@ PCM = [
            [count_by(PRCD, "OPSS-Prcd:Approval Status", "Procedures by approval status", "pie", size="third"),
             count_by(PRCD, "OPSS-Prcd:Type", "Procedures by type", "pie", size="third"),
             count_by(PRCD, "OPSS-Prcd:Status", "Procedures by status", size="third"),
-            table_of("Procedures under each policy",
-                     f"SELECT [{POL}].[Name], [{PRCD}].[Name], [{PRCD}].[OPSS-Prcd:Approval Status] "
-                     f"FROM [{POL}] JOIN [{PRCD}] ON ANCESTOR([{POL}])"),
+            table_of("Procedures, with the entity each sits under",
+                     f"SELECT [{PRCD}].[Location], [{PRCD}].[Name], [{PRCD}].[OPSS-Prcd:Approval Status] FROM [{PRCD}]"),
             rooted(PRCD, "Procedures by entity", ["OPSS-Prcd:Approval Status"])]),
     report("PCM", "Compliance controls",
            "Controls that evidence compliance, their effectiveness and the issues against them",
@@ -406,9 +832,8 @@ MRG = [
            [count_by(REVIEW, "OPSS-Rev:Status", "Reviews by status", "pie", size="third"),
             count_by(REVIEW, "OPSS-Rev:Review Type", "Reviews by type", "pie", size="third"),
             count_by(REVIEW, "OPSS-Rev:Outcome", "Review outcomes", size="third"),
-            table_of("Reviews against each model",
-                     f"SELECT [{MODEL}].[Name], [{REVIEW}].[Name], [{REVIEW}].[OPSS-Rev:Status], "
-                     f"[{REVIEW}].[OPSS-Rev:Outcome] FROM [{MODEL}] JOIN [{REVIEW}] ON ANCESTOR([{MODEL}])"),
+            table_of("Model reviews, with the entity each sits under",
+                     f"SELECT [{REVIEW}].[Location], [{REVIEW}].[Name], [{REVIEW}].[OPSS-Rev:Status], [{REVIEW}].[OPSS-Rev:Outcome] FROM [{REVIEW}]"),
             rooted(REVIEW, "Reviews by entity", ["OPSS-Rev:Status", "OPSS-Rev:Outcome"])]),
     report("MRG", "Challenges",
            "Challenges raised against models and reviews, by status and severity",
@@ -432,9 +857,8 @@ MRG = [
            [count_by(CHG, "OPSS-ChgReq:Status", "Change requests by status", "pie", size="third"),
             count_by(CHG, "OPSS-ChgReq:Change Type", "Changes by type", "pie", size="third"),
             count_by(CHG, "OPSS-ChgReq:Priority", "Changes by priority", size="third"),
-            table_of("Change requests against each model",
-                     f"SELECT [{MODEL}].[Name], [{CHG}].[Name], [{CHG}].[OPSS-ChgReq:Status], "
-                     f"[{CHG}].[OPSS-ChgReq:Change Type] FROM [{MODEL}] JOIN [{CHG}] ON ANCESTOR([{MODEL}])"),
+            table_of("Change requests, with the entity each sits under",
+                     f"SELECT [{CHG}].[Location], [{CHG}].[Name], [{CHG}].[OPSS-ChgReq:Status], [{CHG}].[OPSS-ChgReq:Change Type] FROM [{CHG}]"),
             rooted(CHG, "Change requests by entity", ["OPSS-ChgReq:Status"])]),
     report("MRG", "Model inputs, outputs and lineage",
            "What each model consumes and produces, and how models feed each other",
@@ -460,9 +884,8 @@ MRG = [
            [count_by(MATT, "OPSS-MdlAtt:Status", "Attestations by status", "pie", size="third"),
             count_by(MATT, "OPSS-MdlAtt:Response", "Attestation responses", "pie", size="third"),
             count_by(MODEL, "OPSS-Mdl:Model Tier", "Models by tier", size="third"),
-            table_of("Attestations against each model",
-                     f"SELECT [{MODEL}].[Name], [{MATT}].[Name], [{MATT}].[OPSS-MdlAtt:Status] "
-                     f"FROM [{MODEL}] JOIN [{MATT}] ON ANCESTOR([{MODEL}])"),
+            table_of("Model attestations, with the entity each sits under",
+                     f"SELECT [{MATT}].[Location], [{MATT}].[Name], [{MATT}].[OPSS-MdlAtt:Status] FROM [{MATT}]"),
             rooted(MATT, "Attestations by entity", ["OPSS-MdlAtt:Status"])]),
     report("MRG", "Committee oversight",
            "The committees governing models, and what they have in front of them",
@@ -495,9 +918,8 @@ MRG = [
            [count_by(ISS, "OPSS-Iss:Status", "Issues by status", "pie", size="third"),
             count_by(ISS, "OPSS-Iss:Priority", "Issues by priority", "pie", size="third"),
             count_by(ACT, "OPSS-ActItem:Status", "Actions by status", size="third"),
-            table_of("Issues against each model",
-                     f"SELECT [{MODEL}].[Name], [{ISS}].[Name], [{ISS}].[OPSS-Iss:Status], "
-                     f"[{ISS}].[OPSS-Iss:Priority] FROM [{MODEL}] JOIN [{ISS}] ON ANCESTOR([{MODEL}])"),
+            table_of("Issues, with the entity each sits under",
+                     f"SELECT [{ISS}].[Location], [{ISS}].[Name], [{ISS}].[OPSS-Iss:Status], [{ISS}].[OPSS-Iss:Priority] FROM [{ISS}]"),
             rooted(ISS, "Issues by entity", ["OPSS-Iss:Status", "OPSS-Iss:Priority"])]),
 ]
 
@@ -637,9 +1059,8 @@ IAM = [
             count_by(AUD, "OPSS-Aud:Result", "Audit results", "pie", size="half"),
             count_by_two(AUD, "OPSS-Aud:Type", "OPSS-Aud:Result", "Result by audit type", size="half"),
             rooted(AUD, "Audits by entity", ["OPSS-Aud:Status", "OPSS-Aud:Result"]),
-            table_of("Findings per audit",
-                     f"SELECT [{AUD}].[Name], [{AUD}].[OPSS-Aud:Type], [{FND}].[Name], "
-                     f"[{FND}].[OPSS-Finding:Status] FROM [{AUD}] JOIN [{FND}] ON ANCESTOR([{AUD}])")]),
+            table_of("Findings, with the entity each sits under",
+                     f"SELECT [{FND}].[Location], [{FND}].[Name], [{FND}].[OPSS-Finding:Status] FROM [{FND}]")]),
 ]
 
 # ---------- ITG: IT Governance ----------
@@ -718,9 +1139,8 @@ ITG = [
            [count_by(BASE, "OPSS-Base:Status", "Baselines by status", "pie", size="third"),
             count_by(BASE, "OPSS-Base:Baseline Type", "Baselines by type", "pie", size="third"),
             count_by(BASE, "OPSS-Base:Compliance Status", "Conformance", size="third"),
-            table_of("Baselines against each asset",
-                     f"SELECT [{RES}].[Name], [{BASE}].[Name], [{BASE}].[OPSS-Base:Status] "
-                     f"FROM [{RES}] JOIN [{BASE}] ON ANCESTOR([{RES}])"),
+            table_of("Baselines, with the entity each sits under",
+                     f"SELECT [{BASE}].[Location], [{BASE}].[Name], [{BASE}].[OPSS-Base:Status] FROM [{BASE}]"),
             rooted(BASE, "Baselines by entity", ["OPSS-Base:Status"])]),
     report("ITG", "IT controls",
            "The controls over IT, their effectiveness and how they were tested",
@@ -757,9 +1177,8 @@ ITG = [
            [count_by(POL, "OPSS-Pol:Approval Status", "Policy approval status", "pie", size="third"),
             count_by(POL, "OPSS-Pol:Type", "Policies by type", "pie", size="third"),
             count_by(PRCD, "OPSS-Prcd:Approval Status", "Procedure approval status", size="third"),
-            table_of("Procedures under each policy",
-                     f"SELECT [{POL}].[Name], [{PRCD}].[Name], [{PRCD}].[OPSS-Prcd:Approval Status] "
-                     f"FROM [{POL}] JOIN [{PRCD}] ON ANCESTOR([{POL}])"),
+            table_of("Procedures, with the entity each sits under",
+                     f"SELECT [{PRCD}].[Location], [{PRCD}].[Name], [{PRCD}].[OPSS-Prcd:Approval Status] FROM [{PRCD}]"),
             rooted(POL, "Policies by entity", ["OPSS-Pol:Approval Status"], direct=True)]),
     report("ITG", "IT risk indicators",
            "The KRIs and KPIs watching IT risk, and their readings",
@@ -797,13 +1216,13 @@ FCM = [
            FCM_COLOR, "Which financial processes are in scope for SOX?",
            kpis(PRC, [("Processes", "")]) + kpis(SUB, [("Sub-processes", "")]) +
            kpis(RSK, [("Risks", "")]) + kpis(CTL, [("Controls", "")]) +
-           [count_by(PRC, "OPSS-Proc:Status", "Processes by status", "pie", size="third"),
+           [count_by(PRC, PRC_STATUS, "Processes by status", "pie", size="third"),
             count_by(PRC, "OPSS-Proc:Process Type", "Processes by type", "pie", size="third"),
             count_by(SUB, "OPSS-Subproc:Status", "Sub-processes by status", size="third"),
             table_of("Sub-processes under each process",
                      f"SELECT [{PRC}].[Name], [{SUB}].[Name], [{SUB}].[OPSS-Subproc:Status] "
                      f"FROM [{PRC}] JOIN [{SUB}] ON PARENT([{PRC}])"),
-            rooted(PRC, "Processes by entity", ["OPSS-Proc:Status"], direct=True)]),
+            rooted(PRC, "Processes by entity", [PRC_STATUS], direct=True)]),
     report("FCM", "Key controls",
            "Key financial controls, how they are classified and whether they are automated",
            FCM_COLOR, "What are our key financial controls and how are they run?",
@@ -868,7 +1287,7 @@ FCM = [
            [count_by(REVAL, "OPSS-RiskEval:Residual Risk Rating", "Evaluated residual rating", size="third"),
             count_by(REVAL, "OPSS-RiskEval:Inherent Risk Rating", "Evaluated inherent rating", size="third"),
             count_by(REVAL, "OPSS-RiskEval:Status", "Evaluations by status", "pie", size="third"),
-            count_by_two(RSK, "OPSS-Risk:Residual Likelihood", "OPSS-Risk:Residual Impact",
+            count_by_two(RSK, RESID_LIKELIHOOD, "OPSS-Risk:Residual Impact",
                          "Residual likelihood by impact", size="half"),
             rooted(REVAL, "Evaluations by entity", ["OPSS-RiskEval:Residual Risk Rating"])]),
     report("FCM", "Process evaluations",
@@ -1267,12 +1686,12 @@ ESG = [
            kpis(RSK, [("Risks", ""), ("Open", f"[{RSK}].[OPSS-Risk:Status] <> 'Closed'")]) +
            kpis(CTL, [("Controls", ""),
                       ("Ineffective", f"[{CTL}].[OPSS-Ctl:Operating Effectiveness] = 'Ineffective'")]) +
-           [count_by(RSK, "OPSS-Risk:Residual Risk Rating", "Risks by residual rating", size="half"),
+           [count_by(RSK, RESIDUAL, "Risks by residual rating", size="half"),
             count_by(RSK, "OPSS-Risk:Status", "Risks by status", "pie", size="third"),
             count_by(CTL, "OPSS-Ctl:Operating Effectiveness", "Control effectiveness", "pie", size="third"),
-            count_by_two(RSK, "OPSS-Risk:Residual Likelihood", "OPSS-Risk:Residual Impact",
+            count_by_two(RSK, RESID_LIKELIHOOD, "OPSS-Risk:Residual Impact",
                          "Residual likelihood by impact", size="half"),
-            rooted(RSK, "Risks by entity", ["OPSS-Risk:Residual Risk Rating", "OPSS-Risk:Status"])]),
+            rooted(RSK, "Risks by entity", [RESIDUAL, "OPSS-Risk:Status"])]),
     report("ESG", "Products and supply chain",
            "The products and vendors our ESG position depends on",
            ESG_COLOR, "Which products and suppliers carry our ESG exposure?",
@@ -1320,10 +1739,9 @@ TPRM = [
            kpis(VEN, [("Vendors", "")]) +
            [count_by(RASS, "OPSS-RiskAssess:Status", "Assessments by status", "pie", size="third"),
             count_by(RASS, "OPSS-RiskAssess:Type", "Assessments by type", "pie", size="third"),
-            count_by(RSK, "OPSS-Risk:Residual Risk Rating", "Vendor risks by rating", size="third"),
-            table_of("Assessments against each vendor",
-                     f"SELECT [{VEN}].[Name], [{RASS}].[Name], [{RASS}].[OPSS-RiskAssess:Status] "
-                     f"FROM [{VEN}] JOIN [{RASS}] ON ANCESTOR([{VEN}])"),
+            count_by(RSK, RESIDUAL, "Vendor risks by rating", size="third"),
+            table_of("Risk assessments, with the entity each sits under",
+                     f"SELECT [{RASS}].[Location], [{RASS}].[Name], [{RASS}].[OPSS-RiskAssess:Status] FROM [{RASS}]"),
             rooted(RASS, "Assessments by entity", ["OPSS-RiskAssess:Status"])]),
     report("TPRM", "Contracts",
            "Vendor contracts, their status, type and renewal dates",
@@ -1334,9 +1752,8 @@ TPRM = [
            [count_by(CONT, "OPSS-Cont:Status", "Contracts by status", "pie", size="third"),
             count_by(CONT, "OPSS-Cont:Contract Type", "Contracts by type", "pie", size="third"),
             count_by(CONT, "OPSS-Cont:Criticality", "Contracts by criticality", size="third"),
-            table_of("Contracts with each vendor",
-                     f"SELECT [{VEN}].[Name], [{CONT}].[Name], [{CONT}].[OPSS-Cont:Status], "
-                     f"[{CONT}].[OPSS-Cont:End Date] FROM [{VEN}] JOIN [{CONT}] ON ANCESTOR([{VEN}])"),
+            table_of("Contracts, with the entity each sits under",
+                     f"SELECT [{CONT}].[Location], [{CONT}].[Name], [{CONT}].[OPSS-Cont:Status], [{CONT}].[OPSS-Cont:End Date] FROM [{CONT}]"),
             rooted(CONT, "Contracts by entity", ["OPSS-Cont:Status", "OPSS-Cont:End Date"])],
            [filter_on("Ends", CONT, "OPSS-Cont:End Date", "date")]),
     report("TPRM", "Engagements",
@@ -1348,9 +1765,8 @@ TPRM = [
            [count_by(ENG, "OPSS-Eng:Status", "Engagements by status", "pie", size="third"),
             count_by(ENG, "OPSS-Eng:Engagement Type", "Engagements by type", "pie", size="third"),
             count_by(ENG, "OPSS-Eng:Criticality", "Engagements by criticality", size="third"),
-            table_of("Engagements with each vendor",
-                     f"SELECT [{VEN}].[Name], [{ENG}].[Name], [{ENG}].[OPSS-Eng:Status], "
-                     f"[{ENG}].[OPSS-Eng:Criticality] FROM [{VEN}] JOIN [{ENG}] ON ANCESTOR([{VEN}])"),
+            table_of("Engagements, with the entity each sits under",
+                     f"SELECT [{ENG}].[Location], [{ENG}].[Name], [{ENG}].[OPSS-Eng:Status], [{ENG}].[OPSS-Eng:Criticality] FROM [{ENG}]"),
             rooted(ENG, "Engagements by entity", ["OPSS-Eng:Status", "OPSS-Eng:Criticality"])]),
     report("TPRM", "Fourth parties",
            "Subcontractors and vendor subsidiaries behind our vendors",
@@ -1361,9 +1777,8 @@ TPRM = [
            [count_by(SUBC, "OPSS-Subc:Status", "Subcontractors by status", "pie", size="third"),
             count_by(SUBC, "OPSS-Subc:Criticality", "Subcontractors by criticality", "pie", size="third"),
             count_by(VSUB, "OPSS-VndSub:Country", "Subsidiaries by country", size="third"),
-            table_of("Subcontractors behind each vendor",
-                     f"SELECT [{VEN}].[Name], [{SUBC}].[Name], [{SUBC}].[OPSS-Subc:Status] "
-                     f"FROM [{VEN}] JOIN [{SUBC}] ON ANCESTOR([{VEN}])"),
+            table_of("Subcontractors, with the entity each sits under",
+                     f"SELECT [{SUBC}].[Location], [{SUBC}].[Name], [{SUBC}].[OPSS-Subc:Status] FROM [{SUBC}]"),
             rooted(SUBC, "Subcontractors by entity", ["OPSS-Subc:Status"])]),
     report("TPRM", "Vendor incidents",
            "Incidents and disruptions caused by third parties",
@@ -1422,9 +1837,8 @@ TPRM = [
            [count_by(ISS, "OPSS-Iss:Status", "Issues by status", "pie", size="third"),
             count_by(ISS, "OPSS-Iss:Priority", "Issues by priority", "pie", size="third"),
             count_by(ACT, "OPSS-ActItem:Status", "Actions by status", size="third"),
-            table_of("Issues against each vendor",
-                     f"SELECT [{VEN}].[Name], [{ISS}].[Name], [{ISS}].[OPSS-Iss:Status], "
-                     f"[{ISS}].[OPSS-Iss:Priority] FROM [{VEN}] JOIN [{ISS}] ON ANCESTOR([{VEN}])"),
+            table_of("Issues, with the entity each sits under",
+                     f"SELECT [{ISS}].[Location], [{ISS}].[Name], [{ISS}].[OPSS-Iss:Status], [{ISS}].[OPSS-Iss:Priority] FROM [{ISS}]"),
             rooted(ISS, "Issues by entity", ["OPSS-Iss:Status", "OPSS-Iss:Priority"])]),
 ]
 
@@ -1451,5 +1865,5 @@ def module_template_rows() -> list[dict]:
     return [{"name": r["name"], "description": r["description"], "color": r["color"], "prompt": r["prompt"],
              "category": "GRC", "module": r["module"],
              "layout": {"kind": "dashboard", "source_type": "openpages", "widgets": r["widgets"],
-                        "filters": r["filters"]}}
+                        "filters": r["filters"], **({"theme": r["theme"]} if r.get("theme") else {})}}
             for r in MODULE_REPORTS]

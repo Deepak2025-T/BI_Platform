@@ -13,6 +13,7 @@ import MyReports from "./pages/MyReports";
 import ReportEditor from "./pages/ReportEditor";
 import ReportViewer from "./pages/ReportViewer";
 import Settings from "./pages/Settings";
+import SharedReport from "./pages/SharedReport";
 import Templates from "./pages/Templates";
 import VisualBuilder from "./pages/VisualBuilder";
 import Users from "./pages/Users";
@@ -21,6 +22,9 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      {/* A share link: the token in the address is the whole of the permission, so this one
+          page sits outside the signed-in shell. ?embed=1 drops the header, for an iframe. */}
+      <Route path="/shared/:token" element={<SharedReport />} />
 
       {/* Everything below needs a signed-in user */}
       <Route element={<RequireAuth><AppShell /></RequireAuth>}>

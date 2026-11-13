@@ -5,7 +5,7 @@ import { reportToolsApi } from "../api/reportTools";
 import type { AIModelPublic, ChartType, QueryData, Widget, WidgetData, WidgetSize, WidgetStyle } from "../api/types";
 import { rememberedModel } from "../lib/aiModels";
 import { CURRENCIES, SCALES, columnLabel, formatValue } from "../lib/format";
-import { CHART_LABELS, retype } from "../lib/sources";
+import { CHART_LABELS, cannotDraw, numericColumns, retype } from "../lib/sources";
 import { ColorPicker, Seg } from "./Controls";
 import { HEIGHT, HEIGHTS, WIDTHS, clampHeight, hasHeight } from "../lib/tileSize";
 import { cardLook } from "../lib/cardColors";
@@ -72,7 +72,9 @@ export default function ChartEditor({ reportId, widget, data, onClose, onSave, o
 
   const columns = result?.columns ?? [];
   const rows = result?.rows ?? [];
-  const numeric = columns.filter((_, i) => rows.length > 0 && rows.every((r) => r[i] === null || typeof r[i] === "number"));
+  const numeric = numericColumns(columns, rows);
+  /** A pie or a ring draws one slice per row, so it takes a single value column. */
+  const single = draft.chart.type === "pie" || draft.chart.type === "donut";
   const sqlChanged = sql.trim() !== ranSql.trim();
   const setChart = (patch: Partial<Widget["chart"]>) => setDraft((d) => ({ ...d, chart: { ...d.chart, ...patch } }));
   // The categories this chart draws, for the colour rules below. Capped: the list is there to save
@@ -163,13 +165,41 @@ export default function ChartEditor({ reportId, widget, data, onClose, onSave, o
             <fieldset className="group">
               <legend>Chart type</legend>
               <div className="seg-row">
-                {(Object.keys(CHART_LABELS) as ChartType[]).map((t) => (
-                  <Seg key={t} on={draft.chart.type === t}
-                    onClick={() => setDraft((d) => ({ ...d, chart: retype(d.chart, t, columns, rows) }))}>{CHART_LABELS[t]}</Seg>
-                ))}
+                {(Object.keys(CHART_LABELS) as ChartType[]).map((t) => {
+                  // A shape this result can't fill is offered greyed with the reason: picking it
+                  // would only show the rows, which reads as the switch having done nothing.
+                  const no = result ? cannotDraw(t, columns, rows) : "";
+                  return (
+                    <Seg key={t} on={draft.chart.type === t} disabled={!!no} title={no || CHART_LABELS[t]}
+                      onClick={() => setDraft((d) => ({ ...d, chart: retype(d.chart, t, columns, rows) }))}>{CHART_LABELS[t]}</Seg>
+                  );
+                })}
               </div>
             </fieldset>
-            {result && ["bar", "line", "area", "pie"].includes(draft.chart.type) && (
+            {result && draft.chart.type === "heatmap" && (
+              // A grid names two columns of its own: the rows down the side and the columns across
+              // the top. Both are pickable here, because which way round a heat map reads is the
+              // whole of what it says.
+              <div className="form-grid">
+                <label className="field">Rows (down the side)
+                  <select value={draft.chart.x} onChange={(e) => setChart({ x: e.target.value })}>
+                    {columns.filter((c) => !numeric.includes(c)).map((c) => <option key={c} value={c}>{columnLabel(c)}</option>)}
+                  </select>
+                </label>
+                <label className="field">Columns (across the top)
+                  <select value={draft.chart.legend ?? ""} onChange={(e) => setChart({ legend: e.target.value })}>
+                    {columns.filter((c) => !numeric.includes(c) && c !== draft.chart.x)
+                      .map((c) => <option key={c} value={c}>{columnLabel(c)}</option>)}
+                  </select>
+                </label>
+                <label className="field">Colour by
+                  <select value={draft.chart.y[0] ?? ""} onChange={(e) => setChart({ y: [e.target.value] })}>
+                    {numeric.map((c) => <option key={c} value={c}>{columnLabel(c)}</option>)}
+                  </select>
+                </label>
+              </div>
+            )}
+            {result && ["bar", "line", "area", "pie", "donut"].includes(draft.chart.type) && (
               <div className="form-grid">
                 <label className="field">Categories or dates (X)
                   <select value={draft.chart.x} onChange={(e) => setChart({ x: e.target.value })}>
@@ -181,8 +211,9 @@ export default function ChartEditor({ reportId, widget, data, onClose, onSave, o
                   <div className="y-picks">
                     {numeric.map((c) => (
                       <label key={c} className="check">
-                        <input type={draft.chart.type === "pie" ? "radio" : "checkbox"} name="y" checked={draft.chart.y.includes(c)}
-                          onChange={(e) => setChart({ y: draft.chart.type === "pie" ? [c]
+                        {/* A pie or a ring draws one slice per row, so it takes one value column. */}
+                        <input type={single ? "radio" : "checkbox"} name="y" checked={draft.chart.y.includes(c)}
+                          onChange={(e) => setChart({ y: single ? [c]
                             : e.target.checked ? [...draft.chart.y, c] : draft.chart.y.filter((y) => y !== c) })} />
                         {columnLabel(c)}
                       </label>

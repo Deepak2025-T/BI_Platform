@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ORM Overview — risk and control</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@500;600&amp;display=swap">
+<style>
+body{margin:0;background:#F6F5F3;color:#1C1B22;font-family:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#6D597A}a:hover{color:#4B3C56}
+*{box-sizing:border-box}
+.wrap{max-width:1440px;margin:0 auto;padding:28px 32px 56px}
+.bar-top{background:#2D2638;color:#F3F1F5;border-radius:12px;padding:20px 24px;display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;justify-content:space-between}
+.bar-top h1{font-size:26px;font-weight:600;margin:0;letter-spacing:-.01em}
+.bar-top p{margin:6px 0 0;font-size:13px;color:#BBB2C6;max-width:62ch}
+.stamp{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11px;color:#BBB2C6;text-align:right;line-height:1.7}
+.filters{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 22px}
+.f{display:flex;flex-direction:column;gap:4px;min-width:0}
+.f span{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:#6B6579;font-weight:600}
+.f select{font:inherit;font-size:12.5px;padding:7px 10px;min-height:36px;border:1px solid #DDD9E2;border-radius:7px;background:#fff;color:#1C1B22;min-width:150px}
+.f select:focus-visible{outline:2px solid #6D597A;outline-offset:1px}
+.sec{margin-top:30px}
+.sec-h{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;border-top:2px solid #2D2638;padding-top:10px;margin-bottom:14px}
+.sec-h h2{font-size:17px;font-weight:600;margin:0;letter-spacing:-.005em}
+.sec-h p{margin:0;font-size:12.5px;color:#6B6579;max-width:78ch}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(3,minmax(0,1fr))}
+.k-grid{display:grid;gap:12px;grid-template-columns:repeat(7,minmax(0,1fr))}
+.kpi{background:#fff;border:1px solid #E4E0E8;border-radius:10px;padding:13px 14px 14px;min-width:0}
+.kpi .lab{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:#6B6579;font-weight:600;line-height:1.35;min-height:28px}
+.kpi .num{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:27px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin-top:6px;line-height:1.1}
+.kpi .foot{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:11px;color:#6B6579}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.card{background:#fff;border:1px solid #E4E0E8;border-radius:10px;padding:15px 17px 17px;min-width:0;display:flex;flex-direction:column}
+.card h3{font-size:13.5px;font-weight:600;margin:0}
+.card .sub{font-size:11px;color:#6B6579;margin:3px 0 12px}
+.rows{display:flex;flex-direction:column;gap:9px;margin-top:2px}
+.row{display:grid;grid-template-columns:minmax(84px,34%) 1fr auto;align-items:center;gap:10px}
+.row .nm{font-size:12px;color:#413D4C;min-width:0;overflow-wrap:anywhere}
+.track{height:12px;background:#F0EEF3;border-radius:3px;overflow:hidden}
+.fill{height:100%;border-radius:3px}
+.val{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;font-variant-numeric:tabular-nums;color:#1C1B22;font-weight:600}
+.pie{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.pie svg{flex:none}
+.legend{display:flex;flex-direction:column;gap:7px;min-width:0;flex:1 1 130px}
+.leg{display:flex;align-items:center;gap:8px;font-size:12px;color:#413D4C;min-width:0}
+.leg .nm{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.leg .v{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;font-weight:600;color:#1C1B22}
+.leg .p{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11px;color:#6B6579;width:34px;text-align:right}
+.ctr{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:19px;font-weight:600;fill:#1C1B22}
+.ctr-l{font-size:9px;letter-spacing:.08em;fill:#6B6579;font-family:'IBM Plex Sans',sans-serif;font-weight:600}
+.heat-wrap{overflow-x:auto;margin-top:4px}
+.heat{border-collapse:separate;border-spacing:3px;width:100%;min-width:430px}
+.heat th{font-size:11px;font-weight:600;color:#6B6579;text-align:center;padding:2px 4px;font-weight:600}
+.heat th.rh{text-align:right;white-space:nowrap;color:#413D4C;font-size:12px}
+.heat td{text-align:center;border-radius:5px;padding:11px 4px;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;font-weight:600}
+.note{font-size:11.5px;color:#6B6579;margin:10px 0 0;line-height:1.5}
+.swatches{display:flex;flex-wrap:wrap;gap:14px;margin-top:2px}
+.sw{display:flex;align-items:center;gap:7px;font-size:11.5px;color:#413D4C}
+.span2{grid-column:span 2}
+@media (max-width:1120px){.k-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:720px){.k-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.grid{grid-template-columns:1fr}.span2{grid-column:span 1}.wrap{padding:20px 16px 40px}}
+</style>
+</helmet>
+
+<div class="wrap">
+
+  <header class="bar-top">
+    <div>
+      <h1>Operational Risk Management — overview</h1>
+      <p>Risks, controls, processes, entities, loss events, indicators, issues and action items, read from one IBM OpenPages connection. Every figure counts records of a single object type.</p>
+    </div>
+    <div class="stamp">
+      SOURCE · OPENPAGES PROD<br>
+      ENTITY · GROUP (ALL)<br>
+      REFRESHED · 11 NOV 2026 06:00
+    </div>
+  </header>
+
+  <div class="filters">
+    <label class="f"><span>Business entity</span><select id="f-ent"><option>Group (all)</option><option>Retail Banking</option><option>Wholesale Banking</option><option>Group Operations</option></select></label>
+    <label class="f"><span>Residual rating</span><select id="f-res"><option>All ratings</option><option>Major</option><option>Significant</option><option>Moderate</option><option>Minor</option></select></label>
+    <label class="f"><span>Control effectiveness</span><select id="f-ctl"><option>All</option><option>Effective</option><option>Partially Effective</option><option>Ineffective</option><option>Not Determined</option></select></label>
+    <label class="f"><span>Breach status</span><select id="f-kri"><option>All</option><option>Green</option><option>Yellow</option><option>Red</option></select></label>
+    <label class="f"><span>Issue priority</span><select id="f-iss"><option>All</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></label>
+    <label class="f"><span>Action item status</span><select id="f-act"><option>All</option><option>Open</option><option>In Progress</option><option>Closed</option></select></label>
+  </div>
+
+  <div class="k-grid">
+    <sc-for list="{{kpis}}" as="k" hint-placeholder-count="14">
+      <div class="kpi">
+        <div class="lab">{{k.label}}</div>
+        <div class="num" style="color: {{k.ink}}">{{k.value}}</div>
+        <div class="foot"><span class="dot" style="background: {{k.ink}}"></span>{{k.foot}}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <section class="sec">
+    <div class="sec-h">
+      <h2>Risk profile</h2>
+      <p>Where the risks stand, how they are rated and how they are being treated. Ratings run Minor, Moderate, Significant, Major.</p>
+    </div>
+    <div class="grid">
+      <sc-for list="{{riskPies}}" as="c" hint-placeholder-count="3">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="pie">
+            <svg width="140" height="140" viewBox="0 0 140 140" role="img" aria-label="{{c.alt}}">
+              <g transform="rotate(-90 70 70)">
+                <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="4">
+                  <circle cx="70" cy="70" r="54" fill="none" stroke-width="20" stroke="{{s.color}}" stroke-dasharray="{{s.dash}}" stroke-dashoffset="{{s.off}}"></circle>
+                </sc-for>
+              </g>
+              <text class="ctr" x="70" y="72" text-anchor="middle">{{c.total}}</text>
+              <text class="ctr-l" x="70" y="87" text-anchor="middle">{{c.unit}}</text>
+            </svg>
+            <div class="legend">
+              <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="4">
+                <div class="leg"><span class="dot" style="background: {{s.color}}"></span><span class="nm">{{s.label}}</span><span class="v">{{s.value}}</span><span class="p">{{s.pct}}</span></div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+      <sc-for list="{{riskBars}}" as="c" hint-placeholder-count="4">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="rows">
+            <sc-for list="{{c.rows}}" as="r" hint-placeholder-count="5">
+              <div class="row"><span class="nm">{{r.label}}</span><span class="track"><span class="fill" style="width: {{r.pct}}%; background: {{r.color}}"></span></span><span class="val">{{r.value}}</span></div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <div class="card span2">
+        <h3>Residual rating against residual likelihood</h3>
+        <p class="sub">Count of risks in each cell. Darker means more risks sitting there.</p>
+        <div class="heat-wrap">
+          <table class="heat">
+            <thead>
+              <tr>
+                <th class="rh"></th>
+                <sc-for list="{{heat.cols}}" as="h" hint-placeholder-count="5">
+                  <th>{{h}}</th>
+                </sc-for>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{heat.rows}}" as="r" hint-placeholder-count="4">
+                <tr>
+                  <th class="rh" scope="row">{{r.label}}</th>
+                  <sc-for list="{{r.cells}}" as="c" hint-placeholder-count="5">
+                    <td style="background: {{c.bg}}; color: {{c.ink}}">{{c.v}}</td>
+                  </sc-for>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">37 risks carry a Major residual rating; 21 of those sit at Likely or Almost certain and are the ones the committee reads first.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h">
+      <h2>Control effectiveness</h2>
+      <p>Coverage and effectiveness across the control library. Effective green, Partially Effective orange, Ineffective red, Not Determined grey.</p>
+    </div>
+    <div class="grid">
+      <sc-for list="{{ctlPies}}" as="c" hint-placeholder-count="4">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="pie">
+            <svg width="140" height="140" viewBox="0 0 140 140" role="img" aria-label="{{c.alt}}">
+              <g transform="rotate(-90 70 70)">
+                <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="4">
+                  <circle cx="70" cy="70" r="54" fill="none" stroke-width="20" stroke="{{s.color}}" stroke-dasharray="{{s.dash}}" stroke-dashoffset="{{s.off}}"></circle>
+                </sc-for>
+              </g>
+              <text class="ctr" x="70" y="72" text-anchor="middle">{{c.total}}</text>
+              <text class="ctr-l" x="70" y="87" text-anchor="middle">{{c.unit}}</text>
+            </svg>
+            <div class="legend">
+              <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="4">
+                <div class="leg"><span class="dot" style="background: {{s.color}}"></span><span class="nm">{{s.label}}</span><span class="v">{{s.value}}</span><span class="p">{{s.pct}}</span></div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+      <sc-for list="{{ctlBars}}" as="c" hint-placeholder-count="4">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="rows">
+            <sc-for list="{{c.rows}}" as="r" hint-placeholder-count="5">
+              <div class="row"><span class="nm">{{r.label}}</span><span class="track"><span class="fill" style="width: {{r.pct}}%; background: {{r.color}}"></span></span><span class="val">{{r.value}}</span></div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h">
+      <h2>Process coverage</h2>
+      <p>What the risks and controls hang off, and how much of it is in scope for SOX and for assessment.</p>
+    </div>
+    <div class="grid">
+      <sc-for list="{{prcPies}}" as="c" hint-placeholder-count="3">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="pie">
+            <svg width="140" height="140" viewBox="0 0 140 140" role="img" aria-label="{{c.alt}}">
+              <g transform="rotate(-90 70 70)">
+                <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="3">
+                  <circle cx="70" cy="70" r="54" fill="none" stroke-width="20" stroke="{{s.color}}" stroke-dasharray="{{s.dash}}" stroke-dashoffset="{{s.off}}"></circle>
+                </sc-for>
+              </g>
+              <text class="ctr" x="70" y="72" text-anchor="middle">{{c.total}}</text>
+              <text class="ctr-l" x="70" y="87" text-anchor="middle">{{c.unit}}</text>
+            </svg>
+            <div class="legend">
+              <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="3">
+                <div class="leg"><span class="dot" style="background: {{s.color}}"></span><span class="nm">{{s.label}}</span><span class="v">{{s.value}}</span><span class="p">{{s.pct}}</span></div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+      <sc-for list="{{prcBars}}" as="c" hint-placeholder-count="2">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="rows">
+            <sc-for list="{{c.rows}}" as="r" hint-placeholder-count="4">
+              <div class="row"><span class="nm">{{r.label}}</span><span class="track"><span class="fill" style="width: {{r.pct}}%; background: {{r.color}}"></span></span><span class="val">{{r.value}}</span></div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h">
+      <h2>Business entity scope</h2>
+      <p>The hierarchy everything above hangs under, and how much of it is inside the RCSA programme.</p>
+    </div>
+    <div class="grid">
+      <sc-for list="{{entPies}}" as="c" hint-placeholder-count="3">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="pie">
+            <svg width="140" height="140" viewBox="0 0 140 140" role="img" aria-label="{{c.alt}}">
+              <g transform="rotate(-90 70 70)">
+                <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="4">
+                  <circle cx="70" cy="70" r="54" fill="none" stroke-width="20" stroke="{{s.color}}" stroke-dasharray="{{s.dash}}" stroke-dashoffset="{{s.off}}"></circle>
+                </sc-for>
+              </g>
+              <text class="ctr" x="70" y="72" text-anchor="middle">{{c.total}}</text>
+              <text class="ctr-l" x="70" y="87" text-anchor="middle">{{c.unit}}</text>
+            </svg>
+            <div class="legend">
+              <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="4">
+                <div class="leg"><span class="dot" style="background: {{s.color}}"></span><span class="nm">{{s.label}}</span><span class="v">{{s.value}}</span><span class="p">{{s.pct}}</span></div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+      <sc-for list="{{entBars}}" as="c" hint-placeholder-count="1">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="rows">
+            <sc-for list="{{c.rows}}" as="r" hint-placeholder-count="4">
+              <div class="row"><span class="nm">{{r.label}}</span><span class="track"><span class="fill" style="width: {{r.pct}}%; background: {{r.color}}"></span></span><span class="val">{{r.value}}</span></div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <div class="card span2">
+        <h3>Entity type against RCSA scope</h3>
+        <p class="sub">Count of business entities in each cell.</p>
+        <div class="heat-wrap">
+          <table class="heat">
+            <thead>
+              <tr>
+                <th class="rh"></th>
+                <sc-for list="{{entHeat.cols}}" as="h" hint-placeholder-count="3">
+                  <th>{{h}}</th>
+                </sc-for>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{entHeat.rows}}" as="r" hint-placeholder-count="4">
+                <tr>
+                  <th class="rh" scope="row">{{r.label}}</th>
+                  <sc-for list="{{r.cells}}" as="c" hint-placeholder-count="3">
+                    <td style="background: {{c.bg}}; color: {{c.ink}}">{{c.v}}</td>
+                  </sc-for>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">32 entities sit outside RCSA scope, 11 of them legal entities — the gap the second page's indicator and issue counts never cover.</p>
+      </div>
+      <div class="card">
+        <h3>Rating colours used on this dashboard</h3>
+        <p class="sub">The same six steps carry every scale, so a colour means one thing on every chart.</p>
+        <div class="swatches">
+          <sc-for list="{{swatches}}" as="s" hint-placeholder-count="6">
+            <span class="sw"><span class="dot" style="background: {{s.color}}"></span>{{s.label}}</span>
+          </sc-for>
+        </div>
+        <p class="note">Second page: loss events, key risk indicators, issues, action items and the joins across them.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":3040}}'>
+class Component extends DCLogic {
+  // ---- palette: one severity ramp, validated for contrast and colour-vision separation ----
+  get c() {
+    return {
+      good: '#2E7D4F', warn: '#D9A520', high: '#CC5A11', bad: '#A61326',
+      grey: '#6B7785', blue: '#1C6FD0', plum: '#6D597A', plumLo: '#A595AE', ink: '#1C1B22'
+    };
+  }
+
+  n(v) { return v.toLocaleString('en-US'); }
+
+  // A ring: segments laid end to end, each carrying its own count and share.
+  pie(title, sub, unit, items, colors) {
+    const C = 339.292;
+    const total = items.reduce((s, i) => s + i[1], 0);
+    let acc = 0;
+    const segs = items.map((it, i) => {
+      const len = (it[1] / total) * C;
+      const seg = {
+        label: it[0], value: this.n(it[1]), pct: Math.round((it[1] / total) * 100) + '%',
+        color: colors[i % colors.length],
+        dash: len.toFixed(1) + ' ' + (C - len).toFixed(1),
+        off: (-acc).toFixed(1)
+      };
+      acc += len;
+      return seg;
+    });
+    return { title, sub, unit, total: this.n(total), segs,
+             alt: title + ': ' + items.map((i) => i[0] + ' ' + i[1]).join(', ') };
+  }
+
+  // A ranked bar list: every bar carries its own number, so colour is never the only cue.
+  bars(title, sub, items, colors) {
+    const max = Math.max.apply(null, items.map((i) => i[1]));
+    const rows = items.map((it, i) => ({
+      label: it[0], value: this.n(it[1]),
+      pct: Math.max(2, Math.round((it[1] / max) * 100)),
+      color: colors[i % colors.length]
+    }));
+    return { title, sub, rows };
+  }
+
+  grid(cols, rows) {
+    const flat = rows.reduce((a, r) => a.concat(r[1]), []);
+    const max = Math.max.apply(null, flat);
+    return {
+      cols: cols,
+      rows: rows.map((r) => ({
+        label: r[0],
+        cells: r[1].map((v) => {
+          const t = v / max;
+          return {
+            v: this.n(v),
+            bg: 'rgba(109, 89, 122, ' + (0.07 + t * 0.85).toFixed(2) + ')',
+            ink: t > 0.55 ? '#FFFFFF' : '#1C1B22'
+          };
+        })
+      }))
+    };
+  }
+
+  renderVals() {
+    const c = this.c;
+    const sev = [c.good, c.warn, c.high, c.bad];
+    const eff = [c.good, c.high, c.bad, c.grey];
+    const one = [c.plum];
+    const duo = [c.plum, c.plumLo];
+
+    const kpis = [
+      ['Risks', '1,284', c.ink, 'across 142 entities'],
+      ['Open risks', '902', c.plum, '70% of the register'],
+      ['Major residual risks', '37', c.bad, 'board-level exposure'],
+      ['Controls', '2,176', c.ink, '1.7 per risk'],
+      ['Ineffective controls', '86', c.bad, 'operating effectiveness'],
+      ['Business processes', '318', c.ink, '236 in scope'],
+      ['Loss events', '486', c.ink, 'rolling 12 months'],
+      ['Key risk indicators', '264', c.ink, '231 collected on time'],
+      ['KRIs in red breach', '19', c.bad, 'above red threshold'],
+      ['Issues', '731', c.ink, 'all sources'],
+      ['Open issues', '268', c.high, '64 past target date'],
+      ['Action items', '1,192', c.ink, 'raised against issues'],
+      ['Overdue action items', '143', c.bad, '12% of the book'],
+      ['Entities in RCSA scope', '96', c.good, 'of 142 entities']
+    ].map((k) => ({ label: k[0], value: k[1], ink: k[2], foot: k[3] }));
+
+    return {
+      kpis: kpis,
+
+      riskPies: [
+        this.pie('Risks by status', 'Lifecycle state of every risk record', 'RISKS',
+                 [['Open', 902], ['Closed', 312], ['Draft', 70]], [c.plum, c.grey, c.plumLo]),
+        this.pie('Risks by treatment', 'The response recorded against each risk', 'RISKS',
+                 [['Mitigate', 742], ['Accept', 318], ['Transfer', 134], ['Avoid', 90]],
+                 [c.plum, c.plumLo, c.blue, c.grey]),
+        this.pie('Risks within tolerance', 'Measured against the entity appetite statement', 'RISKS',
+                 [['Within tolerance', 1047], ['Outside tolerance', 237]], [c.good, c.bad])
+      ],
+      riskBars: [
+        this.bars('Risks by inherent rating', 'Before any control is credited',
+                  [['Minor', 214], ['Moderate', 452], ['Significant', 408], ['Major', 210]], sev),
+        this.bars('Risks by residual rating', 'After control effectiveness is applied',
+                  [['Minor', 486], ['Moderate', 524], ['Significant', 237], ['Major', 37]], sev),
+        this.bars('Risks by domain', 'The risk taxonomy level 1 domain',
+                  [['Operational', 468], ['Technology', 276], ['Compliance', 214], ['Financial', 186], ['Third party', 140]], one),
+        this.bars('Risks by Basel category', 'Basel II event-type category',
+                  [['Execution, delivery and process', 352], ['Clients, products and practices', 268],
+                   ['Business disruption', 180], ['Employment practices', 168], ['External fraud', 148],
+                   ['Internal fraud', 96], ['Damage to physical assets', 72]], one)
+      ],
+      heat: this.grid(['Rare', 'Unlikely', 'Possible', 'Likely', 'Almost certain'], [
+        ['Major', [2, 5, 9, 13, 8]],
+        ['Significant', [24, 46, 78, 62, 27]],
+        ['Moderate', [96, 148, 164, 86, 30]],
+        ['Minor', [186, 142, 98, 42, 18]]
+      ]),
+
+      ctlPies: [
+        this.pie('Design effectiveness', 'Latest design assessment on each control', 'CONTROLS',
+                 [['Effective', 1486], ['Partially Effective', 452], ['Ineffective', 118], ['Not Determined', 120]], eff),
+        this.pie('Operating effectiveness', 'Latest operating assessment on each control', 'CONTROLS',
+                 [['Effective', 1402], ['Partially Effective', 498], ['Ineffective', 86], ['Not Determined', 190]], eff),
+        this.pie('Controls by method', 'How the control is carried out', 'CONTROLS',
+                 [['Manual', 1138], ['Automated', 716], ['Semi-automated', 322]], [c.plum, c.blue, c.plumLo]),
+        this.pie('Controls by classification', 'Key controls carry the SOX and RCSA weight', 'CONTROLS',
+                 [['Standard', 1292], ['Key control activity', 884]], duo)
+      ],
+      ctlBars: [
+        this.bars('Controls by status', 'Lifecycle state of every control record',
+                  [['Active', 1842], ['Draft', 214], ['Retired', 120]], one),
+        this.bars('Controls by type', 'Where the control sits in the event chain',
+                  [['Preventive', 1184], ['Detective', 742], ['Corrective', 250]], one),
+        this.bars('Controls by domain', 'Same taxonomy the risks use',
+                  [['Operational', 812], ['Technology', 586], ['Compliance', 402], ['Financial', 376]], one),
+        this.bars('Controls by frequency', 'How often the control is performed',
+                  [['Monthly', 714], ['Quarterly', 452], ['Daily', 438], ['Weekly', 322], ['Annual', 250]], one)
+      ],
+
+      prcPies: [
+        this.pie('Processes by status', 'Lifecycle state of each process record', 'PROCESSES',
+                 [['Active', 268], ['Draft', 34], ['Retired', 16]], [c.plum, c.plumLo, c.grey]),
+        this.pie('Processes in scope', 'Inside the operational risk assessment programme', 'PROCESSES',
+                 [['In scope', 236], ['Out of scope', 82]], [c.good, c.grey]),
+        this.pie('Processes by SOX status', 'Financial reporting significance', 'PROCESSES',
+                 [['In scope', 148], ['Out of scope', 142], ['Under review', 28]], [c.blue, c.grey, c.warn])
+      ],
+      prcBars: [
+        this.bars('Processes by domain', 'Owning function',
+                  [['Operations', 118], ['Technology', 72], ['Finance', 68], ['Compliance', 60]], one),
+        this.bars('Processes by category', 'Process taxonomy level 1',
+                  [['Core', 142], ['Support', 104], ['Governance', 72]], one)
+      ],
+
+      entPies: [
+        this.pie('Entities by type', 'How the hierarchy is built', 'ENTITIES',
+                 [['Business unit', 62], ['Legal entity', 46], ['Division', 24], ['Region', 10]],
+                 [c.plum, c.plumLo, c.blue, c.grey]),
+        this.pie('Entities in scope', 'Inside the ORM programme', 'ENTITIES',
+                 [['In scope', 108], ['Out of scope', 34]], [c.good, c.grey]),
+        this.pie('Entities in RCSA scope', 'Risk and control self-assessment coverage', 'ENTITIES',
+                 [['In scope', 96], ['Out of scope', 32], ['Deferred', 14]], [c.good, c.grey, c.warn])
+      ],
+      entBars: [
+        this.bars('Entities by framework', 'Assessment framework applied',
+                  [['Basel II', 58], ['COSO', 44], ['ISO 31000', 26], ['Local standard', 14]], one)
+      ],
+      entHeat: this.grid(['In scope', 'Out of scope', 'Deferred'], [
+        ['Business unit', [48, 9, 5]],
+        ['Legal entity', [30, 11, 5]],
+        ['Division', [14, 8, 2]],
+        ['Region', [4, 4, 2]]
+      ]),
+
+      swatches: [
+        { label: 'Minor · Low · Effective · Green', color: c.good },
+        { label: 'Moderate · Medium · Yellow', color: c.warn },
+        { label: 'Significant · High · Partially Effective', color: c.high },
+        { label: 'Major · Critical · Ineffective · Red', color: c.bad },
+        { label: 'Not Determined · Closed', color: c.grey },
+        { label: 'In Progress · Automated', color: c.blue }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -945,3 +945,109 @@ a.media-body:hover .media-img, a.media-body:hover .media-icon { opacity: .85; }
 .model-panel-fields { list-style: none; margin: 0; padding: 0; }
 .model-panel-fields li { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 5px 0; border-bottom: 1px solid var(--row); font-size: 12px; }
 .model-panel-fields .model-field-name { flex: 1 1 auto; font-weight: 500; }
+
+/* ===== The "plex" report theme =====
+   The look the OpenPages ORM overview was designed in, carried by a dashboard built from that
+   template (config.theme, see backend routers/templates.py). Every value below is the design's
+   own: the paper, the card, the rules over each section, the type scale, and figures set in a
+   monospaced face so columns of them line up.
+
+   IBM Plex is named first and falls back to the system face, so the page is right on a machine
+   that has Plex installed and still correct on one that doesn't - nothing is fetched at runtime,
+   because a report has to render on a machine with no way out to the internet. */
+.theme-plex {
+  --plex-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --plex-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --plex-paper: #F6F5F3;
+  --plex-ink: #1C1B22;
+  --plex-body: #413D4C;
+  --plex-muted: #6B6579;
+  --plex-line: #E4E0E8;
+  --plex-rule: #2D2638;
+  background: var(--plex-paper);
+  color: var(--plex-ink);
+  font-family: var(--plex-sans);
+  -webkit-font-smoothing: antialiased;
+}
+.theme-plex .viewer-body { max-width: 1440px; margin: 0 auto; padding: 28px 32px 56px; }
+.theme-plex .dash-grid { gap: 16px; }
+
+/* Cards: white, hairline border, 10px corners, no shadow. */
+.theme-plex .widget.card,
+.theme-plex .widget.w-kpi { background: #fff; border: 1px solid var(--plex-line); border-radius: 10px;
+  padding: 15px 17px 17px; box-shadow: none; }
+.theme-plex .h2, .theme-plex .widget-head .h2 { font-size: 13.5px; font-weight: 600; letter-spacing: 0;
+  color: var(--plex-ink); }
+
+/* A section heading is a rule across the page with the title and its explanation on one line. */
+.theme-plex .widget.w-text { background: transparent; border: 0; padding: 0; box-shadow: none;
+  border-top: 2px solid var(--plex-rule); padding-top: 10px; margin: 10px 0 -2px;
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.theme-plex .text-tile-title { font-size: 17px; font-weight: 600; letter-spacing: -.005em; }
+.theme-plex .text-tile-body { font-size: 12.5px; color: var(--plex-muted); max-width: 78ch; }
+
+/* Number tiles: a small uppercase label over a large monospaced figure. */
+.theme-plex .widget.w-kpi .h2,
+.theme-plex .widget.w-kpi .widget-title-input { font-size: 10.5px; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--plex-muted); font-weight: 600; line-height: 1.35; }
+.theme-plex .kpi-tile { padding: 2px 0 0; }
+.theme-plex .kpi-value { font-family: var(--plex-mono); font-size: 27px; font-weight: 600;
+  letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.1; color: var(--plex-ink); }
+
+/* Figures read as figures wherever they appear. */
+.theme-plex .data-table td, .theme-plex .table-scroll td { font-size: 12px; color: var(--plex-body); }
+.theme-plex .data-table th, .theme-plex .table-scroll th { font-size: 10.5px; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--plex-muted); font-weight: 600; }
+.theme-plex .r, .theme-plex td.n { font-family: var(--plex-mono); font-variant-numeric: tabular-nums; }
+
+/* The strip above the charts, and the chips in it. */
+.theme-plex .dash-meta, .theme-plex .muted { color: var(--plex-muted); }
+.theme-plex .chip { border-color: var(--plex-line); background: #fff; border-radius: 7px; }
+
+/* ---- Table columns a person can set the width of, or take off ---- */
+/* A width only means anything once the browser stops sizing columns by their contents. */
+.result-table.sized { table-layout: fixed; width: 100%; }
+.result-table.sized th, .result-table.sized td { overflow: hidden; text-overflow: ellipsis; }
+.result-table.adjustable th { position: relative; padding-right: 26px; }
+.result-table.adjustable th .th-label { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+/* The grip sits on the column's right-hand edge and is only visible once it is worth grabbing. */
+.th-grip { position: absolute; top: 0; right: 0; width: 9px; height: 100%; cursor: col-resize; touch-action: none; }
+.th-grip::after { content: ""; position: absolute; top: 15%; right: 4px; width: 2px; height: 70%; border-radius: 1px; background: transparent; }
+.result-table.adjustable th:hover .th-grip::after, .th-grip:active::after { background: var(--line, #D7DEE6); }
+.th-grip:active::after { background: var(--brand, #00B4D8); }
+.th-hide { position: absolute; top: 50%; right: 11px; transform: translateY(-50%); display: none;
+  padding: 2px; border: 0; border-radius: 4px; background: none; color: inherit; opacity: .55; cursor: pointer; }
+.result-table.adjustable th:hover .th-hide, .th-hide:focus-visible { display: inline-flex; }
+.th-hide:hover { opacity: 1; background: rgba(0,0,0,.07); }
+.table-foot { gap: 10px; align-items: baseline; }
+.table-foot .link-btn { padding-inline: 10px; }
+@media print {
+  .th-grip, .th-hide, .table-foot .link-btn { display: none !important; }
+  .result-table.adjustable th { padding-right: 8px; }
+}
+
+/* Clicking a chart to see the records behind it (lib/focus). The banner sits above the grid and
+   says what is selected; the tile showing those records says so on its own head. */
+.drill-banner {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  background: var(--accent-soft); border-radius: 10px; padding: 10px 14px;
+}
+.drill-banner-label { font-weight: 600; }
+.drill-banner-value {
+  font-family: 'IBM Plex Mono', ui-monospace, Consolas, monospace; font-size: 13px;
+  background: var(--card); border-radius: 6px; padding: 4px 10px;
+}
+.drill-banner .btn { margin-left: auto; }
+.badge-focus { background: var(--accent-soft); color: var(--navy); }
+
+/* The share dialog: a link and an embed snippet, each with its own copy button. Turning a link
+   off is the one thing here that can't be taken back, so its button reads as the warning it is. */
+.btn.danger { color: var(--bad); }
+.btn.danger:hover { background: var(--bad-bg); }
+/* The share dialog: a link and an embed snippet, each with its own copy button. */
+.share-copy { display: flex; align-items: flex-start; gap: 8px; }
+.share-text {
+  flex: 1; resize: vertical; font-family: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+  font-size: 12px; line-height: 1.5; padding: 8px 10px;
+}
+.share-copy .btn { flex: none; }

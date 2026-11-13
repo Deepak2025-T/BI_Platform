@@ -377,7 +377,8 @@ def run_sql(source: DataSource, sql: str, params: dict | None = None, *, refresh
     t0 = time.perf_counter()
     if source.is_openpages:
         try:
-            columns, rows, truncated = source.client.query(safe, MAX_ROWS)  # filters are already in the SQL
+            # The query is written in the words the app shows; OpenPages wants what it stores.
+            columns, rows, truncated = source.client.query(openpages_stored_values(source, safe), MAX_ROWS)
         except openpages.OpenPagesError as err:
             raise QueryFailed(str(err)) from err
     else:
@@ -495,6 +496,42 @@ def openpages_labels(source: DataSource, type_name: str, field: str) -> dict[str
 def openpages_stored(source: DataSource, type_name: str, field: str, value: str) -> str:
     """The value to write into the SQL for what someone picked in a filter."""
     return openpages_labels(source, type_name, field).get(value, value)
+
+
+# [Type].[Field] <op> 'value', or IN ('a', 'b'): the places a query names an enum value.
+_OP_COMPARISON = re.compile(
+    r"\[(?P<type>(?:[^\]]|\]\])+)\]\s*\.\s*\[(?P<field>(?:[^\]]|\]\])+)\]\s*"
+    r"(?P<op><>|!=|>=|<=|=|>|<|NOT\s+LIKE|LIKE|NOT\s+IN|IN)\s*"
+    r"(?P<value>\((?:\s*'(?:[^']|'')*'\s*,?)+\)|'(?:[^']|'')*')", re.I)
+_OP_LITERAL = re.compile(r"'(?:[^']|'')*'")
+
+
+def openpages_stored_values(source: DataSource, sql: str) -> str:
+    """One OpenPages query with the words people read swapped for the values OpenPages stores.
+
+    Results come back carrying an enum's labels rather than its stored names (see
+    openpages.query), and every list of a field's values this app shows - the filter choices, the
+    columns an AI model is given, a template's own conditions - is in those same words. A query
+    has to go the other way: OpenPages answers "'Major' is not a valid value for this enum" and
+    refuses the whole thing, because what it stores there is "Very High". Only a value that really
+    is one of the field's labels is swapped, so an installation that stores the words is untouched,
+    and so is any value the definition doesn't mention."""
+    if not source.is_openpages or "'" not in sql:
+        return sql
+
+    def swap(match: re.Match) -> str:
+        labels = openpages_labels(source, match.group("type"), match.group("field"))
+        if not labels:
+            return match.group(0)
+
+        def one(literal: re.Match) -> str:
+            text = literal.group(0)[1:-1].replace("''", "'")
+            stored = labels.get(text)
+            return openpages.quote(stored) if stored is not None else literal.group(0)
+
+        return match.group(0)[:match.start("value") - match.start()] + _OP_LITERAL.sub(one, match.group("value"))
+
+    return _OP_COMPARISON.sub(swap, sql)
 
 
 def _openpages_values(source: DataSource, type_name: str, field: str, limit: int) -> list[str]:

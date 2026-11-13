@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { type ChatSummary, type SavedMessage, chatsApi } from "../api/chats";
 import { errorMessage } from "../api/client";
 import { aiModelsApi, assistantApi, dataModelsApi } from "../api/endpoints";
-import type { AIModelPublic, ChatResult, DataModelSummary, DataSourceInfo, Widget } from "../api/types";
+import type { AIModelPublic, ChartType, ChatResult, DataModelSummary, DataSourceInfo, Widget } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import DataChart from "../components/DataChart";
 import Modal from "../components/Modal";
@@ -15,7 +15,7 @@ import { useToast } from "../components/Toast";
 import { rememberModel, rememberedModel } from "../lib/aiModels";
 import { bySolution, rememberModel as rememberDataModel, rememberedModel as rememberedDataModel } from "../lib/dataModel";
 import { shortDate } from "../lib/format";
-import { CHART_LABELS, rememberSource, rememberedSource, retype, sourceIdOf, sourceValue } from "../lib/sources";
+import { CHART_LABELS, cannotDraw, rememberSource, rememberedSource, retype, sourceIdOf, sourceValue } from "../lib/sources";
 
 interface Message {
   id: number;
@@ -60,6 +60,7 @@ export default function Chat() {
   const [saving, setSaving] = useState(false);
   const tempId = useRef(-1);
   const createdId = useRef<number | null>(null); // the chat this page just created: don't reload it over the pending answer
+  const startedChat = useRef<number | null>(null); // a chat started but not yet answered, so a retry reuses it
   const openChat = useRef(chatId);
   openChat.current = chatId;
   const startedWith = useRef<string | null>(null);
@@ -98,7 +99,7 @@ export default function Chat() {
     setOpenError("");
     if (chatId !== null && createdId.current === chatId) return;
     createdId.current = null;
-    if (chatId === null) { setMessages([]); setSourceName(""); return; }
+    if (chatId === null) { setMessages([]); setSourceName(""); startedChat.current = null; return; }
     setOpening(true);
     chatsApi.get(chatId).then((c) => {
       setMessages(c.messages.map(toMessage));
@@ -151,17 +152,26 @@ export default function Chat() {
     setMessages((list) => [...list, { id: temp, question, status: "pending" }]);
     setInput("");
     try {
-      let id = chatId;
+      // A chat started for a question that then failed is reused by "Try again", so a retry doesn't
+      // leave an empty chat behind in the history every time.
+      let id = chatId ?? startedChat.current;
+      let started = false;
       if (id === null) {
         // The first question starts a saved chat.
         const created = await chatsApi.start({ source_id: sourceIdOf(source), model_id: Number(model),
                                                data_model: dataModelSent });
         id = created.id;
         createdId.current = id;
-        navigate(`/chat/${id}`, { replace: true });
+        startedChat.current = id;
+        started = true;
       }
       const saved = await chatsApi.send(id, question, Number(model));
       setMessages((list) => list.map((m) => (m.id === temp ? toMessage(saved) : m)));
+      // Only now does the page become /chat/<id>. A local model can take minutes to answer, and
+      // until it has, that chat holds no message: moving there first means anything that re-reads
+      // it - the page being reloaded while waiting, most of all - replaces the question being
+      // asked with an empty chat, and the question looks lost although the answer is still coming.
+      if (started) navigate(`/chat/${id}`, { replace: true });
       refreshList();
     } catch (err) {
       setMessages((list) => list.map((m) => (m.id === temp ? { ...m, status: "error", error: errorMessage(err) } : m)));
@@ -275,8 +285,12 @@ export default function Chat() {
             <div key={m.id} className="chat-turn">
               <div className="chat-question">{m.question}</div>
               {m.status === "pending" && (
-                <div className="chat-answer card row-wrap"><span className="spinner" aria-hidden="true" />
-                  <span className="muted">{modelInfo?.name ?? "The model"} is writing and checking the query…</span></div>
+                <div className="chat-answer card stack-sm">
+                  <div className="row-wrap"><span className="spinner" aria-hidden="true" />
+                    <span className="muted">{modelInfo?.name ?? "The model"} is writing and checking the query…</span></div>
+                  <span className="muted small">A model running on this machine can take a few minutes. Leaving the
+                    page stops the answer being shown, though it is still saved to this chat.</span>
+                </div>
               )}
               {m.status === "error" && (
                 <div className="chat-answer card stack-sm">
@@ -405,7 +419,10 @@ function Answer({ result, pinned, palette, onPin, onSave, onRetype }: {
         <h3 className="h2">{result.title}</h3>
         <select className="chart-pick" value={result.chart.type} aria-label="Chart type"
           onChange={(e) => onRetype(e.target.value as keyof typeof CHART_LABELS)}>
-          {Object.entries(CHART_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          {Object.entries(CHART_LABELS).map(([k, l]) => {
+            const no = cannotDraw(k as ChartType, result.columns, result.rows);
+            return <option key={k} value={k} disabled={!!no} title={no}>{no ? `${l} — ${no.toLowerCase()}` : l}</option>;
+          })}
         </select>
       </div>
       <DataChart columns={result.columns} rows={result.rows} chart={result.chart} style={{ palette }}

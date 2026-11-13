@@ -13,6 +13,9 @@ import ResultTable from "./ResultTable";
 echarts.use([BarChart, HeatmapChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent,
              VisualMapComponent, CanvasRenderer]);
 
+/** Figures are set in a monospaced face so columns of them line up, matching the app's CSS. */
+export const NUMERALS = "'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace";
+
 export const CHART_COLORS = ["#00B4D8", "#0D3B66", "#F5A623", "#7A8BA3", "#2A9D8F", "#A63D40", "#6D597A", "#1E7F4F"];
 
 interface Props {
@@ -32,6 +35,8 @@ interface Props {
   fitAxis?: boolean;
   /** Called with the category that was clicked, when the chart can be drilled into. */
   onPoint?: (name: string) => void;
+  /** Tables: given when the person may set column widths or take a column off. */
+  onColumns?: (patch: { widths?: Record<string, number>; hiddenColumns?: string[] }) => void;
 }
 
 /** A small line of a number tile's history. */
@@ -47,7 +52,7 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
 }
 
 /** Draws any query result from a chart spec: KPI tile, bar, line, area, pie or table, styled by `style`. */
-export default function DataChart({ columns, rows, chart, style = {}, height = 280, tableHeight, truncated, compare, spark, fitAxis, onPoint }: Props) {
+export default function DataChart({ columns, rows, chart, style = {}, height = 280, tableHeight, truncated, compare, spark, fitAxis, onPoint, onColumns }: Props) {
   const xi = columns.indexOf(chart.x);
   const ys = chart.y.filter((c) => columns.includes(c));
   const fmt = (v: number) => formatValue(v, style);
@@ -102,7 +107,10 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
   // A matrix is a table until pivoting is built.
   if (chart.type === "table" || chart.type === "matrix" || notDrawnYet || xi < 0 || ys.length === 0
       || (chart.type === "heatmap" && gridIndex < 0)) {
-    const table = <ResultTable columns={columns} rows={sorted} truncated={truncated} limit={50} />;
+    const table = (
+      <ResultTable columns={columns} rows={sorted} truncated={truncated} limit={50}
+        widths={style.columnWidths} hiddenColumns={style.hiddenColumns} onColumns={onColumns} />
+    );
     return tableHeight ? <div className="table-scroll" style={{ maxHeight: tableHeight }}>{table}</div> : table;
   }
 
@@ -154,6 +162,12 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     const numbers = cells.map((c) => c[2] as number);
     const low = Math.min(0, ...numbers), high = Math.max(...numbers, 1);
     const main = colors[0];
+    // A count sitting on a deep cell has to be read off it, so past the middle of the scale the
+    // figure turns white. It is set per cell rather than on the series, because the series' own
+    // colour is only decided by the visual map after that.
+    const shaded = cells.map((c) => ({
+      value: c, label: { color: (c[2] as number) - low > (high - low) * 0.55 ? "#FFFFFF" : strong },
+    }));
     return (
       <div role="img" aria-label={`Heatmap of ${columnLabel(ys[0])} by ${columnLabel(chart.x)} and ${columnLabel(chart.legend!)}`}>
         <ReactEChartsCore echarts={echarts} notMerge style={{ height, width: "100%" }}
@@ -164,22 +178,29 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
             formatter: (p: { value: [number, number, number] }) =>
               `${across[p.value[0]]} · ${down[p.value[1]]}<br/><b>${fmt(p.value[2])}</b>`,
           },
-          grid: { left: 8, right: 12, top: 12, bottom: 48, containLabel: true },
+          grid: { left: 8, right: 12, top: 12, bottom: legend ? 48 : 12, containLabel: true },
           xAxis: { type: "category", data: across, ...AXIS, splitArea: { show: true },
                    axisLabel: { ...AXIS.axisLabel, hideOverlap: true } },
           yAxis: { type: "category", data: down, ...AXIS, splitArea: { show: true },
                    axisLabel: { ...AXIS.axisLabel, width: 150, overflow: "truncate" } },
           visualMap: {
+            // The scale is what colours the cells; the bar showing it is only drawn when the chart
+            // is set to show a legend, because the counts are written in the cells anyway.
+            show: legend,
             min: low, max: high, calculable: true, orient: "horizontal", left: "center", bottom: 4,
             textStyle: { color: ink }, formatter: fmt,
             // Pale to the card's own colour, so a heatmap matches the rest of the dashboard.
             inRange: { color: [dark ? "#1B2A38" : "#F2F7FB", main] },
           },
           series: [{
-            type: "heatmap", data: cells,
-            label: { show: !!style.showValues, fontSize: 10, color: strong, formatter: (p: { value: [number, number, number] }) => fmt(p.value[2]) },
-            itemStyle: { borderColor: dark ? "rgba(255,255,255,.08)" : "#FFFFFF", borderWidth: 1 },
-            emphasis: { itemStyle: { borderColor: strong, borderWidth: 1.5 } },
+            type: "heatmap", data: shaded,
+            label: {
+              show: !!style.showValues, fontSize: 11, fontWeight: 600,
+              formatter: (p: { value: [number, number, number] }) => fmt(p.value[2]),
+            },
+            // Rounded cells with the card showing between them, rather than a ruled table.
+            itemStyle: { borderColor: "transparent", borderWidth: 3, borderRadius: 6 },
+            emphasis: { itemStyle: { borderColor: strong, borderWidth: 1.5, borderRadius: 6 } },
           }],
         }} />
       </div>
@@ -194,21 +215,49 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
         .map((x) => `${x.l} ${x.d > 0 ? "▲" : "▼"} ${fmt(Math.abs(x.d))}`);
       for (const l of before.keys()) if (!labels.includes(l) && changes.length < 4) changes.push(`${l} gone`);
     }
+    // A ring reads its slices down the side rather than off the chart: the name, the figure and
+    // its share, one per line, with the total in the hole. It carries more in a narrow tile than
+    // labels on leader lines, which overlap as soon as a slice is thin.
+    const ringLegend = !!style.ringLegend && legend;
+    const slices = values(ys[0]);
+    const whole = slices.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
     option = {
       color: colors,
       tooltip: { trigger: "item", valueFormatter: fmt },
-      legend: legend ? { bottom: 0, left: "center", type: "scroll", textStyle: { color: ink } } : undefined,
+      legend: !legend ? undefined
+        : ringLegend
+          ? {
+            orient: "vertical", right: 0, top: "middle", type: "scroll", itemWidth: 8, itemHeight: 8,
+            icon: "circle", itemGap: 7, textStyle: { color: ink, fontSize: 12, rich: {} },
+            formatter: (name: string) => {
+              const v = slices[labels.indexOf(name)] ?? 0;
+              return `${name}  ${fmt(v)}  ${whole ? Math.round((v / whole) * 100) : 0}%`;
+            },
+          }
+          : { bottom: 0, left: "center", type: "scroll", textStyle: { color: ink } },
+      // The total sits in the hole, under the word for what is being counted.
+      ...(ringLegend ? {
+        title: {
+          text: fmt(whole), subtext: (columnLabel(chart.x || "") || "total").toUpperCase(),
+          left: "24%", top: "center", textAlign: "center",
+          textStyle: { fontSize: 19, fontWeight: 600, color: strong, fontFamily: NUMERALS },
+          subtextStyle: { fontSize: 9, color: ink, fontWeight: 600 }, itemGap: 4,
+        },
+      } : {}),
       series: [{
         // A donut has a wider hole than the default pie.
         type: "pie", radius: chart.type === "donut" ? ["55%", "76%"] : ["38%", "62%"],
-        top: -10, bottom: legend ? 24 : 0, itemStyle: { borderColor: "#fff", borderWidth: 2 },
-        // Whole percents and short lines keep labels inside narrow tiles.
-        label: { formatter: style.showValues ? (p: { value: number; percent: number }) => `${fmt(p.value)} (${Math.round(p.percent)}%)`
-                                             : (p: { percent: number }) => `${Math.round(p.percent)}%`, fontSize: 11, color: ink },
-        labelLine: { length: 6, length2: 6 },
+        ...(ringLegend ? { center: ["24%", "50%"] } : {}),
+        top: -10, bottom: legend && !ringLegend ? 24 : 0, itemStyle: { borderColor: "#fff", borderWidth: 2 },
+        // Whole percents and short lines keep labels inside narrow tiles. A ring that lists its
+        // slices beside it needs no labels on the slices themselves.
+        label: ringLegend ? { show: false }
+          : { formatter: style.showValues ? (p: { value: number; percent: number }) => `${fmt(p.value)} (${Math.round(p.percent)}%)`
+                                          : (p: { percent: number }) => `${Math.round(p.percent)}%`, fontSize: 11, color: ink },
+        labelLine: ringLegend ? { show: false } : { length: 6, length2: 6 },
         labelLayout: { hideOverlap: true },
         data: labels.map((name, i) => ({
-          name, value: values(ys[0])[i],
+          name, value: slices[i],
           ...(perCategory ? { itemStyle: { color: categoryColor(name, i) } } : {}),
         })),
       }],

@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ORM Overview — events, indicators and remediation</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@500;600&amp;display=swap">
+<style>
+body{margin:0;background:#F6F5F3;color:#1C1B22;font-family:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#6D597A}a:hover{color:#4B3C56}
+*{box-sizing:border-box}
+.wrap{max-width:1440px;margin:0 auto;padding:28px 32px 56px}
+.bar-top{background:#2D2638;color:#F3F1F5;border-radius:12px;padding:18px 24px;display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:space-between}
+.bar-top h1{font-size:22px;font-weight:600;margin:0;letter-spacing:-.01em}
+.bar-top p{margin:5px 0 0;font-size:12.5px;color:#BBB2C6;max-width:70ch}
+.stamp{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11px;color:#BBB2C6;text-align:right;line-height:1.7}
+.sec{margin-top:28px}
+.sec-h{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;border-top:2px solid #2D2638;padding-top:10px;margin-bottom:14px}
+.sec-h h2{font-size:17px;font-weight:600;margin:0;letter-spacing:-.005em}
+.sec-h p{margin:0;font-size:12.5px;color:#6B6579;max-width:78ch}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:#fff;border:1px solid #E4E0E8;border-radius:10px;padding:15px 17px 17px;min-width:0;display:flex;flex-direction:column}
+.card h3{font-size:13.5px;font-weight:600;margin:0}
+.card .sub{font-size:11px;color:#6B6579;margin:3px 0 12px}
+.rows{display:flex;flex-direction:column;gap:9px;margin-top:2px}
+.row{display:grid;grid-template-columns:minmax(84px,34%) 1fr auto;align-items:center;gap:10px}
+.row .nm{font-size:12px;color:#413D4C;min-width:0;overflow-wrap:anywhere}
+.track{height:12px;background:#F0EEF3;border-radius:3px;overflow:hidden}
+.fill{height:100%;border-radius:3px}
+.val{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;font-variant-numeric:tabular-nums;color:#1C1B22;font-weight:600}
+.pie{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.pie svg{flex:none}
+.legend{display:flex;flex-direction:column;gap:7px;min-width:0;flex:1 1 130px}
+.leg{display:flex;align-items:center;gap:8px;font-size:12px;color:#413D4C;min-width:0}
+.leg .nm{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.leg .v{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;font-weight:600;color:#1C1B22}
+.leg .p{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11px;color:#6B6579;width:34px;text-align:right}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.ctr{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:19px;font-weight:600;fill:#1C1B22}
+.ctr-l{font-size:9px;letter-spacing:.08em;fill:#6B6579;font-family:'IBM Plex Sans',sans-serif;font-weight:600}
+.heat-wrap{overflow-x:auto;margin-top:4px}
+.heat{border-collapse:separate;border-spacing:3px;width:100%;min-width:410px}
+.heat th{font-size:11px;font-weight:600;color:#6B6579;text-align:center;padding:2px 4px}
+.heat th.rh{text-align:right;white-space:nowrap;color:#413D4C;font-size:12px}
+.heat td{text-align:center;border-radius:5px;padding:11px 4px;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;font-weight:600}
+.note{font-size:11.5px;color:#6B6579;margin:10px 0 0;line-height:1.5}
+.bullets{display:flex;flex-direction:column;gap:13px;margin-top:2px}
+.bul .top{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:#413D4C;margin-bottom:5px}
+.bul .top b{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;font-weight:600;color:#1C1B22}
+.bul .band{position:relative;height:16px;background:#F0EEF3;border-radius:3px}
+.bul .v{position:absolute;left:0;top:4px;height:8px;border-radius:2px}
+.bul .tick{position:absolute;top:0;width:2px;height:16px;border-radius:1px}
+.bul .scale{display:flex;justify-content:space-between;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10px;color:#6B6579;margin-top:3px}
+.spark{width:100%;height:auto;display:block;margin-top:4px}
+.tbl-wrap{overflow-x:auto;margin-top:6px}
+table.data{border-collapse:collapse;width:100%;min-width:480px;font-size:12px}
+table.data th{text-align:left;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:#6B6579;font-weight:600;padding:0 10px 7px 0;border-bottom:1px solid #E4E0E8;white-space:nowrap}
+table.data td{padding:8px 10px 8px 0;border-bottom:1px solid #F0EEF3;color:#413D4C;vertical-align:top}
+table.data td.n{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.span2{grid-column:span 2}
+@media (max-width:1120px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:720px){.grid{grid-template-columns:1fr}.span2{grid-column:span 1}.wrap{padding:20px 16px 40px}}
+</style>
+</helmet>
+
+<div class="wrap">
+
+  <header class="bar-top">
+    <div>
+      <h1>Events, indicators and remediation</h1>
+      <p>The second half of the ORM overview: what went wrong, what is being watched, what was raised and what is being done about it.</p>
+    </div>
+    <div class="stamp">
+      ENTITY · GROUP (ALL)<br>
+      REFRESHED · 11 NOV 2026 06:00
+    </div>
+  </header>
+
+  <section class="sec">
+    <div class="sec-h">
+      <h2>Loss experience</h2>
+      <p>What actually happened. Severity runs Low, Moderate, High, Major.</p>
+    </div>
+    <div class="grid">
+      <sc-for list="{{lossPies}}" as="c" hint-placeholder-count="1">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="pie">
+            <svg width="140" height="140" viewBox="0 0 140 140" role="img" aria-label="{{c.alt}}">
+              <g transform="rotate(-90 70 70)">
+                <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="3">
+                  <circle cx="70" cy="70" r="54" fill="none" stroke-width="20" stroke="{{s.color}}" stroke-dasharray="{{s.dash}}" stroke-dashoffset="{{s.off}}"></circle>
+                </sc-for>
+              </g>
+              <text class="ctr" x="70" y="72" text-anchor="middle">{{c.total}}</text>
+              <text class="ctr-l" x="70" y="87" text-anchor="middle">{{c.unit}}</text>
+            </svg>
+            <div class="legend">
+              <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="3">
+                <div class="leg"><span class="dot" style="background: {{s.color}}"></span><span class="nm">{{s.label}}</span><span class="v">{{s.value}}</span><span class="p">{{s.pct}}</span></div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+      <sc-for list="{{lossBars}}" as="c" hint-placeholder-count="2">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="rows">
+            <sc-for list="{{c.rows}}" as="r" hint-placeholder-count="4">
+              <div class="row"><span class="nm">{{r.label}}</span><span class="track"><span class="fill" style="width: {{r.pct}}%; background: {{r.color}}"></span></span><span class="val">{{r.value}}</span></div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <div class="card span2">
+        <h3>Outcome against severity</h3>
+        <p class="sub">Count of loss events in each cell.</p>
+        <div class="heat-wrap">
+          <table class="heat">
+            <thead>
+              <tr>
+                <th class="rh"></th>
+                <sc-for list="{{lossHeat.cols}}" as="h" hint-placeholder-count="4">
+                  <th>{{h}}</th>
+                </sc-for>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{lossHeat.rows}}" as="r" hint-placeholder-count="3">
+                <tr>
+                  <th class="rh" scope="row">{{r.label}}</th>
+                  <sc-for list="{{r.cells}}" as="c" hint-placeholder-count="4">
+                    <td style="background: {{c.bg}}; color: {{c.ink}}">{{c.v}}</td>
+                  </sc-for>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">24 Major events in twelve months, 22 of them realised losses rather than near misses.</p>
+      </div>
+      <div class="card">
+        <h3>Loss events raised over time</h3>
+        <p class="sub">Count by month the event was recorded</p>
+        <svg class="spark" viewBox="0 0 320 128" role="img" aria-label="{{lossTrend.alt}}">
+          <line x1="0" y1="104" x2="320" y2="104" stroke="#E4E0E8" stroke-width="1"></line>
+          <path d="{{lossTrend.area}}" fill="rgba(109, 89, 122, 0.14)"></path>
+          <polyline points="{{lossTrend.points}}" fill="none" stroke="#6D597A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+          <circle cx="{{lossTrend.lastX}}" cy="{{lossTrend.lastY}}" r="4" fill="#6D597A"></circle>
+          <text x="{{lossTrend.lastX}}" y="{{lossTrend.labelY}}" text-anchor="end" font-size="11" font-family="IBM Plex Mono, monospace" fill="#1C1B22" font-weight="600">{{lossTrend.lastV}}</text>
+          <text x="0" y="122" font-size="10" fill="#6B6579" font-family="IBM Plex Sans, sans-serif">Dec 2025</text>
+          <text x="320" y="122" text-anchor="end" font-size="10" fill="#6B6579" font-family="IBM Plex Sans, sans-serif">Nov 2026</text>
+        </svg>
+        <p class="note">OpenPages SQL has no month function, so the live chart plots one point per creation date; this is the same series rolled up for reading.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h">
+      <h2>Indicator performance</h2>
+      <p>Breach status, trend and collection. Green within threshold, Yellow warning, Red breached.</p>
+    </div>
+    <div class="grid">
+      <sc-for list="{{kriPies}}" as="c" hint-placeholder-count="4">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="pie">
+            <svg width="140" height="140" viewBox="0 0 140 140" role="img" aria-label="{{c.alt}}">
+              <g transform="rotate(-90 70 70)">
+                <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="3">
+                  <circle cx="70" cy="70" r="54" fill="none" stroke-width="20" stroke="{{s.color}}" stroke-dasharray="{{s.dash}}" stroke-dashoffset="{{s.off}}"></circle>
+                </sc-for>
+              </g>
+              <text class="ctr" x="70" y="72" text-anchor="middle">{{c.total}}</text>
+              <text class="ctr-l" x="70" y="87" text-anchor="middle">{{c.unit}}</text>
+            </svg>
+            <div class="legend">
+              <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="3">
+                <div class="leg"><span class="dot" style="background: {{s.color}}"></span><span class="nm">{{s.label}}</span><span class="v">{{s.value}}</span><span class="p">{{s.pct}}</span></div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+      <sc-for list="{{kriBars}}" as="c" hint-placeholder-count="3">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="rows">
+            <sc-for list="{{c.rows}}" as="r" hint-placeholder-count="4">
+              <div class="row"><span class="nm">{{r.label}}</span><span class="track"><span class="fill" style="width: {{r.pct}}%; background: {{r.color}}"></span></span><span class="val">{{r.value}}</span></div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <div class="card span2">
+        <h3>Latest value against yellow and red thresholds</h3>
+        <p class="sub">One row per indicator. The bar is the latest value; the two ticks are the warning and breach thresholds.</p>
+        <div class="bullets">
+          <sc-for list="{{bullets}}" as="b" hint-placeholder-count="6">
+            <div class="bul">
+              <div class="top"><span>{{b.name}}</span><span><b>{{b.value}}</b> {{b.unit}} · yellow {{b.yellow}} · red {{b.red}}</span></div>
+              <div class="band">
+                <span class="v" style="width: {{b.vw}}%; background: {{b.color}}"></span>
+                <span class="tick" style="left: {{b.yw}}%; background: #D9A520"></span>
+                <span class="tick" style="left: {{b.rw}}%; background: #A61326"></span>
+              </div>
+              <div class="scale"><span>0</span><span>{{b.max}}</span></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h">
+      <h2>Issue management</h2>
+      <p>What assessment and testing turned up. Low green, Medium yellow, High orange, Critical red.</p>
+    </div>
+    <div class="grid">
+      <sc-for list="{{issPies}}" as="c" hint-placeholder-count="2">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="pie">
+            <svg width="140" height="140" viewBox="0 0 140 140" role="img" aria-label="{{c.alt}}">
+              <g transform="rotate(-90 70 70)">
+                <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="4">
+                  <circle cx="70" cy="70" r="54" fill="none" stroke-width="20" stroke="{{s.color}}" stroke-dasharray="{{s.dash}}" stroke-dashoffset="{{s.off}}"></circle>
+                </sc-for>
+              </g>
+              <text class="ctr" x="70" y="72" text-anchor="middle">{{c.total}}</text>
+              <text class="ctr-l" x="70" y="87" text-anchor="middle">{{c.unit}}</text>
+            </svg>
+            <div class="legend">
+              <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="4">
+                <div class="leg"><span class="dot" style="background: {{s.color}}"></span><span class="nm">{{s.label}}</span><span class="v">{{s.value}}</span><span class="p">{{s.pct}}</span></div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+      <sc-for list="{{issBars}}" as="c" hint-placeholder-count="5">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="rows">
+            <sc-for list="{{c.rows}}" as="r" hint-placeholder-count="4">
+              <div class="row"><span class="nm">{{r.label}}</span><span class="track"><span class="fill" style="width: {{r.pct}}%; background: {{r.color}}"></span></span><span class="val">{{r.value}}</span></div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <div class="card span2">
+        <h3>Issue status against priority</h3>
+        <p class="sub">Count of issues in each cell.</p>
+        <div class="heat-wrap">
+          <table class="heat">
+            <thead>
+              <tr>
+                <th class="rh"></th>
+                <sc-for list="{{issHeat.cols}}" as="h" hint-placeholder-count="4">
+                  <th>{{h}}</th>
+                </sc-for>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{issHeat.rows}}" as="r" hint-placeholder-count="4">
+                <tr>
+                  <th class="rh" scope="row">{{r.label}}</th>
+                  <sc-for list="{{r.cells}}" as="c" hint-placeholder-count="4">
+                    <td style="background: {{c.bg}}; color: {{c.ink}}">{{c.v}}</td>
+                  </sc-for>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">22 Critical issues are still open; none of them has been open longer than one quarter.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h">
+      <h2>Remediation</h2>
+      <p>What is being done about all of it. Completed green, In Progress blue, Overdue red, Pending orange.</p>
+    </div>
+    <div class="grid">
+      <sc-for list="{{actPies}}" as="c" hint-placeholder-count="3">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="pie">
+            <svg width="140" height="140" viewBox="0 0 140 140" role="img" aria-label="{{c.alt}}">
+              <g transform="rotate(-90 70 70)">
+                <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="4">
+                  <circle cx="70" cy="70" r="54" fill="none" stroke-width="20" stroke="{{s.color}}" stroke-dasharray="{{s.dash}}" stroke-dashoffset="{{s.off}}"></circle>
+                </sc-for>
+              </g>
+              <text class="ctr" x="70" y="72" text-anchor="middle">{{c.total}}</text>
+              <text class="ctr-l" x="70" y="87" text-anchor="middle">{{c.unit}}</text>
+            </svg>
+            <div class="legend">
+              <sc-for list="{{c.segs}}" as="s" hint-placeholder-count="4">
+                <div class="leg"><span class="dot" style="background: {{s.color}}"></span><span class="nm">{{s.label}}</span><span class="v">{{s.value}}</span><span class="p">{{s.pct}}</span></div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+      <sc-for list="{{actBars}}" as="c" hint-placeholder-count="2">
+        <div class="card">
+          <h3>{{c.title}}</h3>
+          <p class="sub">{{c.sub}}</p>
+          <div class="rows">
+            <sc-for list="{{c.rows}}" as="r" hint-placeholder-count="6">
+              <div class="row"><span class="nm">{{r.label}}</span><span class="track"><span class="fill" style="width: {{r.pct}}%; background: {{r.color}}"></span></span><span class="val">{{r.value}}</span></div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <div class="card">
+        <h3>Action items by due date</h3>
+        <p class="sub">Count falling due in each month ahead</p>
+        <svg class="spark" viewBox="0 0 320 128" role="img" aria-label="{{dueTrend.alt}}">
+          <line x1="0" y1="104" x2="320" y2="104" stroke="#E4E0E8" stroke-width="1"></line>
+          <path d="{{dueTrend.area}}" fill="rgba(28, 111, 208, 0.13)"></path>
+          <polyline points="{{dueTrend.points}}" fill="none" stroke="#1C6FD0" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+          <circle cx="{{dueTrend.lastX}}" cy="{{dueTrend.lastY}}" r="4" fill="#1C6FD0"></circle>
+          <text x="{{dueTrend.lastX}}" y="{{dueTrend.labelY}}" text-anchor="end" font-size="11" font-family="IBM Plex Mono, monospace" fill="#1C1B22" font-weight="600">{{dueTrend.lastV}}</text>
+          <text x="0" y="122" font-size="10" fill="#6B6579" font-family="IBM Plex Sans, sans-serif">Nov 2026</text>
+          <text x="320" y="122" text-anchor="end" font-size="10" fill="#6B6579" font-family="IBM Plex Sans, sans-serif">Oct 2027</text>
+        </svg>
+        <p class="note">143 items are already past their due date and sit outside this curve.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h">
+      <h2>Across ORM</h2>
+      <p>How the object types line up against each other. OpenPages counts one object type per query, so these pairings are joins down the entity hierarchy rather than one chart of everything.</p>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h3>Risks raised over time</h3>
+        <p class="sub">New risk records by month</p>
+        <svg class="spark" viewBox="0 0 320 128" role="img" aria-label="{{riskTrend.alt}}">
+          <line x1="0" y1="104" x2="320" y2="104" stroke="#E4E0E8" stroke-width="1"></line>
+          <path d="{{riskTrend.area}}" fill="rgba(109, 89, 122, 0.14)"></path>
+          <polyline points="{{riskTrend.points}}" fill="none" stroke="#6D597A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+          <circle cx="{{riskTrend.lastX}}" cy="{{riskTrend.lastY}}" r="4" fill="#6D597A"></circle>
+          <text x="{{riskTrend.lastX}}" y="{{riskTrend.labelY}}" text-anchor="end" font-size="11" font-family="IBM Plex Mono, monospace" fill="#1C1B22" font-weight="600">{{riskTrend.lastV}}</text>
+        </svg>
+      </div>
+      <div class="card">
+        <h3>Issues raised over time</h3>
+        <p class="sub">New issue records by month</p>
+        <svg class="spark" viewBox="0 0 320 128" role="img" aria-label="{{issTrend.alt}}">
+          <line x1="0" y1="104" x2="320" y2="104" stroke="#E4E0E8" stroke-width="1"></line>
+          <path d="{{issTrend.area}}" fill="rgba(204, 90, 17, 0.13)"></path>
+          <polyline points="{{issTrend.points}}" fill="none" stroke="#CC5A11" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+          <circle cx="{{issTrend.lastX}}" cy="{{issTrend.lastY}}" r="4" fill="#CC5A11"></circle>
+          <text x="{{issTrend.lastX}}" y="{{issTrend.labelY}}" text-anchor="end" font-size="11" font-family="IBM Plex Mono, monospace" fill="#1C1B22" font-weight="600">{{issTrend.lastV}}</text>
+        </svg>
+      </div>
+      <div class="card">
+        <h3>Record count by object type</h3>
+        <p class="sub">The eight object types this dashboard reads</p>
+        <div class="rows">
+          <sc-for list="{{objectMix.rows}}" as="r" hint-placeholder-count="8">
+            <div class="row"><span class="nm">{{r.label}}</span><span class="track"><span class="fill" style="width: {{r.pct}}%; background: {{r.color}}"></span></span><span class="val">{{r.value}}</span></div>
+          </sc-for>
+        </div>
+      </div>
+      <div class="card span2">
+        <h3>Controls on each risk</h3>
+        <p class="sub">Risks with their residual rating and the controls sitting under them</p>
+        <div class="tbl-wrap">
+          <table class="data">
+            <thead>
+              <tr><th>Risk</th><th>Residual</th><th>Control</th><th>Operating effectiveness</th></tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{riskCtlRows}}" as="r" hint-placeholder-count="5">
+                <tr>
+                  <td>{{r.risk}}</td>
+                  <td><span class="chip" style="color: {{r.resColor}}"><span class="dot" style="background: {{r.resColor}}"></span>{{r.res}}</span></td>
+                  <td>{{r.control}}</td>
+                  <td><span class="chip" style="color: {{r.effColor}}"><span class="dot" style="background: {{r.effColor}}"></span>{{r.eff}}</span></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h3>KRIs on each risk</h3>
+        <p class="sub">Indicators joined down from the risk they measure</p>
+        <div class="tbl-wrap">
+          <table class="data" style="min-width:300px">
+            <thead>
+              <tr><th>Risk</th><th>Indicator</th><th>Breach</th></tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{riskKriRows}}" as="r" hint-placeholder-count="5">
+                <tr>
+                  <td>{{r.risk}}</td>
+                  <td>{{r.kri}}</td>
+                  <td><span class="chip" style="color: {{r.color}}"><span class="dot" style="background: {{r.color}}"></span>{{r.breach}}</span></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card span2">
+        <h3>Action items under each issue</h3>
+        <p class="sub">The remediation record for the issues raised highest</p>
+        <div class="tbl-wrap">
+          <table class="data">
+            <thead>
+              <tr><th>Issue</th><th>Priority</th><th>Action item</th><th>Status</th><th>Due</th></tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{issActRows}}" as="r" hint-placeholder-count="5">
+                <tr>
+                  <td>{{r.issue}}</td>
+                  <td><span class="chip" style="color: {{r.priColor}}"><span class="dot" style="background: {{r.priColor}}"></span>{{r.pri}}</span></td>
+                  <td>{{r.action}}</td>
+                  <td><span class="chip" style="color: {{r.stColor}}"><span class="dot" style="background: {{r.stColor}}"></span>{{r.status}}</span></td>
+                  <td class="n">{{r.due}}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Reading this dashboard</h3>
+        <p class="sub">Three things the OpenPages query language decides for you</p>
+        <p class="note">A count never crosses object types, so each chart reads one type and the number tiles carry the object-wise distribution.</p>
+        <p class="note">There are no date functions, so trends are plotted per creation date and rolled up for reading rather than grouped by month in the query.</p>
+        <p class="note">A field an installation does not have drops its chart when the dashboard is built, and the build names what it left out.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":3240}}'>
+class Component extends DCLogic {
+  get c() {
+    return {
+      good: '#2E7D4F', warn: '#D9A520', high: '#CC5A11', bad: '#A61326',
+      grey: '#6B7785', blue: '#1C6FD0', plum: '#6D597A', plumLo: '#A595AE', ink: '#1C1B22'
+    };
+  }
+
+  n(v) { return v.toLocaleString('en-US'); }
+
+  pie(title, sub, unit, items, colors) {
+    const C = 339.292;
+    const total = items.reduce((s, i) => s + i[1], 0);
+    let acc = 0;
+    const segs = items.map((it, i) => {
+      const len = (it[1] / total) * C;
+      const seg = {
+        label: it[0], value: this.n(it[1]), pct: Math.round((it[1] / total) * 100) + '%',
+        color: colors[i % colors.length],
+        dash: len.toFixed(1) + ' ' + (C - len).toFixed(1),
+        off: (-acc).toFixed(1)
+      };
+      acc += len;
+      return seg;
+    });
+    return { title, sub, unit, total: this.n(total), segs,
+             alt: title + ': ' + items.map((i) => i[0] + ' ' + i[1]).join(', ') };
+  }
+
+  bars(title, sub, items, colors) {
+    const max = Math.max.apply(null, items.map((i) => i[1]));
+    return {
+      title, sub,
+      rows: items.map((it, i) => ({
+        label: it[0], value: this.n(it[1]),
+        pct: Math.max(2, Math.round((it[1] / max) * 100)),
+        color: colors[i % colors.length]
+      }))
+    };
+  }
+
+  grid(cols, rows) {
+    const flat = rows.reduce((a, r) => a.concat(r[1]), []);
+    const max = Math.max.apply(null, flat);
+    return {
+      cols: cols,
+      rows: rows.map((r) => ({
+        label: r[0],
+        cells: r[1].map((v) => {
+          const t = v / max;
+          return {
+            v: this.n(v),
+            bg: 'rgba(109, 89, 122, ' + (0.07 + t * 0.85).toFixed(2) + ')',
+            ink: t > 0.55 ? '#FFFFFF' : '#1C1B22'
+          };
+        })
+      }))
+    };
+  }
+
+  // A sparkline on a 320 x 128 canvas: baseline at y 104, headroom above for the end label.
+  trend(label, values) {
+    const max = Math.max.apply(null, values) * 1.15;
+    const step = 320 / (values.length - 1);
+    const pts = values.map((v, i) => [
+      Math.round(i * step * 10) / 10,
+      Math.round((104 - (v / max) * 84) * 10) / 10
+    ]);
+    const lastP = pts[pts.length - 1];
+    return {
+      points: pts.map((p) => p[0] + ',' + p[1]).join(' '),
+      area: 'M0,104 ' + pts.map((p) => 'L' + p[0] + ',' + p[1]).join(' ') + ' L320,104 Z',
+      lastX: lastP[0], lastY: lastP[1], labelY: Math.max(14, lastP[1] - 10),
+      lastV: this.n(values[values.length - 1]),
+      alt: label + ', twelve points from ' + values[0] + ' to ' + values[values.length - 1]
+    };
+  }
+
+  // One indicator: the latest value against its warning and breach thresholds.
+  bullet(name, unit, value, yellow, red) {
+    const max = Math.max(value, red) * 1.25;
+    const c = this.c;
+    return {
+      name, unit, value: this.n(value), yellow: this.n(yellow), red: this.n(red),
+      max: this.n(Math.round(max)),
+      vw: Math.round((value / max) * 100), yw: Math.round((yellow / max) * 100),
+      rw: Math.round((red / max) * 100),
+      color: value >= red ? c.bad : (value >= yellow ? c.warn : c.good)
+    };
+  }
+
+  renderVals() {
+    const c = this.c;
+    const sev = [c.good, c.warn, c.high, c.bad];
+    const one = [c.plum];
+
+    return {
+      lossPies: [
+        this.pie('Loss events by outcome', 'Realised loss, near miss or gain', 'EVENTS',
+                 [['Loss', 322], ['Near miss', 118], ['Gain', 46]], [c.plum, c.blue, c.good])
+      ],
+      lossBars: [
+        this.bars('Loss events by severity', 'Severity band recorded on the event',
+                  [['Low', 214], ['Moderate', 162], ['High', 86], ['Major', 24]], sev),
+        this.bars('Loss events by Basel category', 'Basel II event-type category',
+                  [['Execution, delivery and process', 186], ['External fraud', 96],
+                   ['Clients, products and practices', 78], ['Business disruption', 54],
+                   ['Employment practices', 38], ['Internal fraud', 22], ['Damage to physical assets', 12]], one)
+      ],
+      lossHeat: this.grid(['Low', 'Moderate', 'High', 'Major'], [
+        ['Loss', [118, 114, 68, 22]],
+        ['Near miss', [72, 34, 10, 2]],
+        ['Gain', [24, 14, 8, 0]]
+      ]),
+      lossTrend: this.trend('Loss events by month',
+                            [31, 38, 44, 36, 42, 49, 41, 37, 45, 52, 39, 32]),
+
+      kriPies: [
+        this.pie('KRIs by breach status', 'Where the latest value sits against threshold', 'KRIS',
+                 [['Green', 186], ['Yellow', 59], ['Red', 19]], [c.good, c.warn, c.bad]),
+        this.pie('KRIs by trend', 'Direction of the last three readings', 'KRIS',
+                 [['Stable', 118], ['Improving', 92], ['Worse', 54]], [c.blue, c.good, c.bad]),
+        this.pie('KRIs by collection status', 'Whether this period’s reading is in', 'KRIS',
+                 [['Collected', 231], ['Overdue', 24], ['Not started', 9]], [c.good, c.bad, c.grey]),
+        this.pie('KRIs by nature', 'Leading indicators warn, lagging indicators confirm', 'KRIS',
+                 [['Lagging', 152], ['Leading', 112]], [c.plum, c.plumLo])
+      ],
+      kriBars: [
+        this.bars('KRIs by status', 'Lifecycle state of each indicator',
+                  [['Active', 228], ['Draft', 22], ['Retired', 14]], one),
+        this.bars('KRIs by domain', 'Same taxonomy the risks use',
+                  [['Operational', 96], ['Technology', 68], ['Compliance', 54], ['Financial', 46]], one),
+        this.bars('KRIs by collection frequency', 'How often a reading is expected',
+                  [['Monthly', 128], ['Quarterly', 64], ['Weekly', 44], ['Daily', 28]], one)
+      ],
+      bullets: [
+        this.bullet('Failed payment settlements', 'per week', 164, 120, 150),
+        this.bullet('Privileged access reviews overdue', 'accounts', 38, 25, 50),
+        this.bullet('Unreconciled suspense items', 'items', 212, 150, 200),
+        this.bullet('Complaints upheld by the ombudsman', 'per month', 11, 10, 18),
+        this.bullet('Critical vendor SLA breaches', 'per quarter', 4, 5, 9),
+        this.bullet('Staff turnover, operations', '% annualised', 17, 15, 22)
+      ],
+
+      issPies: [
+        this.pie('Issues by status', 'Where each issue sits in its lifecycle', 'ISSUES',
+                 [['Open', 268], ['Closed', 244], ['In remediation', 186], ['Draft', 33]],
+                 [c.plum, c.grey, c.blue, c.plumLo]),
+        this.pie('Issues by probability', 'Likelihood of the issue causing a loss', 'ISSUES',
+                 [['Unlikely', 214], ['Possible', 342], ['Likely', 175]], [c.good, c.warn, c.high])
+      ],
+      issBars: [
+        this.bars('Issues by priority', 'Remediation priority agreed with the owner',
+                  [['Low', 195], ['Medium', 326], ['High', 164], ['Critical', 46]], sev),
+        this.bars('Issues by impact', 'Assessed impact if left unremediated',
+                  [['Low', 268], ['Medium', 318], ['High', 112], ['Critical', 33]], sev),
+        this.bars('Issues by type', 'What kind of failure was found',
+                  [['Control gap', 248], ['Process failure', 186], ['Policy breach', 124],
+                   ['System defect', 98], ['Other', 75]], one),
+        this.bars('Issues by domain', 'Same taxonomy the risks use',
+                  [['Operational', 286], ['Technology', 182], ['Compliance', 148], ['Financial', 115]], one),
+        this.bars('Issues by root cause', 'Root cause type recorded on closure',
+                  [['Process', 284], ['People', 236], ['Systems', 142], ['External', 69]], one)
+      ],
+      issHeat: this.grid(['Critical', 'High', 'Medium', 'Low'], [
+        ['Open', [22, 74, 118, 54]],
+        ['In remediation', [14, 52, 86, 34]],
+        ['Closed', [8, 32, 108, 96]],
+        ['Draft', [2, 6, 14, 11]]
+      ]),
+      issTrend: this.trend('Issues raised by month',
+                           [48, 54, 61, 58, 66, 72, 63, 59, 68, 74, 62, 46]),
+
+      actPies: [
+        this.pie('Action items by status', 'Current state of every action item', 'ITEMS',
+                 [['Completed', 586], ['In Progress', 318], ['Pending', 145], ['Overdue', 143]],
+                 [c.good, c.blue, c.high, c.bad]),
+        this.pie('Overdue against not yet due', 'Measured against the agreed due date', 'ITEMS',
+                 [['Not yet due', 1049], ['Overdue', 143]], [c.good, c.bad]),
+        this.pie('Action items by approval status', 'Sign-off state of the completed work', 'ITEMS',
+                 [['Approved', 724], ['Awaiting approval', 268], ['Not submitted', 200]],
+                 [c.good, c.warn, c.grey])
+      ],
+      actBars: [
+        this.bars('Action item ageing', 'Days open, in the buckets OpenPages records',
+                  [['1–10 days', 342], ['11–30 days', 386], ['31–60 days', 268],
+                   ['Above 60 days', 196]], sev),
+        this.bars('Action items by percent complete', 'Progress reported by the owner',
+                  [['0%', 186], ['1–25%', 214], ['26–50%', 198], ['51–75%', 174],
+                   ['76–99%', 134], ['100%', 286]], one)
+      ],
+      dueTrend: this.trend('Action items by due month',
+                           [268, 214, 176, 142, 118, 96, 74, 58, 42, 31, 22, 14]),
+      riskTrend: this.trend('Risks raised by month',
+                            [62, 58, 71, 66, 74, 81, 69, 64, 77, 85, 70, 54]),
+
+      objectMix: {
+        rows: this.bars('', '', [
+          ['Controls', 2176], ['Risks', 1284], ['Action items', 1192], ['Issues', 731],
+          ['Loss events', 486], ['Business processes', 318], ['Key risk indicators', 264],
+          ['Business entities', 142]
+        ], one).rows
+      },
+
+      riskCtlRows: [
+        { risk: 'Payment instruction not authorised', res: 'Major', control: 'Dual authorisation on outbound payments', eff: 'Effective',
+          resColor: c.bad, effColor: c.good },
+        { risk: 'Payment instruction not authorised', res: 'Major', control: 'Daily settlement reconciliation', eff: 'Partially Effective',
+          resColor: c.bad, effColor: c.high },
+        { risk: 'Customer data disclosed in error', res: 'Significant', control: 'Access recertification, quarterly', eff: 'Ineffective',
+          resColor: c.high, effColor: c.bad },
+        { risk: 'Third-party service interruption', res: 'Significant', control: 'Critical vendor continuity testing', eff: 'Effective',
+          resColor: c.high, effColor: c.good },
+        { risk: 'Regulatory reporting submitted late', res: 'Moderate', control: 'Reporting calendar with owner sign-off', eff: 'Not Determined',
+          resColor: c.warn, effColor: c.grey }
+      ],
+      riskKriRows: [
+        { risk: 'Payment instruction not authorised', kri: 'Failed payment settlements', breach: 'Red', color: c.bad },
+        { risk: 'Customer data disclosed in error', kri: 'Privileged access reviews overdue', breach: 'Yellow', color: c.warn },
+        { risk: 'Third-party service interruption', kri: 'Critical vendor SLA breaches', breach: 'Green', color: c.good },
+        { risk: 'Reconciliation break unresolved', kri: 'Unreconciled suspense items', breach: 'Red', color: c.bad },
+        { risk: 'Key person dependency, operations', kri: 'Staff turnover, operations', breach: 'Yellow', color: c.warn }
+      ],
+      issActRows: [
+        { issue: 'Access recertification not completed', pri: 'Critical', action: 'Re-run recertification for 412 accounts',
+          status: 'In Progress', due: '28 Nov 2026', priColor: c.bad, stColor: c.blue },
+        { issue: 'Access recertification not completed', pri: 'Critical', action: 'Automate quarterly review workflow',
+          status: 'Pending', due: '15 Jan 2027', priColor: c.bad, stColor: c.high },
+        { issue: 'Settlement reconciliation incomplete', pri: 'High', action: 'Clear the suspense account backlog',
+          status: 'Overdue', due: '31 Oct 2026', priColor: c.high, stColor: c.bad },
+        { issue: 'Vendor continuity test not evidenced', pri: 'High', action: 'Obtain test reports from two critical vendors',
+          status: 'Completed', due: '04 Nov 2026', priColor: c.high, stColor: c.good },
+        { issue: 'Complaint handling outside target', pri: 'Medium', action: 'Revise the complaints procedure',
+          status: 'In Progress', due: '19 Dec 2026', priColor: c.warn, stColor: c.blue }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

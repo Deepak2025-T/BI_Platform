@@ -75,6 +75,32 @@ class PublishIn(BaseModel):
     category_id: int | None = None
 
 
+class ShareIn(BaseModel):
+    """How long a new share link should last. None means until someone revokes it."""
+
+    expires_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class ShareOut(BaseModel):
+    """A live share link. The token is the secret; the path is where it opens."""
+
+    token: str
+    path: str
+    created_at: datetime
+    expires_at: datetime | None = None
+    views: int = 0
+    last_viewed_at: datetime | None = None
+
+
+class PublicReportOut(BaseModel):
+    """What a share link serves: a report to look at, with nothing about the database in it."""
+
+    title: str
+    status: str
+    updated_at: datetime
+    config: dict
+
+
 class CategoryRef(BaseModel):
     id: int
     name: str
@@ -493,6 +519,9 @@ class Widget(BaseModel):
     size: str | None = Field(default=None, max_length=20)
     # Charts from the visual builder: the fields they were built from, so they can be reopened there.
     visual: dict | None = None
+    # Dates folded to a period after the query has run, for connections whose SQL can't group them
+    # itself: {"column": "...", "to": "month", "format": "mm/yyyy"}.
+    rollup: dict | None = None
 
 
 class AddWidgetsIn(BaseModel):

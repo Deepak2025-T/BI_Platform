@@ -1,6 +1,6 @@
 """Runs a dashboard's charts. Shared by the viewer, Excel export and scheduled refreshes."""
 
-from . import dashboard_filters
+from . import dashboard_filters, date_rollup
 from .datasources import DataSource, QueryFailed, run_sql
 from .sql_guard import UnsafeSQL
 
@@ -28,7 +28,14 @@ def run_widgets(config: dict, source: DataSource, values: dict, refresh: bool = 
     for w in query_widgets(config):
         sql, params, applied, skipped = dashboard_filters.apply(w["sql"], source, filters, values, w["id"])
         try:
-            out.append({"id": w["id"], "ok": True, **run_sql(source, sql, params, refresh=refresh),
+            result = run_sql(source, sql, params, refresh=refresh)
+            # A chart that asked for its dates by month, quarter or year: the rows are folded here,
+            # because OpenPages SQL has no date functions to group them in the query.
+            if w.get("rollup"):
+                folded = date_rollup.apply(result["columns"], result["rows"], w["rollup"])
+                if folded:
+                    result = {**result, **folded}
+            out.append({"id": w["id"], "ok": True, **result,
                         "filtered": applied, "not_filtered": skipped})
         except (UnsafeSQL, QueryFailed) as err:
             out.append({"id": w["id"], "ok": False, "error": str(err), "filtered": applied, "not_filtered": skipped})

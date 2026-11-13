@@ -107,6 +107,28 @@ class ReportSnapshot(Base):
     summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
+class ReportShare(Base):
+    """A link that opens one report without signing in.
+
+    The token is the whole of the secret: whoever holds the link sees the report. That is why a
+    share is made on purpose rather than along with publishing, why only a published report can
+    have one, and why it can be taken back at any moment. Revoking keeps the row, so who shared
+    what, and when, survives the link itself."""
+
+    __tablename__ = "report_shares"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("reports.id", ondelete="CASCADE"), index=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    # When the link stops working on its own. None means it works until someone revokes it.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    views: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class ReportTemplate(Base):
     """A starting point for a report: a question plus an optional layout."""
 

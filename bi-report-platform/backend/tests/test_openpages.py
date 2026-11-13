@@ -3,6 +3,7 @@ against a small fake OpenPages REST API."""
 
 import base64
 import json
+import re
 import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -11,6 +12,9 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from app.connections import openpages
+from app.datasources import QueryFailed
+from app.openpages_templates import count_by, total
+from app.routers import templates as templates_router
 from app.connections.openpages import UnsafeOpenPagesSQL, add_conditions, check_sql, query_types
 
 BASIC = "Basic " + base64.b64encode(b"admin:op-pass").decode()
@@ -371,3 +375,267 @@ def test_the_grc_reports_ship_as_templates(client, user):
 
     assert [w["chart"]["type"] for w in action["layout"]["widgets"]][:3] == ["kpi"] * 3
     assert any("ageing" in w["title"].lower() for w in action["layout"]["widgets"])
+
+
+def test_the_orm_overview_is_the_two_pages_it_was_designed_as(client, user):
+    """The ORM overview design is two pages: the standing picture, then what happened and what is
+    being done about it. They ship as two templates, under GRC in the ORM folder."""
+    first = _template(client, user, "ORM: Operational Risk Management — overview")
+    second = _template(client, user, "ORM: Events, indicators and remediation")
+    for t in (first, second):
+        assert (t["category"], t["module"]) == ("GRC", "ORM")
+        assert t["layout"]["source_type"] == "openpages"
+        # A heading with nothing under it is dropped at build time; every one here has charts.
+        assert any(w.get("kind") != "text" for w in t["layout"]["widgets"])
+
+    titles = lambda t: [w["title"] for w in t["layout"]["widgets"]]
+    for part in ("Risks by residual rating", "Design effectiveness", "Processes in scope",
+                 "Entities in RCSA scope"):
+        assert part in titles(first), part
+    for part in ("Loss events by outcome", "KRIs by breach status", "Issues by priority",
+                 "Action items by status"):
+        assert part in titles(second), part
+    # Beyond the business-entity band every module dashboard opens with, neither page repeats the
+    # other's charts: the point of the split is that each answers its own question.
+    band = {w["title"] for w in first["layout"]["widgets"][:5]}
+    assert not (set(titles(first)) - band) & (set(titles(second)) - band)
+
+
+def test_both_orm_overview_pages_write_sql_openpages_accepts(client, user):
+    allowed = {f"openpages.{t}" for t in ("soxrisk", "soxcontrol", "soxprocess", "soxbusentity",
+                                          "lossevent", "keyriskindicator", "soxissue", "actionitem")}
+    for name in ("ORM: Operational Risk Management — overview", "ORM: Events, indicators and remediation"):
+        for w in _template(client, user, name)["layout"]["widgets"]:
+            if w.get("kind") == "text":
+                continue
+            assert check_sql(w["sql"], allowed), w["title"]
+            assert " AS " not in w["sql"].upper()  # OpenPages SQL has no aliases
+
+
+# ---------- Field names that differ between installations ----------
+
+class PickyServer:
+    """A connection that answers only queries naming the fields it has."""
+
+    is_openpages = True
+
+    def __init__(self, *known: str):
+        self.known = set(known)
+        self.asked: list[str] = []
+
+    def run(self, sql: str):
+        self.asked.append(sql)
+        for ref in re.findall(r"\]\.\[([^\]]+)\]", sql):
+            if ref not in self.known:
+                raise QueryFailed(f"OP-60003: no field [{ref}] on this object type")
+        return {"rows": [], "columns": []}
+
+
+@pytest.fixture
+def picky(monkeypatch):
+    def make(*known):
+        server = PickyServer(*known)
+        monkeypatch.setattr(templates_router, "run_sql", lambda source, sql, *a, **k: server.run(sql))
+        return server
+    return make
+
+
+def test_a_chart_falls_back_to_the_name_this_installation_uses(picky):
+    server = picky("Resource ID", "OPSS-Risk-Qual:Residual Risk Rating")
+    template = count_by("SOXRisk", ["OPSS-Risk:Residual Risk Rating", "OPSS-Risk-Qual:Residual Risk Rating"],
+                        "Risks by residual rating")
+    widget: dict = {"chart": dict(template["chart"])}
+    assert templates_router.first_that_runs(None, template, widget) == ""
+    assert "OPSS-Risk-Qual:Residual Risk Rating" in widget["sql"]
+    # The axis follows the field that was actually used, or the chart would plot a column that
+    # isn't in the result.
+    assert widget["chart"]["x"] == "OPSS-Risk-Qual:Residual Risk Rating"
+    assert len(server.asked) == 2  # the standard name first, then this installation's
+
+
+def test_the_standard_name_is_used_when_it_works(picky):
+    server = picky("Resource ID", "OPSS-Risk:Residual Risk Rating")
+    template = count_by("SOXRisk", ["OPSS-Risk:Residual Risk Rating", "OPSS-Risk-Qual:Residual Risk Rating"],
+                        "Risks by residual rating")
+    widget: dict = {"chart": dict(template["chart"])}
+    assert templates_router.first_that_runs(None, template, widget) == ""
+    assert "OPSS-Risk:Residual Risk Rating" in widget["sql"]
+    assert len(server.asked) == 1  # no second query once the first one answers
+
+
+def test_a_field_by_none_of_its_names_is_still_left_out_and_says_why(picky):
+    picky("Resource ID")
+    template = count_by("SOXRisk", ["OPSS-Risk:Risk Domain", "OPSS-Rsk:Domain"], "Risks by domain")
+    reason = templates_router.first_that_runs(None, template, {"chart": dict(template["chart"])})
+    assert "OPSS-Rsk:Domain" in reason  # the last thing tried, so the message names a real attempt
+
+
+def test_a_number_tile_tries_each_name_in_its_condition(picky):
+    picky("Resource ID", "OPSS-Rsk:Status")
+    template = total("SOXRisk", "Open risks",
+                     [f"[SOXRisk].[OPSS-Risk:Status] <> 'Closed'", f"[SOXRisk].[OPSS-Rsk:Status] <> 'Closed'"])
+    widget: dict = {"chart": dict(template["chart"])}
+    assert templates_router.first_that_runs(None, template, widget) == ""
+    assert "OPSS-Rsk:Status" in widget["sql"]
+
+
+def test_a_heat_map_moves_both_of_its_fields_together(picky):
+    """A grid names two fields. When the installation files one of them under another group name
+    it files the other one there too, so the chart's columns have to follow its rows."""
+    from app.openpages_modules import heat
+    server = picky("Resource ID", "OPSS-Risk-Qual:Residual Risk Rating", "OPSS-Risk-Qual:Residual Likelihood")
+    template = heat("SOXRisk", ["OPSS-Risk:Residual Risk Rating", "OPSS-Risk-Qual:Residual Risk Rating"],
+                    ["OPSS-Risk:Residual Likelihood", "OPSS-Risk-Qual:Residual Likelihood"],
+                    "Residual rating against residual likelihood")
+    widget: dict = {"chart": dict(template["chart"])}
+    assert templates_router.first_that_runs(None, template, widget) == ""
+    assert widget["chart"]["x"] == "OPSS-Risk-Qual:Residual Risk Rating"
+    assert widget["chart"]["legend"] == "OPSS-Risk-Qual:Residual Likelihood"
+    assert len(server.asked) == 2
+
+
+def test_the_alternatives_never_reach_the_saved_report(client, manager, op_connection):
+    """alt_sql and alt_x belong to the template. A report keeps one query per chart."""
+    t = _template(client, manager, "OpenPages: Issues and remediation")
+    res = client.post(f"/api/templates/{t['id']}/build", headers=manager, json={"source_id": op_connection["id"]})
+    assert res.status_code == 201, res.text
+    for w in res.json()["report"]["config"]["widgets"]:
+        assert "alt_sql" not in w and "alt_x" not in w
+    client.delete(f"/api/reports/{res.json()['report']['id']}", headers=manager)
+
+
+def test_a_list_under_the_entity_hierarchy_is_not_an_indirect_join():
+    """The Query Service's indirect join may not select the ancestor's fields and needs a Resource
+    ID filter on it, so "every X under its entity" cannot be written as one. [Location] is a system
+    field holding that path, so one object type answers it."""
+    from app.openpages_modules import rooted
+    widget = rooted("SOXRisk", "Risks by entity", ["OPSS-Risk:Status"])
+    assert "ANCESTOR(" not in widget["sql"] and "JOIN" not in widget["sql"]
+    assert "[SOXRisk].[Location]" in widget["sql"]
+
+    # A direct child may still be joined, and may name its parent.
+    direct = rooted("SOXProcess", "Processes by entity", ["OPSS-Proc:Status"], direct=True)
+    assert "ON PARENT([SOXBusEntity])" in direct["sql"] and "[SOXBusEntity].[Name]" in direct["sql"]
+
+
+def test_no_shipped_template_selects_a_field_of_an_indirectly_joined_type():
+    from app.openpages_modules import module_template_rows
+    from app.openpages_templates import template_rows
+    offenders = []
+    for r in module_template_rows() + template_rows():
+        for w in r["layout"]["widgets"]:
+            for sql in [w.get("sql", "")] + list(w.get("alt_sql") or []):
+                m = re.search(r"ON\s+ANCESTOR\(\[([^\]]+)\]\)", sql or "")
+                if m and f"[{m.group(1)}]." in sql.split(" FROM ")[0]:
+                    offenders.append((r["name"], w["title"]))
+    assert offenders == [], offenders
+
+
+def test_no_shipped_template_writes_a_python_list_into_its_sql():
+    """A field given as several names must be expanded, not interpolated."""
+    from app.openpages_modules import module_template_rows
+    from app.openpages_templates import template_rows
+    for r in module_template_rows() + template_rows():
+        for w in r["layout"]["widgets"]:
+            for sql in [w.get("sql", "")] + list(w.get("alt_sql") or []):
+                assert "['" not in (sql or ""), (r["name"], w["title"])
+
+
+def test_every_shipped_heat_map_names_the_two_columns_its_query_returns():
+    """A grid is drawn by looking its two field names up in the result columns. A field written as
+    a list of the names different installations use would leave the renderer looking for a column
+    called "['OPSS-Risk:Residual Risk Rating', ...]", find none, and fall back to the rows - which
+    is what "the heat map isn't generating" looks like from the outside."""
+    from app.openpages_modules import module_template_rows
+    from app.openpages_templates import template_rows
+    seen = 0
+    for r in module_template_rows() + template_rows():
+        for w in r["layout"]["widgets"]:
+            chart = w.get("chart") or {}
+            if chart.get("type") != "heatmap":
+                continue
+            seen += 1
+            where = (r["name"], w["title"])
+            x, legend = chart.get("x"), chart.get("legend")
+            assert isinstance(x, str) and x, where
+            assert isinstance(legend, str) and legend, where
+            assert x != legend, where
+            # Each query names the pair that goes on the grid when that query is the one kept.
+            variants = [w["sql"]] + list(w.get("alt_sql") or [])
+            xs, legends = [x] + list(w.get("alt_x") or []), [legend] + list(w.get("alt_legend") or [])
+            assert len(xs) == len(legends) == len(variants), where
+            for sql, row_name, col_name in zip(variants, xs, legends):
+                assert f"[{row_name}]" in sql and f"[{col_name}]" in sql, (where, sql)
+    assert seen >= 4
+
+
+class _Types:
+    """An installation that has some of a type's fields and not others."""
+
+    def __init__(self, **by_type):
+        self.by_type = by_type
+        self.asked: list[str] = []
+
+    def type_fields(self, type_name):
+        self.asked.append(type_name)
+        return [{"name": n} for n in self.by_type[type_name]]
+
+
+class _Source:
+    is_openpages = True
+
+    def __init__(self, client):
+        self.client = client
+
+
+def test_a_summary_table_is_written_against_the_fields_this_installation_has():
+    """Six fields can't be settled one name at a time: a single name the server doesn't have fails
+    the whole query. The object type's own field list settles all of them in one read."""
+    from app.openpages_templates import summary_table
+    from app.routers.templates import with_known_fields
+    widget = summary_table("SOXRisk", "Risk summary",
+                           ["Name",
+                            ["OPSS-Risk:Risk Domain", "OPSS-Rsk:Domain"],
+                            ["OPSS-Risk:Residual Risk Rating", "OPSS-Risk-Qual:Residual Risk Rating"],
+                            ["OPSS-Risk:Nothing Here"]])
+    client = _Types(SOXRisk=["Name", "OPSS-Rsk:Domain", "OPSS-Risk-Qual:Residual Risk Rating"])
+    settled = with_known_fields(_Source(client), widget)
+    assert settled["sql"] == ("SELECT [SOXRisk].[Name], [SOXRisk].[OPSS-Rsk:Domain], "
+                              "[SOXRisk].[OPSS-Risk-Qual:Residual Risk Rating] FROM [SOXRisk]")
+    # A field that is here under none of its names is simply not a column, rather than a query
+    # that fails and takes the other five columns with it.
+    assert "Nothing Here" not in settled["sql"]
+    assert settled["alt_sql"] == []
+    assert client.asked == ["SOXRisk"]  # one read, not one per name
+
+
+def test_a_summary_table_falls_back_to_its_queries_when_the_field_list_cant_be_read():
+    from app.openpages_templates import summary_table
+    from app.routers.templates import with_known_fields
+
+    class Broken:
+        def type_fields(self, type_name):
+            raise RuntimeError("that type isn't shared")
+
+    widget = summary_table("SOXRisk", "Risk summary", ["Name", ["A", "B"]])
+    settled = with_known_fields(_Source(Broken()), widget)
+    assert settled["sql"] == widget["sql"] and settled["alt_sql"] == widget["alt_sql"]
+    assert len(widget["alt_sql"]) == 1  # one query per name, tried in step
+
+
+def test_a_multi_value_enum_is_read_rather_than_left_empty():
+    """A field a record can hold several of at once keeps its values in multiEnumValue, not in
+    "value". Reading only "value" left Domain null on every row, and a chart of it came out as a
+    row of nameless bars."""
+    from app.connections.openpages import _rows
+    payload = {"rows": [{"fields": {"field": [
+        {"dataType": "MULTI_VALUE_ENUM", "name": "OPSS-Rsk:Domain", "multiEnumValue": {"enumValue": [
+            {"name": "Compliance", "localizedLabel": "Compliance"},
+            {"name": "Operational", "localizedLabel": "Operational"},
+        ]}},
+        {"dataType": "ENUM_TYPE", "name": "OPSS-Risk:Status", "enumValue": {"name": "Open", "localizedLabel": "Open"}},
+        {"dataType": "INTEGER_TYPE", "name": "Count_Resource ID", "value": 172},
+        {"dataType": "BOOLEAN_TYPE", "name": "Empty"},
+    ]}}]}
+    assert _rows(payload) == [{"OPSS-Rsk:Domain": "Compliance, Operational", "OPSS-Risk:Status": "Open",
+                               "Count_Resource ID": 172, "Empty": None}]

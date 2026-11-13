@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { errorMessage } from "../api/client";
-import { aiModelsApi, assistantApi, reportsApi } from "../api/endpoints";
+import { aiModelsApi, assistantApi, publicApi, reportsApi } from "../api/endpoints";
 import { reportToolsApi } from "../api/reportTools";
 import { scheduleApi } from "../api/schedule";
 import type {
@@ -12,9 +12,11 @@ import { cardLook } from "../lib/cardColors";
 import { columnLabel, shortDate } from "../lib/format";
 import { COMPARE_OPTIONS, type CompareWith, type HistoryPoint, compareAt, timeLabels } from "../lib/history";
 import { printReport } from "../lib/print";
+import { prefersReducedMotion } from "../lib/motion";
+import { type Focus, clickColumn, focusIndex, focusLabel, focusRows, showsRecords } from "../lib/focus";
 import { useAutosave } from "../lib/useAutosave";
 import { HEIGHT, WIDTHS, hasHeight, sizeForCols, tileCols } from "../lib/tileSize";
-import { CHART_LABELS, retype } from "../lib/sources";
+import { CHART_LABELS, cannotDraw, retype } from "../lib/sources";
 import CategoryBadge from "./CategoryBadge";
 import CardColors from "./CardColors";
 import ChartEditor from "./ChartEditor";
@@ -26,6 +28,7 @@ import Icon from "./Icon";
 import Modal from "./Modal";
 import PalettePicker from "./PalettePicker";
 import PublishDialog from "./PublishDialog";
+import ShareDialog from "./ShareDialog";
 import RefreshSchedule from "./RefreshSchedule";
 import TableChanges from "./TableChanges";
 import TileMenu from "./TileMenu";
@@ -42,10 +45,19 @@ interface Props {
   report: Report & { config: DashboardConfig };
   editable: boolean;
   canEdit: boolean;
+  /**
+   * Set when this is a share link rather than a signed-in reader. The data comes from the public
+   * endpoints, and everything that acts on the report - editing, exporting, refreshing, the saved
+   * history, the query behind a chart - is off, because none of it belongs to whoever has the link.
+   */
+  shareToken?: string;
+  /** Share links opened inside someone else's page: no header, so the report fills the frame. */
+  bare?: boolean;
 }
 
 /** A dashboard report: charts built by an AI model, each re-running its saved SQL when opened. */
-export default function Dashboard({ report, editable, canEdit }: Props) {
+export default function Dashboard({ report, editable, canEdit, shareToken, bare }: Props) {
+  const shared = !!shareToken;
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
@@ -74,6 +86,10 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
   // Charts the reader has clicked into: the trail of values on the way down, and what came back.
   const [drilled, setDrilled] = useState<Record<string, Drilled>>({});
   const [drilling, setDrilling] = useState<string | null>(null);
+  // What the reader has clicked into: one value of one column. The charts stay whole and the
+  // report's tables show just the records behind it (see lib/focus).
+  const [focus, setFocus] = useState<Focus | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   /** How many levels a chart can be clicked into, from the fields it was built with. */
   const levelsOf = (w: Widget) => w.visual?.drill?.length ?? 0;
@@ -96,36 +112,73 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
     }
   }
 
+  /** The tables on this report that hold a column the clicked chart's value could pick out. */
+  function tablesFor(column: string): Widget[] {
+    return config.widgets.filter((w) => {
+      const d = data[w.id];
+      return w.kind !== "text" && w.kind !== "media" && showsRecords(w) && d?.ok
+        && focusIndex(d.columns, column) >= 0;
+    });
+  }
+
+  /**
+   * A bar, slice or cell was clicked on a chart that has no drill levels of its own.
+   *
+   * Nothing is fetched: the records are already on the page, in the summary table of whichever
+   * section the chart belongs to. Clicking the same value again lets it go, so the way out is the
+   * way in as well as the button on the banner.
+   */
+  function pick(w: Widget, column: string, value: string) {
+    if (!column) return;
+    if (focus && focus.column === column && focus.value === value) { setFocus(null); return; }
+    const tables = tablesFor(column);
+    if (!tables.length) {
+      toast(`No table here has a ${columnLabel(column)} column, so there are no records to show for "${value}".`);
+      return;
+    }
+    setFocus({ column, value, widgetId: w.id });
+    // On a report of thirty charts the table holding the answer is usually off the screen, so the
+    // click takes the reader to it rather than leaving them to find what just changed.
+    const target = tables[0].id;
+    window.setTimeout(() => gridRef.current
+      ?.querySelector(`[data-widget="${CSS.escape(target)}"]`)
+      ?.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "center" }), 0);
+  }
+
   // Runs every chart's saved SQL with the chosen filter values. refresh skips the 15-minute cache.
   const load = useCallback((refresh = false) => {
     const n = ++latest.current;
     setUpdating(true);
-    assistantApi.data(report.id, { filters: values, refresh })
+    (shareToken ? publicApi.data(shareToken, { filters: values, refresh })
+                : assistantApi.data(report.id, { filters: values, refresh }))
       .then((res) => {
         if (n !== latest.current) return;
         setData(Object.fromEntries(res.widgets.map((w) => [w.id, w])));
-        // The filters have changed under them, so anything drilled into goes back to the top.
+        // The filters have changed under them, so anything drilled into goes back to the top,
+        // and a selection taken against the old numbers goes with it.
         setDrilled({});
+        setFocus(null);
         setSnapshotAt(res.snapshot_at);
         setLoadError("");
       })
       .catch((e) => { if (n === latest.current) setLoadError(errorMessage(e)); })
       .finally(() => { if (n === latest.current) { setLoading(false); setUpdating(false); } });
-  }, [report.id, values]);
+  }, [report.id, values, shareToken]);
 
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    if (!autoOn || !snapshotAt) { setHistoryData({}); return; }
+    // Both of these read the report's saved refreshes, which a share link has no claim on.
+    if (shared || !autoOn || !snapshotAt) { setHistoryData({}); return; }
     scheduleApi.history(report.id).then((h) => setHistoryData(h.widgets)).catch(() => setHistoryData({}));
-  }, [report.id, autoOn, snapshotAt]);
+  }, [report.id, autoOn, snapshotAt, shared]);
 
   useEffect(() => {
-    if (!autoOn || !snapshotAt || compareWith === "none") { setBaseline(null); return; }
+    if (shared || !autoOn || !snapshotAt || compareWith === "none") { setBaseline(null); return; }
     scheduleApi.compare(report.id, compareAt(compareWith))
       .then((c) => setBaseline(c ? { label: shortDate(c.taken_at), widgets: Object.fromEntries(c.widgets.map((w) => [w.id, w])) } : null))
       .catch(() => setBaseline(null));
-  }, [report.id, autoOn, snapshotAt, compareWith]);
+  }, [report.id, autoOn, snapshotAt, compareWith, shared]);
 
   const toggleHistory = (id: string) => setHistoryOpen((s) => {
     const next = new Set(s);
@@ -215,8 +268,8 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
   // Resizing: the corner handle on each tile (see ResizeHandle).
   const gridRef = useRef<HTMLDivElement>(null);
   const [resizing, setResizing] = useState<string | null>(null);
-  const patchWidget = (id: string, patch: Partial<Widget>) =>
-    setConfig((c) => ({ ...c, widgets: c.widgets.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
+  const patchWidget = (id: string, patch: Partial<Widget>, saved = "") =>
+    setWidgets(config.widgets.map((x) => (x.id === id ? { ...x, ...patch } : x)), saved);
   const resizer = (w: Widget) => editable && (
     <ResizeHandle name={w.title || "tile"} cols={tileCols(w)} height={hasHeight(w) ? w.height ?? HEIGHT.default : undefined}
       grid={gridRef} onChange={(patch) => patchWidget(w.id, patch)} onActive={(on) => setResizing(on ? w.id : null)} />
@@ -226,8 +279,10 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
   // Removing asks nothing but can be undone from the message that follows.
   const remove = (w: Widget) => {
     const before = config.widgets;
-    setWidgets(before.filter((x) => x.id !== w.id));
-    toast(`Removed "${w.title || "text"}".`, { label: "Undo", onClick: () => setConfig((c) => ({ ...c, widgets: before })) });
+    setWidgets(before.filter((x) => x.id !== w.id), "");
+    // Undo puts it back the same way it went, so it is saved too rather than reappearing until
+    // the next reload.
+    toast(`Removed "${w.title || "text"}".`, { label: "Undo", onClick: () => setWidgets(before, "Put back") });
   };
   const menuItems = (w: Widget, i: number) => [
     ...(w.kind === "text" ? [] : [{ label: "Duplicate", onClick: () => duplicateChart(w) }]),
@@ -238,7 +293,7 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
 
   // Header and card colours: on one tile, or the same on every tile.
   const setLook = (w: Widget, patch: Partial<NonNullable<Widget["style"]>>) =>
-    patchWidget(w.id, { style: { ...w.style, ...patch } });
+    patchWidget(w.id, { style: { ...w.style, ...patch } }, "Saved");
   const lookAll = (patch: Pick<NonNullable<Widget["style"]>, "headBg" | "cardBg">) => {
     setConfig((c) => ({ ...c, widgets: c.widgets.map((x) => ({ ...x, style: { ...x.style, ...patch } })) }));
     toast("Every card now uses these colours");
@@ -257,11 +312,14 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
     toast(palette ? "Every chart now uses this palette" : "Charts are back to the default colours");
   };
 
-  // In edit mode changes autosave. From the preview, a chart edited with its Edit button is saved straight away.
-  const commit = (next: DashboardConfig) => {
+  // In edit mode changes autosave. From the preview, where single charts can still be edited,
+  // duplicated, moved and removed, each change is saved straight away.
+  const commit = (next: DashboardConfig, saved = "Chart saved") => {
     setConfig(next);
     if (!editable) {
-      reportsApi.update(report.id, { config: next }).then(() => toast("Chart saved")).catch((e) => toast(errorMessage(e)));
+      // An empty message means the caller has already said what happened.
+      reportsApi.update(report.id, { config: next })
+        .then(() => saved && toast(saved)).catch((e) => toast(errorMessage(e)));
     }
   };
   const saveChart = (w: Widget, d: WidgetData | null) => {
@@ -289,7 +347,7 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
     }
   }
 
-  const setWidgets = (widgets: Widget[]) => setConfig((c) => ({ ...c, widgets }));
+  const setWidgets = (widgets: Widget[], saved = "Saved") => commit({ ...config, widgets }, saved);
   const change = (id: string, patch: Partial<Widget>) => setWidgets(config.widgets.map((w) => (w.id === id ? { ...w, ...patch } : w)));
   const move = (i: number, d: number) => {
     const list = [...config.widgets];
@@ -312,9 +370,24 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
   ].filter(Boolean).join(", ");
 
   return (
-    <div className="viewer">
+    // A dashboard built from a template may carry that design's look (see routers/templates).
+    <div className={"viewer" + (config.theme ? ` theme-${config.theme}` : "")}>
+      {bare ? null : (
       <header className={editable ? "toolbar" : "viewer-head"}>
-        {editable ? (
+        {shared ? (
+          // A share link: the report's name and when it was last changed, and nothing that acts
+          // on it. Whoever holds the link is a reader of this one page, not a user of the app.
+          <div className="row-between">
+            <div className="row-wrap">
+              <LogoMark logo={config.logo} />
+              <h1 className="h1">{report.title}</h1>
+            </div>
+            <div className="row-wrap no-print">
+              <span className="muted small">Updated {shortDate(report.updated_at)}</span>
+              <FullscreenButton />
+            </div>
+          </div>
+        ) : editable ? (
           <>
             <label htmlFor="dtitle" className="sr-only">Dashboard title</label>
             <LogoPicker logo={config.logo} onChange={(logo) => setConfig((c) => ({ ...c, logo }))} />
@@ -326,6 +399,10 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
             <button className="btn btn-ghost" onClick={duplicateReport} disabled={duplicating}>{duplicating ? "Duplicating…" : "Duplicate"}</button>
             <FullscreenButton />
             <button className="btn btn-ghost" onClick={() => navigate(`/reports/${report.id}`)}>See it as viewers will</button>
+            {report.status === "published" && (
+              <button className="btn btn-ghost" onClick={() => setSharing(true)}
+                title="A link that opens this report without signing in, and the code to embed it in a page">Share link</button>
+            )}
             <button className="btn btn-primary" onClick={() => setPublishing(true)}>{report.status === "published" ? "Update published report" : "Publish"}</button>
           </>
         ) : (
@@ -351,14 +428,20 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
               </button>
               <button className="btn btn-ghost" onClick={duplicateReport} disabled={duplicating}
                 title="Copy this dashboard into a new draft of your own">{duplicating ? "Duplicating…" : "Duplicate"}</button>
+              {canEdit && report.status === "published" && (
+                <button className="btn btn-ghost" onClick={() => setSharing(true)}
+                  title="A link that opens this report without signing in, and the code to embed it in a page">Share link</button>
+              )}
               <FullscreenButton />
               {canEdit && <Link className="btn btn-primary" to={`/reports/${report.id}/edit`}>Edit dashboard</Link>}
             </div>
           </div>
         )}
       </header>
+      )}
 
       <div className="viewer-body stack">
+        {!shared && (
         <div className="row-wrap muted small dash-meta">
           <span className="chip"><span className="muted">Data</span> <b>{config.source_name}</b></span>
           {config.model && <span className="chip"><span className="muted">Built with</span> <b>{config.model}</b></span>}
@@ -367,8 +450,11 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
             ? "Each chart re-runs its saved query when the dashboard opens. No AI is used to show it."
             : "Shows the latest scheduled refresh of each chart's saved query (setting filters queries live). No AI is used."}</span>
         </div>
-        <RefreshSchedule report={schedule} canEdit={canEdit} refreshedAt={snapshotAt}
-          onChange={(r) => { setSchedule(r); load(); }} />
+        )}
+        {!shared && (
+          <RefreshSchedule report={schedule} canEdit={canEdit} refreshedAt={snapshotAt}
+            onChange={(r) => { setSchedule(r); load(); }} />
+        )}
 
         {editable && (
           <FilterDesigner reportId={report.id} widgets={chartWidgets} filters={filters}
@@ -397,7 +483,7 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
             </label>
           ))}
           {active.length > 0 && <button className="btn btn-ghost btn-sm no-print" onClick={() => setValues({})}>Clear filters</button>}
-          {autoOn ? (
+          {shared ? null : autoOn ? (
             <label className="filter-field no-print">
               <span className="filter-label">Compare with</span>
               <select value={compareWith} aria-label="Compare with" onChange={(e) => setCompareWith(e.target.value as CompareWith)}>
@@ -411,9 +497,19 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
           <span className="filter-status muted small" aria-live="polite">
             {updating && !loading ? "Updating…" : ranAt ? `Data from ${new Date(ranAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${snapshotAt ? " (auto-refresh)" : anyCached ? ", saved for up to 15 minutes" : ""}` : ""}
           </span>
-          <button className="btn btn-ghost btn-sm no-print" onClick={() => load(true)} disabled={updating}
-            title="Run every query again now and show the latest data">Refresh</button>
+          {!shared && (
+            <button className="btn btn-ghost btn-sm no-print" onClick={() => load(true)} disabled={updating}
+              title="Run every query again now and show the latest data">Refresh</button>
+          )}
         </div>
+        {focus && (
+          <div className="drill-banner no-print" role="status">
+            <span className="drill-banner-label">Drilled into</span>
+            <code className="drill-banner-value">{focusLabel(focus)}</code>
+            <span className="muted small">the charts show the whole report; the tables show the selection</span>
+            <button className="btn btn-ghost btn-sm" onClick={() => setFocus(null)}>Clear drill-down</button>
+          </div>
+        )}
         {failed.length > 0 && editable && (
           <div className="alert alert-warn small">
             {failed.length} planned chart{failed.length === 1 ? " was" : "s were"} left out because the query didn't work:{" "}
@@ -487,15 +583,28 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
             // A drilled chart shows the level it was clicked into; everything else shows its own data.
             const down = drilled[w.id];
             const shown = down ? down.data : (d?.ok ? { ...d, chart: w.chart } : null)!;
-            const canDrill = !!d?.ok && levelsOf(w) > (down?.trail.length ?? 0) && !showHistory;
+            const canDrill = !shared && !!d?.ok && levelsOf(w) > (down?.trail.length ?? 0) && !showHistory;
+            // A table that can answer the selection shows only those rows; every other tile is
+            // left whole, so the selection is read against the report rather than against itself.
+            const picked = focus && showsRecords(w) && d?.ok ? focusRows(d.columns, d.rows, focus) : null;
+            // Charts with their own drill levels keep them; the rest pick out records instead.
+            // The column it is grouped by *now*: a chart drilled to its last level is no longer
+            // grouped by the field it was saved with.
+            const pickable = !canDrill && !showHistory && !!d?.ok ? clickColumn(shown.chart) : "";
             return (
-              <section key={w.id} className={`card widget w-${w.chart.type} size-${w.size ?? "auto"}${cardLook(w.style).className}${dragClass(w.id)}${resizeClass(w)}`}
+              <section key={w.id} data-widget={w.id}
+                className={`card widget w-${w.chart.type} size-${w.size ?? "auto"}${cardLook(w.style).className}${dragClass(w.id)}${resizeClass(w)}`}
                 style={cardLook(w.style).style} aria-label={w.title} {...dragProps(w.id)}>
                 <div className="widget-head">
                   {handle(w)}
                   {editable ? (
                     <input className="widget-title-input" value={w.title} aria-label="Chart title" onChange={(e) => change(w.id, { title: e.target.value })} />
                   ) : <h2 className="h2">{w.title}</h2>}
+                  {picked && focus && d?.ok && (
+                    <span className="badge badge-focus" title={`Only the rows where ${focusLabel(focus)}`}>
+                      {focusLabel(focus)} · {picked.length} of {d.rows.length}
+                    </span>
+                  )}
                   {unfiltered.length > 0 && (
                     <span className="badge badge-off" title={`This chart's data has no column for: ${unfiltered.join(", ")}`}>
                       Not filtered{filters.length > 1 ? ` by ${unfiltered.join(", ")}` : ""}
@@ -505,7 +614,12 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
                     {editable && d?.ok && (
                       <select className="chart-pick" value={w.chart.type} aria-label="Chart type"
                         onChange={(e) => change(w.id, { chart: retype(w.chart, e.target.value as ChartType, d.columns, d.rows) })}>
-                        {Object.entries(CHART_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                        {Object.entries(CHART_LABELS).map(([k, l]) => {
+                          // A shape this data can't fill is shown greyed with the reason, rather
+                          // than picked and silently drawn as the rows.
+                          const no = cannotDraw(k as ChartType, d.columns, d.rows);
+                          return <option key={k} value={k} disabled={!!no} title={no}>{no ? `${l} — ${no.toLowerCase()}` : l}</option>;
+                        })}
                       </select>
                     )}
                     {(editable || canEdit) && (
@@ -517,10 +631,15 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
                         title={showHistory ? "Back to the latest data" : `Show history over ${points.length} refreshes`}
                         onClick={() => toggleHistory(w.id)}><Icon name="history" size={16} /></button>
                     )}
-                    <button className="icon-btn" aria-label={`About ${w.title}`} aria-expanded={info === w.id} title="Where this comes from"
-                      onClick={() => setInfo(info === w.id ? null : w.id)}><Icon name="info" size={16} /></button>
+                    {!shared && (
+                      <button className="icon-btn" aria-label={`About ${w.title}`} aria-expanded={info === w.id} title="Where this comes from"
+                        onClick={() => setInfo(info === w.id ? null : w.id)}><Icon name="info" size={16} /></button>
+                    )}
                     {editable && <CardColors name={w.title} style={w.style ?? {}} onChange={(p) => setLook(w, p)} onApplyAll={lookAll} />}
-                    {editable && <TileMenu name={w.title} items={menuItems(w, i)} />}
+                    {/* Anyone who may edit a chart from here may also move or remove it: the
+                        pencil is already offered, and a report with a chart that can't be taken
+                        off it sends people to the edit page for one click. */}
+                    {(editable || canEdit) && <TileMenu name={w.title} items={menuItems(w, i)} />}
                   </div>
                 </div>
                 {info === w.id && (
@@ -552,14 +671,24 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
                           {drilling === w.id && <span className="spinner" aria-label="Loading" />}
                         </div>
                       )}
-                      <DataChart columns={shown.columns} rows={shown.rows} chart={shown.chart} style={w.style}
-                        truncated={shown.truncated} height={w.height ?? HEIGHT.default} tableHeight={w.height}
-                        compare={down ? undefined : compare} spark={spark}
-                        onPoint={canDrill ? (name) => drill(w, [...(down?.trail ?? []), name]) : undefined} />
+                      <DataChart columns={shown.columns} rows={picked ?? shown.rows} chart={shown.chart} style={w.style}
+                        truncated={picked ? false : shown.truncated} height={w.height ?? HEIGHT.default} tableHeight={w.height}
+                        compare={down || picked ? undefined : compare} spark={spark}
+                        onPoint={canDrill ? (name) => drill(w, [...(down?.trail ?? []), name])
+                               : pickable ? (name) => pick(w, pickable, name) : undefined}
+                        // A table's column widths and the columns taken off it are part of how the
+                        // report reads, so they are saved on the chart like any other styling.
+                        onColumns={editable || canEdit ? (patch) => setLook(w, patch) : undefined} />
                       {canDrill && !down && (
                         <p className="muted small no-print drill-hint">
                           Click a {w.chart.type === "pie" || w.chart.type === "donut" ? "slice" : "bar"} to see it by{" "}
                           {columnLabel(w.visual!.drill![0].alias ?? w.visual!.drill![0].column)}.
+                        </p>
+                      )}
+                      {pickable && !focus && tablesFor(pickable).length > 0 && (
+                        <p className="muted small no-print drill-hint">
+                          Click a {w.chart.type === "pie" || w.chart.type === "donut" ? "slice"
+                                 : w.chart.type === "heatmap" ? "cell" : "bar"} to see the records behind it.
                         </p>
                       )}
                     </>
@@ -608,6 +737,10 @@ export default function Dashboard({ report, editable, canEdit }: Props) {
             setFilterDialog(null);
             toast(`"${f.label}" filters ${Object.keys(f.columns).length} of ${chartWidgets.length} charts`);
           }} />
+      )}
+      {sharing && (
+        <ShareDialog reportId={report.id} title={title || report.title} published={report.status === "published"}
+          onClose={() => setSharing(false)} />
       )}
       {publishing && (
         <PublishDialog report={{ ...report, title: title || "Untitled dashboard" }} onClose={() => setPublishing(false)} onPublish={publish} />

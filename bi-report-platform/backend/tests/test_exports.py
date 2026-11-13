@@ -271,3 +271,53 @@ def test_the_backend_reads_numbers_the_same_way_the_browser_does():
     assert f(12345678.9, {"format": "currency", "currency": "AED "}) == "AED 12.3M"
     assert f(0.2567, {"format": "percent"}) == "25.7%"
     assert f(-4500000, {"format": "currency", "currency": "€"}) == "-€4.5M"
+
+
+# ---------- Queries written in the words the app shows ----------
+
+def test_a_query_naming_an_enum_label_is_rewritten_to_what_is_stored():
+    """Results carry an enum's labels, so filters, templates and models all say "Major". OpenPages
+    stores "Very High" there and refuses the query outright for anything else."""
+    from app.datasources import openpages_stored_values
+    source = FakeSource(client_with(PLAN_ITEM))
+    sql = ("SELECT COUNT([Audit Plan Item].[Resource ID]) FROM [Audit Plan Item] "
+           "WHERE [Audit Plan Item].[IAM-PlanItem-FG:Status] = 'Completed'")
+    assert openpages_stored_values(source, sql).endswith("= '4'")
+
+
+def test_each_value_of_an_in_list_is_rewritten():
+    from app.datasources import openpages_stored_values
+    source = FakeSource(client_with(PLAN_ITEM))
+    sql = "SELECT [Audit Plan Item].[Name] FROM [Audit Plan Item] WHERE [Audit Plan Item].[IAM-PlanItem-FG:Status] IN ('Planned', 'Completed')"
+    assert openpages_stored_values(source, sql).endswith("IN ('1', '4')")
+
+
+def test_a_value_that_is_not_a_label_is_left_alone():
+    """An installation that stores the words must not have them swapped for something else, and a
+    value no longer in the definition has to reach the server as it was written."""
+    from app.datasources import openpages_stored_values
+    source = FakeSource(client_with(ISSUE, PLAN_ITEM))
+    for sql in ("SELECT [SOXIssue].[Name] FROM [SOXIssue] WHERE [SOXIssue].[OPSS-Iss:Status] = 'Open'",
+                "SELECT [Audit Plan Item].[Name] FROM [Audit Plan Item] "
+                "WHERE [Audit Plan Item].[IAM-PlanItem-FG:Status] = 'Retired'"):
+        assert openpages_stored_values(source, sql) == sql
+
+
+def test_text_that_only_looks_like_a_value_is_untouched():
+    """Only the literal a comparison names is a candidate; a name that happens to read like one is
+    not."""
+    from app.datasources import openpages_stored_values
+    source = FakeSource(client_with(PLAN_ITEM))
+    sql = ("SELECT [Audit Plan Item].[Name] FROM [Audit Plan Item] "
+           "WHERE [Audit Plan Item].[Name] LIKE '%Completed%'")
+    assert openpages_stored_values(source, sql) == sql
+
+
+def test_a_quote_in_a_rewritten_value_cannot_break_the_query():
+    from app.datasources import openpages_stored_values
+    tricky = {"name": "Odd", "fieldDefinitions": {"fieldDefinition": [
+        {"name": "G:F", "dataType": "ENUM_TYPE", "enumValues": {"enumValue": [
+            {"name": "O'Brien", "localizedLabel": "Owner"}]}}]}}
+    source = FakeSource(client_with(tricky))
+    sql = "SELECT [Odd].[Name] FROM [Odd] WHERE [Odd].[G:F] = 'Owner'"
+    assert openpages_stored_values(source, sql).endswith("= 'O''Brien'")

@@ -19,7 +19,29 @@ LONG_LABELS = {"Risks by category", "Management responses", "Root causes", "Issu
                "Audits by country", "Findings by business unit", "Action items by status"}
 
 
-def _count_by(type_name: str, field: str, title: str, chart: str = "bar", where: str = "", size: str = "auto",
+# A field a template asks for by name, or several names for the same thing. OpenPages installations
+# put the same field in different groups - a risk's domain is "OPSS-Risk:Risk Domain" on one server
+# and "OPSS-Rsk:Domain" on another, its residual rating "OPSS-Risk:Residual Risk Rating" or
+# "OPSS-Risk-Qual:Residual Risk Rating" - and a chart naming only one of them is dropped on every
+# server that uses the other. Where a field is known by more than one name, the template lists them
+# all: the first is written into the chart, the rest go in "alt_sql", and the build step tries them
+# in turn until one runs (see routers/templates.build_dashboard).
+Field = str | list[str]
+
+
+def _names(field: Field) -> list[str]:
+    return [field] if isinstance(field, str) else [f for f in field if f]
+
+
+def _with_alternatives(widget: dict, variants: list[str]) -> dict:
+    """The first query on the widget, the rest as alternatives to fall back to."""
+    widget["sql"] = variants[0]
+    if len(variants) > 1:
+        widget["alt_sql"] = variants[1:]
+    return widget
+
+
+def _count_by(type_name: str, field: Field, title: str, chart: str = "bar", where: str = "", size: str = "auto",
               question: str = "", by_value: bool = False, skip_nulls: bool = True) -> dict:
     """A count per value of one field, largest first (by_value: in the field's order, for years).
 
@@ -27,31 +49,86 @@ def _count_by(type_name: str, field: str, title: str, chart: str = "bar", where:
     answer IS NULL on their own field groups with "columnReference cannot be null" and refuse the
     whole query. Those charts then show a blank slice for items where nobody filled the field in,
     which is honest about the data rather than quietly dropping it."""
-    ref = f"[{type_name}].[{field}]"
-    conditions = ([f"{ref} IS NOT NULL"] if skip_nulls else []) + ([where] if where else [])
-    sql = (f"SELECT {ref}, COUNT([{type_name}].[Resource ID]) FROM [{type_name}] "
-           + (f"WHERE {' AND '.join(conditions)} " if conditions else "")
-           + f"GROUP BY {ref} ORDER BY " + (ref if by_value else f"COUNT([{type_name}].[Resource ID]) DESC"))
-    widget = {"title": title, "question": question or title, "sql": sql, "size": size,
-              "chart": {"type": chart, "x": field, "y": [COUNT]}}
+    def one(name: str) -> str:
+        ref = f"[{type_name}].[{name}]"
+        conditions = ([f"{ref} IS NOT NULL"] if skip_nulls else []) + ([where] if where else [])
+        return (f"SELECT {ref}, COUNT([{type_name}].[Resource ID]) FROM [{type_name}] "
+                + (f"WHERE {' AND '.join(conditions)} " if conditions else "")
+                + f"GROUP BY {ref} ORDER BY " + (ref if by_value else f"COUNT([{type_name}].[Resource ID]) DESC"))
+
+    names = _names(field)
+    widget = {"title": title, "question": question or title, "sql": "", "size": size,
+              # The chart's axis is named for the field that is actually used; the build step renames
+              # it if it falls back to another name.
+              "chart": {"type": chart, "x": names[0], "y": [COUNT]}, "alt_x": names[1:]}
     if title in LONG_LABELS:
         widget["style"] = {"horizontal": True, "showValues": True}  # long names read better down the side
-    return widget
+    return _with_alternatives(widget, [one(n) for n in names])
 
 
-def _count_by_two(type_name: str, row_field: str, col_field: str, title: str, size: str = "half",
+def _count_by_two(type_name: str, row_field: Field, col_field: Field, title: str, size: str = "half",
                   question: str = "") -> dict:
     """A count per pair of values, shown as a table: the nearest thing to a heat map here."""
-    row, col = f"[{type_name}].[{row_field}]", f"[{type_name}].[{col_field}]"
-    sql = (f"SELECT {row}, {col}, COUNT([{type_name}].[Resource ID]) FROM [{type_name}] "
-           f"WHERE {row} IS NOT NULL AND {col} IS NOT NULL GROUP BY {row}, {col} ORDER BY {row}, {col}")
-    return {"title": title, "question": question or title, "sql": sql, "size": size,
-            "chart": {"type": "table", "x": "", "y": []}}
+    def one(row_name: str, col_name: str) -> str:
+        # No ORDER BY: the two fields of a grid like this are almost always enums, and the Query
+        # Service answers "OP-60009: Sorting on field [...] type of Enumerated String is not
+        # supported" and refuses the query. A grid is read by its cells, not by row order.
+        row, col = f"[{type_name}].[{row_name}]", f"[{type_name}].[{col_name}]"
+        return (f"SELECT {row}, {col}, COUNT([{type_name}].[Resource ID]) FROM [{type_name}] "
+                f"WHERE {row} IS NOT NULL AND {col} IS NOT NULL GROUP BY {row}, {col}")
+
+    pairs = field_pairs(row_field, col_field)
+    widget = {"title": title, "question": question or title, "sql": "", "size": size,
+              "chart": {"type": "table", "x": "", "y": []},
+              "alt_x": [r for r, _ in pairs[1:]], "alt_legend": [c for _, c in pairs[1:]]}
+    return _with_alternatives(widget, [one(r, c) for r, c in pairs])
 
 
-def _total(type_name: str, title: str, where: str = "", size: str = "quarter") -> dict:
-    sql = f"SELECT COUNT([{type_name}].[Resource ID]) FROM [{type_name}]" + (f" WHERE {where}" if where else "")
-    return {"title": title, "question": title, "sql": sql, "size": size, "chart": {"type": "kpi", "x": "", "y": [COUNT]}}
+def field_pairs(row_field: Field, col_field: Field) -> list[tuple[str, str]]:
+    """Every (row field, column field) a grid of these two fields might be written against, best
+    first. Both names vary together on a server that renames a field group, so the pairs are tried
+    in step first, and only then every remaining combination."""
+    rows, cols = _names(row_field), _names(col_field)
+    pairs = [(rows[i], cols[i]) for i in range(min(len(rows), len(cols)))]
+    return pairs + [(r, c) for r in rows for c in cols if (r, c) not in pairs]
+
+
+def _summary(type_name: str, title: str, fields: list[Field], size: str = "full", question: str = "") -> dict:
+    """One row per record, with the fields a section is about, as a table.
+
+    Any of the fields may be given as the several names installations file it under. They are tried
+    in step - all the first names, then all the second - because a server that renames one field
+    group has renamed the others with it, and a SELECT naming one field this installation doesn't
+    have fails for all of them. Trying every combination of a six-field table would be hundreds of
+    queries for the same answer."""
+    steps = max(len(_names(f)) for f in fields)
+    variants, seen = [], set()
+    for i in range(steps):
+        picked = [_names(f)[min(i, len(_names(f)) - 1)] for f in fields]
+        sql = (f"SELECT " + ", ".join(f"[{type_name}].[{name}]" for name in picked)
+               + f" FROM [{type_name}]")
+        if sql not in seen:
+            seen.add(sql)
+            variants.append(sql)
+    widget = {"title": title, "question": question or title, "sql": "", "size": size,
+              "chart": {"type": "table", "x": "", "y": []},
+              # The names, so the build step can settle them against the object type's own field
+              # list in one read instead of guessing (routers/templates.with_known_fields). The
+              # queries below are the fallback for when that list can't be read.
+              "pick_fields": {"type": type_name, "fields": [_names(f) for f in fields]}}
+    return _with_alternatives(widget, variants)
+
+
+def _total(type_name: str, title: str, where: str | list[str] = "", size: str = "quarter") -> dict:
+    """A count of one object type, whole or narrowed by a condition. Several conditions mean the
+    same count written against field names that differ between installations; the first that runs
+    is the one the tile keeps."""
+    wheres = [where] if isinstance(where, str) else list(where) or [""]
+    variants = [f"SELECT COUNT([{type_name}].[Resource ID]) FROM [{type_name}]" + (f" WHERE {w}" if w else "")
+                for w in wheres]
+    widget = {"title": title, "question": title, "sql": "", "size": size,
+              "chart": {"type": "kpi", "x": "", "y": [COUNT]}}
+    return _with_alternatives(widget, variants)
 
 
 def _list(title: str, sql: str, size: str = "full") -> dict:
@@ -63,8 +140,11 @@ def _heading(title: str, text: str = "") -> dict:
             "chart": {"type": "table", "x": "", "y": []}}
 
 
-def _filter(label: str, type_name: str, field: str, kind: str = "category") -> dict:
-    return {"label": label, "kind": kind, "type": type_name, "field": field}
+def _filter(label: str, type_name: str, field: Field, kind: str = "category") -> dict:
+    """A filter on one field. Several names mean the same field under different group names; the
+    build step keeps the one the charts turned out to use (see routers/templates)."""
+    names = _names(field)
+    return {"label": label, "kind": kind, "type": type_name, "field": names[0], "alt_fields": names[1:]}
 
 
 CTL, ISS, FND, AUD, RSK, KRI, POL, OBL = ("SOXControl", "SOXIssue", "Finding", "AuditProgram", "SOXRisk",
@@ -82,6 +162,7 @@ API, APIF = "Audit Plan Item", "IAM-PlanItem-FG:"
 # Public names for the builders above, used by openpages_modules.
 count_by, count_by_two, total, table_of, heading, filter_on = (_count_by, _count_by_two, _total, _list,
                                                                _heading, _filter)
+summary_table = _summary
 
 OPENPAGES_TEMPLATES = [
     {

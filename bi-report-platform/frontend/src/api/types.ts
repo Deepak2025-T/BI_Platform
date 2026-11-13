@@ -551,6 +551,12 @@ export interface Widget {
   /** Media tiles: what the picture shows, for people using a screen reader. */
   alt?: string;
   style?: WidgetStyle;
+  /**
+   * Dates folded to a period after the query has run, for connections whose SQL can't group them
+   * itself — IBM OpenPages has no date functions, so a count per month is worked out from the
+   * rows. The column keeps its name, so `chart.x` doesn't change.
+   */
+  rollup?: { column: string; to: "month" | "quarter" | "year"; format?: string; order?: "asc" | "desc" };
   /** Chart height in pixels (default 280). Tables scroll inside it. */
   height?: number;
 }
@@ -578,6 +584,12 @@ export interface WidgetStyle {
   showValues?: boolean;
   /** Show the legend when there are several series or a pie (default true). */
   legend?: boolean;
+  /** Tables: the width in pixels of each named column, for the ones that have been set. */
+  columnWidths?: Record<string, number>;
+  /** Tables: columns taken off this table. The query still returns them, so they can come back. */
+  hiddenColumns?: string[];
+  /** A ring: slices listed down the side with their figure and share, and the total in the hole. */
+  ringLegend?: boolean;
   format?: "auto" | "full" | "currency" | "percent";
   /** Symbol for the currency format, e.g. £, $, ₹, "AED ". */
   currency?: string;
@@ -622,6 +634,8 @@ export interface DashboardConfig {
   parameters?: DashboardParameters;
   /** The palette new and unstyled charts on this dashboard use. A chart's own `style.palette` wins. */
   palette?: string[];
+  /** The look this dashboard is drawn in, from the template it was built from, e.g. "plex". */
+  theme?: string;
   model?: string;
   filters?: DashboardFilter[];
 }
@@ -662,6 +676,25 @@ export type DrillResult = QueryData & {
   label: string;
   not_filtered?: string[];
 };
+
+/** A link that opens one report without signing in. The token is the whole of the secret. */
+export interface ReportShare {
+  token: string;
+  /** Where the link opens, e.g. "/shared/abc...". The host is added in the browser. */
+  path: string;
+  created_at: string;
+  expires_at: string | null;
+  views: number;
+  last_viewed_at: string | null;
+}
+
+/** A shared report as a link serves it: no queries, and nothing about the database behind it. */
+export interface PublicReport {
+  title: string;
+  status: Report["status"];
+  updated_at: string;
+  config: DashboardConfig;
+}
 
 export function isDashboard(config: Report["config"]): config is DashboardConfig {
   return (config as DashboardConfig).kind === "dashboard";

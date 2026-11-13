@@ -314,6 +314,12 @@ def dashboard_deck(title: str, config: dict, source_name: str, results: list[dic
                  f"This chart's query couldn't run: {res.get('error', 'not run')}", 14, color=MUTED)
             continue
         columns, rows = list(res.get("columns") or []), list(res.get("rows") or [])
+        # A column taken off a table on the report is off it here too: the slide should be the
+        # table people have been reading, not the query behind it.
+        off = {str(c) for c in ((w.get("style") or {}).get("hiddenColumns") or [])}
+        if off and any(c in off for c in columns) and not all(c in off for c in columns):
+            keep = [i for i, c in enumerate(columns) if c not in off]
+            columns, rows = [columns[i] for i in keep], [[r[i] for i in keep] for r in rows]
         kind = str((w.get("chart") or {}).get("type") or "").lower()
         if not rows:
             _box(slide, MARGIN, BODY_TOP, BODY_W, Inches(1.0), "This chart has no rows to show.", 14, color=MUTED)

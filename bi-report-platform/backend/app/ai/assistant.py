@@ -36,7 +36,8 @@ _DIALECT_TIPS = {
     "mssql": "SQL Server: DATEFROMPARTS(YEAR(d), MONTH(d), 1), YEAR(d), d >= '2024-01-01', TOP n (never LIMIT). Quote names with [brackets].",
     "sqlite": "SQLite: strftime('%Y-%m', d), CAST(strftime('%Y', d) AS INTEGER), d >= '2024-01-01', LIMIT n.",
     "openpages": "IBM OpenPages Query Service SQL, as described above: [brackets] around every type and field, "
-                 "hierarchy joins (PARENT/CHILD/ANCESTOR/DESCENDANT), no LIMIT or TOP, no subqueries or CASE.",
+                 "hierarchy joins (PARENT, CHILD, or ANCESTOR - there is no DESCENDANT), no LIMIT or "
+                 "TOP, no subqueries or CASE.",
 }
 
 _CHART_SCHEMA = {

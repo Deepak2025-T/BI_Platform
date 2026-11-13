@@ -2,7 +2,7 @@ import { AI_WAIT, api } from "./client";
 import type {
   ChatResult, DashboardConfig, DashboardDataRequest, DashboardFilter, DrillResult, DashboardParameters, DataModelDetail, DataModelSummary, DataSourceInfo, QueryData, Widget, WidgetData,
   AIModel, AIModelInput, ColorPalette, PaletteInput, AIModelPublic, AIModelTestResult, AIProvider, AIProviderInfo, Category, CategoryInput, ConnectionInput, ConnectionTestResult, DataConnection, QueryParams, QueryResult, Report,
-  ReportConfig, ReportTemplate, Role, SchemaTables, TemplateInput, User,
+  ReportConfig, ReportShare, ReportTemplate, PublicReport, Role, SchemaTables, TemplateInput, User,
 } from "./types";
 
 export const authApi = {
@@ -102,6 +102,28 @@ export const aiModelsApi = {
 };
 
 /** AI chat with a database, and AI-built dashboards. Model calls can be slow, so allow a few minutes. */
+/** Links that open one report without signing in, and the pages those links serve. */
+export const sharesApi = {
+  /** The report's link, or null when it has none. Owner or manager only. */
+  get: (reportId: number) => api.get<ReportShare | null>(`/api/reports/${reportId}/share`).then((r) => r.data),
+  /** Makes the link, or hands back the one the report already has. Published reports only. */
+  create: (reportId: number, expiresDays: number | null = null) =>
+    api.post<ReportShare>(`/api/reports/${reportId}/share`, { expires_days: expiresDays }).then((r) => r.data),
+  /** Turns the link off. Anything embedding the report stops showing it. */
+  revoke: (reportId: number) => api.delete(`/api/reports/${reportId}/share`),
+};
+
+/**
+ * What a share link opens. These calls carry no login: the token in the address is the whole of
+ * the permission, which is why they are kept apart from everything else here.
+ */
+export const publicApi = {
+  report: (token: string) => api.get<PublicReport>(`/api/public/reports/${token}`).then((r) => r.data),
+  data: (token: string, body: DashboardDataRequest = { filters: {} }) =>
+    api.post<{ source: string; widgets: WidgetData[]; snapshot_at: string | null }>(
+      `/api/public/reports/${token}/data`, body, { timeout: 120000 }).then((r) => r.data),
+};
+
 export const assistantApi = {
   sources: () => api.get<DataSourceInfo[]>("/api/sources").then((r) => r.data),
   /** Questions worth asking of one database, worked out from its columns. No AI model is used. */

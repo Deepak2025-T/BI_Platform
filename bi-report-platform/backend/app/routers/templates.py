@@ -101,6 +101,63 @@ class BuildIn(BaseModel):
     source_id: int | None = None
 
 
+def with_known_fields(source, template_widget: dict) -> dict:
+    """A summary table's query, written against the fields this installation actually has.
+
+    A table naming six fields can't be settled name by name the way a one-field chart is: a single
+    name this installation doesn't have fails the whole query, and trying every combination of the
+    names installations use would be hundreds of queries for one answer. The object type's own
+    field list settles every one of them in a single read, and a field that is here under none of
+    its names is simply not a column."""
+    pick = template_widget.get("pick_fields")
+    if not pick or not getattr(source, "is_openpages", False):
+        return template_widget
+    type_name = str(pick.get("type") or "")
+    try:
+        known = {str(f.get("name") or "") for f in source.client.type_fields(type_name)}
+    except Exception:  # the type isn't shared, or the definition can't be read: try the queries
+        return template_widget
+    chosen = [name for names in (pick.get("fields") or [])
+              if (name := next((n for n in names if n in known), ""))]
+    if not chosen:
+        return template_widget
+    return {**template_widget,
+            "sql": f"SELECT " + ", ".join(f"[{type_name}].[{n}]" for n in chosen) + f" FROM [{type_name}]",
+            "alt_sql": []}
+
+
+def first_that_runs(source, template_widget: dict, widget: dict) -> str:
+    """Settles which of a chart's queries this connection can answer, writing it onto `widget`.
+
+    A template chart may carry the same question written more than once, against the field names
+    different OpenPages installations use for the same thing (see openpages_templates.Field). Each
+    is run in turn and the first that answers is kept, along with the field names its axes should
+    carry. A grid names two fields, so its second axis (the heat map's columns) moves in step with
+    the first. Returns "" when one worked, or why the last one didn't when none did."""
+    variants = [template_widget.get("sql", "")] + [s for s in (template_widget.get("alt_sql") or [])
+                                                   if isinstance(s, str)]
+    chart = template_widget.get("chart") or {}
+    axes = [chart.get("x", "")] + list(template_widget.get("alt_x") or [])
+    legends = [chart.get("legend", "")] + list(template_widget.get("alt_legend") or [])
+    failure = "the chart has no query"
+    for i, sql in enumerate(variants):
+        try:
+            run_sql(source, sql)
+        except (UnsafeSQL, QueryFailed) as err:
+            failure = str(err)
+            continue
+        widget["sql"] = sql
+        picked = {}
+        if i < len(axes) and isinstance(axes[i], str) and axes[i]:
+            picked["x"] = axes[i]
+        if i < len(legends) and isinstance(legends[i], str) and legends[i]:
+            picked["legend"] = legends[i]
+        if picked:
+            widget["chart"] = {**(widget.get("chart") or {}), **picked}
+        return ""
+    return failure
+
+
 @router.post("/{template_id}/build", status_code=201)
 def build_dashboard(template_id: int, body: BuildIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Builds a draft dashboard from a dashboard template on the chosen connection. Every chart's query
@@ -124,17 +181,17 @@ def build_dashboard(template_id: int, body: BuildIn, db: Session = Depends(get_d
                                                          f"{source.name} is {source.type_label}.")
     widgets, skipped = [], []
     for w in layout.get("widgets") or []:
-        widget = {k: v for k, v in w.items() if k in ("kind", "title", "question", "sql", "chart", "size", "text", "style")}
+        widget = {k: v for k, v in w.items()
+                  if k in ("kind", "title", "question", "sql", "chart", "size", "text", "style", "rollup", "height")}
         widget["id"] = uuid.uuid4().hex[:8]
         if w.get("kind") == "text":
             widgets.append(widget)
             continue
-        try:
-            run_sql(source, w.get("sql", ""))
-        except (UnsafeSQL, QueryFailed) as err:
-            skipped.append({"title": w.get("title", ""), "reason": str(err)})
-            continue
-        widgets.append(widget)
+        reason = first_that_runs(source, with_known_fields(source, w), widget)
+        if reason:
+            skipped.append({"title": w.get("title", ""), "reason": reason})
+        else:
+            widgets.append(widget)
     # The template's palette is copied onto each chart, so the report keeps these colours even if
     # the template is later changed. Colour rules in the template's prompt are read the same way.
     palette = [c for c in (normalize_hex(x) for x in (layout.get("chartPalette") or [])) if c][:24]
@@ -167,17 +224,27 @@ def build_dashboard(template_id: int, body: BuildIn, db: Session = Depends(get_d
                 filters.append(built)
             continue
         table = f"openpages.{f.get('type', '')}".lower() if source.is_openpages else str(f.get("table", "")).lower()
-        picks = {w["id"]: {"table": table, "column": f.get("field", "")} for w in charts
-                 if table in dashboard_filters.query_tables(w["sql"], source)}
-        if picks:
-            built = dashboard_filters.make_filter(source, f.get("label", "Filter"), f.get("kind", "category"), widgets, picks)
+        reading = [w for w in charts if table in dashboard_filters.query_tables(w["sql"], source)]
+        # The field may be known by more than one name here too, so each is tried until one is a
+        # real column: make_filter drops a column the table doesn't have, leaving nothing to filter.
+        for column in [f.get("field", "")] + list(f.get("alt_fields") or []):
+            picks = {w["id"]: {"table": table, "column": column} for w in reading}
+            if not picks:
+                break
+            built = dashboard_filters.make_filter(source, f.get("label", "Filter"), f.get("kind", "category"),
+                                                  widgets, picks)
             if built["columns"]:
                 filters.append(built)
+                break
     # "OpenPages: Controls effectiveness" becomes "Controls effectiveness": the domain belongs on
     # the template, not on every report built from it.
     title = t.name.split(": ", 1)[-1] if t.name.split(": ", 1)[0] in TITLE_PREFIXES else t.name
-    report = _save(db, user, title=title, prompt=t.prompt, source=source, widgets=widgets,
-                   extra={"filters": filters, "template": t.name})
+    # A template may ask for a look as well as a set of charts: the report carries the theme so it
+    # still reads as that design after it is saved, published and printed.
+    extra = {"filters": filters, "template": t.name}
+    if isinstance(layout.get("theme"), str) and layout["theme"]:
+        extra["theme"] = layout["theme"][:40]
+    report = _save(db, user, title=title, prompt=t.prompt, source=source, widgets=widgets, extra=extra)
     return {"report": report, "skipped": skipped}
 
 
