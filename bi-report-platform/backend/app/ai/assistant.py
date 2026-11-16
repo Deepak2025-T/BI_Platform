@@ -17,6 +17,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from ..config import settings
+from ..connections import openpages
 from ..prompt_clarify import apply_style
 from ..datasources import DataSource, QueryFailed, describe, run_sql
 from ..sql_guard import UnsafeSQL
@@ -37,8 +38,9 @@ _DIALECT_TIPS = {
     "mssql": "SQL Server: DATEFROMPARTS(YEAR(d), MONTH(d), 1), YEAR(d), d >= '2024-01-01', TOP n (never LIMIT). Quote names with [brackets].",
     "sqlite": "SQLite: strftime('%Y-%m', d), CAST(strftime('%Y', d) AS INTEGER), d >= '2024-01-01', LIMIT n.",
     "openpages": "IBM OpenPages Query Service SQL, as described above: [brackets] around every type and field, "
-                 "hierarchy joins (PARENT, CHILD, or ANCESTOR - there is no DESCENDANT), no LIMIT or "
-                 "TOP, no subqueries or CASE.",
+                 "one hierarchy join at most (PARENT or CHILD - ANCESTOR only to look inside one named "
+                 "record, and there is no DESCENDANT), COUNT never in the same query as a JOIN, no LIMIT "
+                 "or TOP, no subqueries or CASE.",
 }
 
 _CHART_SCHEMA = {
@@ -223,10 +225,21 @@ def _query_with_retries(spec: ModelSpec, source: DataSource, system: str, prompt
             return answer, data, attempts
         except (UnsafeSQL, QueryFailed) as err:
             attempts.append({"ok": False, "message": f"Attempt {n} failed: {err}", "sql": sql})
+            # OpenPages says what is wrong but not what would work, and a model given only "the
+            # query failed to be transformed into SQL" tends to send the same shape back with the
+            # brackets moved. Where the refusal is one we recognise, the next try is told what to
+            # write instead.
+            fix = openpages.remedy(str(err)) if source.is_openpages else ""
             feedback = (f"\n\nYour previous query failed.\nQuery: {sql}\nError: {err}\n"
-                        "Write a corrected query that follows the rules.")
+                        + (f"How to fix it: {fix}\n" if fix else "")
+                        + "Write a corrected query that follows the rules.")
     last_error = attempts[-1]["message"].split(": ", 1)[-1]
-    raise AssistantError(f"The model couldn't write a working query in {MAX_ATTEMPTS} tries. Last error: {last_error}")
+    # A dead end is worth more with a way out of it. Where the refusal is a limit of the Query
+    # Service rather than a mistake, say what to ask instead - the person has no way of knowing
+    # that from "OP-60002: The query failed to be transformed into SQL".
+    said = openpages.advice(last_error) if source.is_openpages else ""
+    raise AssistantError(f"The model couldn't write a working query in {MAX_ATTEMPTS} tries. "
+                         + (f"{said} " if said else "") + f"Last error: {last_error}")
 
 
 def _normalize(answer: dict) -> dict:

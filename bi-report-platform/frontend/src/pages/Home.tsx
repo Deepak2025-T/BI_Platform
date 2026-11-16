@@ -6,6 +6,7 @@ import type { AIModelPublic, ClarifyResult, DashboardParameters, DataModelSummar
 import { useAuth } from "../auth/AuthContext";
 import CategoryBadge from "../components/CategoryBadge";
 import ClarifyDialog from "../components/ClarifyDialog";
+import Dictate from "../components/Dictate";
 import DomainTiles from "../components/DomainTiles";
 import FlowDiagram, { type FlowStep } from "../components/FlowDiagram";
 import Icon from "../components/Icon";
@@ -13,6 +14,7 @@ import TemplateForm from "../components/TemplateForm";
 import { useToast } from "../components/Toast";
 import { type AskModel, rememberModel, rememberedModel } from "../lib/aiModels";
 import { bySolution, rememberModel as rememberDataModel, rememberedModel as rememberedDataModel } from "../lib/dataModel";
+import { appendSpoken } from "../lib/dictation";
 import { shortDate } from "../lib/format";
 import { useCountUp, useReveal } from "../lib/motion";
 import { TEMPLATE_CATEGORIES } from "../lib/report";
@@ -348,6 +350,8 @@ export default function Home() {
               <textarea id="ask" rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)}
                 placeholder={mode === "chat" ? "e.g. Which region grew fastest last quarter?" : "e.g. Sales dashboard for Q1 2024 by region and product"}
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) ask(); }} />
+              <Dictate what={mode === "chat" ? "your question" : "your report request"}
+                onPhrase={(said) => setPrompt((p) => appendSpoken(p, said))} />
               {/* Questions to try, against the box they fill: a blank box always has a way in. */}
               <div className="chip-row suggest-row">
                 <span className="muted small">Try</span>

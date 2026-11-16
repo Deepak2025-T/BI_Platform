@@ -4,6 +4,7 @@ import { aiModelsApi } from "../api/endpoints";
 import { reportToolsApi } from "../api/reportTools";
 import type { AIModelPublic, ChartType, QueryData, Widget, WidgetData, WidgetSize, WidgetStyle } from "../api/types";
 import { rememberedModel } from "../lib/aiModels";
+import { appendSpoken } from "../lib/dictation";
 import { CURRENCIES, SCALES, columnLabel, formatValue } from "../lib/format";
 import { CHART_LABELS, cannotDraw, numericColumns, retype } from "../lib/sources";
 import { ColorPicker, Seg } from "./Controls";
@@ -12,6 +13,7 @@ import { cardLook } from "../lib/cardColors";
 import { CardColorFields } from "./CardColors";
 import ColorRules from "./ColorRules";
 import DataChart from "./DataChart";
+import Dictate from "./Dictate";
 import Modal from "./Modal";
 import PalettePicker from "./PalettePicker";
 import ResultTable from "./ResultTable";
@@ -380,6 +382,7 @@ export default function ChartEditor({ reportId, widget, data, onClose, onSave, o
               <textarea rows={3} value={instruction} maxLength={500} placeholder="e.g. Only completed orders, by week, top 5 products, compare with last year"
                 onChange={(e) => setInstruction(e.target.value)} />
             </label>
+            <Dictate what="the change you want" onPhrase={(said) => setInstruction((i) => appendSpoken(i, said))} />
             <div className="row-wrap">
               <select value={model} onChange={(e) => setModel(e.target.value)} aria-label="AI model" disabled={!models.length}>
                 {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}

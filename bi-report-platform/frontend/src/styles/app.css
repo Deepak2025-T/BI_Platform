@@ -1213,3 +1213,42 @@ body.printing .page-print-head:first-child { break-before: auto; }
   padding: 10px 12px; border: 1px dashed var(--border-strong); border-radius: 10px;
   background: var(--row); font-size: 14px; line-height: 1.5;
 }
+
+/* ---------------------------------------------------------------------------
+   Speaking a request instead of typing it (Dictate). The button says plainly
+   whether the microphone is on, because nothing else on screen does.
+   --------------------------------------------------------------------------- */
+
+.dictate { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dictate-btn {
+  display: flex; align-items: center; gap: 7px; flex: none;
+  height: 36px; padding: 0 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  color: var(--fg); background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: 999px;
+  transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+.dictate-btn:hover { border-color: var(--accent); }
+/* Listening is a state with a cost - the microphone is live - so it is coloured like a warning
+   rather than like a selected chip. */
+.dictate-btn.on { color: var(--bad); background: var(--bad-bg); border-color: var(--bad); }
+
+.dictate-live { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg2); }
+.dictate-pulse {
+  width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--bad);
+  animation: dictate-pulse 1.4s ease-in-out infinite;
+}
+@keyframes dictate-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+@media (prefers-reduced-motion: reduce) { .dictate-pulse { animation: none; } }
+
+.dictate-error { font-size: 13px; color: var(--bad); }
+
+/* In a compose row the button has to keep its place, so what is being heard floats above it
+   instead of widening the row as the sentence grows. */
+.dictate.compact { position: relative; }
+.dictate.compact .dictate-btn { width: 40px; padding: 0; justify-content: center; height: 40px; }
+.dictate.compact .dictate-live, .dictate.compact .dictate-error {
+  position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 2;
+  width: max-content; max-width: 320px; padding: 7px 11px;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(13, 27, 42, .1);
+}

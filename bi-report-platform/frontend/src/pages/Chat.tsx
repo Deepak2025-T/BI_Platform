@@ -6,6 +6,7 @@ import { aiModelsApi, assistantApi, dataModelsApi } from "../api/endpoints";
 import type { AIModelPublic, ChartType, ChatResult, DataModelSummary, DataSourceInfo, Widget } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import DataChart from "../components/DataChart";
+import Dictate from "../components/Dictate";
 import Modal from "../components/Modal";
 import PalettePicker from "../components/PalettePicker";
 import Icon from "../components/Icon";
@@ -14,6 +15,7 @@ import ResultTable from "../components/ResultTable";
 import { useToast } from "../components/Toast";
 import { rememberModel, rememberedModel } from "../lib/aiModels";
 import { bySolution, rememberModel as rememberDataModel, rememberedModel as rememberedDataModel } from "../lib/dataModel";
+import { appendSpoken } from "../lib/dictation";
 import { shortDate } from "../lib/format";
 import { CHART_LABELS, cannotDraw, rememberSource, rememberedSource, retype, sourceIdOf, sourceValue } from "../lib/sources";
 
@@ -323,6 +325,7 @@ export default function Chat() {
             <textarea id="chat-input" rows={2} value={input} placeholder={`Ask about ${shownSourceName || "your data"}…`}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }} />
+            <Dictate compact what="your question" onPhrase={(said) => setInput((q) => appendSpoken(q, said))} />
             <button type="submit" className="btn btn-primary" disabled={busy || !model || opening || input.trim().length < 2}>Send</button>
           </form>
           <p className="muted small">

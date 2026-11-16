@@ -62,12 +62,83 @@ SQL_GUIDE = """OpenPages Query Service SQL (not database SQL). It is much smalle
     children of a parent: FROM [AuditProgram] JOIN [Finding] ON PARENT([AuditProgram])
     parent of a child:    FROM [Finding] JOIN [AuditProgram] ON CHILD([Finding])
     any level below:      FROM [SOXRisk] JOIN [SOXIssue] ON ANCESTOR([SOXRisk]) WHERE [SOXRisk].[Resource ID] = <id>
-  Use one JOIN; chains of several joins often fail.
+  Exactly one JOIN per query; chains of several joins fail.
+- ANCESTOR is the awkward one and is rarely what you want. It REQUIRES a scoping filter on the
+  ancestor type in the WHERE clause (normally [Ancestor].[Resource ID] = <one id>), and the SELECT
+  may name no other field of the ancestor type. So it can only answer "what is under THIS one
+  record", never "all X grouped by their Y".
+  For "all X by their Y", use a direct PARENT join when X hangs straight off Y:
+      SELECT [SOXProcess].[Name], [SOXControl].[Name] FROM [SOXProcess] JOIN [SOXControl] ON PARENT([SOXProcess])
+  When X is deeper than one level, do not join at all: every object carries [Location], the entity
+  path it hangs under, so SELECT [X].[Location], [X].[Name] FROM [X] already groups X by where it sits.
+- COUNT and JOIN can never appear in the same query. There is no way to write "how many X per Y".
+  Select the rows with a PARENT join and show them as a table instead, or count X on its own by one
+  of X's own fields.
 - Columns keep their field names: never use AS. When two types share a field name (both [Name]),
   the columns come back as "AuditProgram Name" and "Finding Name".
 - Not supported: AS, DISTINCT, SUM, AVG, MIN, MAX, date or text functions (no YEAR, MONTH), CASE,
   LIMIT, TOP, subqueries, UNION, WITH, and any change to data. Rows are capped automatically.
 - Enum fields often have empty values; add WHERE [T].[Field] IS NOT NULL to leave them out."""
+
+
+# What to do about the refusals the Query Service sends back, by the code it puts in the message.
+# These are the ones that actually come up when a model writes the SQL. Each has two readings: one
+# for the model, which says what to write instead, and one for the person who asked, which says
+# what to ask instead - the person cannot act on "use a PARENT join" and the model cannot act on
+# "try asking for the list".
+_REMEDIES: list[tuple[str, str, str]] = [
+    ("OP-60008",
+     "ANCESTOR() needs a scoping filter on the ancestor type in the WHERE clause, and then the "
+     "SELECT may name no other field of that type - so it cannot group every record by its "
+     "ancestor. Rewrite it as a direct PARENT join when the child hangs straight off the parent "
+     "(FROM [Parent] JOIN [Child] ON PARENT([Parent])). If it is deeper than one level, drop the "
+     "join entirely and select [Child].[Location], which is the entity path every object carries.",
+     "OpenPages can only look inside one named record at a time, so it can't group everything by "
+     "what it sits under. Ask for the records directly below one thing, or for a list showing "
+     "each record's location."),
+    ("OP-60009",
+     "That field cannot be sorted. Remove the ORDER BY on it, or order by COUNT instead.",
+     "OpenPages won't sort by that field. Ask for it ordered by the count instead."),
+    ("OP-60005",
+     "That field does not exist on that object type here. Use only the field names listed for the "
+     "type above, exactly as written, or a system field such as [Name] or [Resource ID].",
+     "That field isn't on that object type in this OpenPages installation. Field names differ "
+     "between installations, so try naming it exactly as OpenPages shows it."),
+    ("OP-60004",
+     "That field group does not exist on that object type here. Field-group prefixes differ "
+     "between installations, so copy the field names from the list above exactly rather than "
+     "guessing a prefix such as [OPSS-Rsk:...].",
+     "That field isn't on that object type in this OpenPages installation. Field names differ "
+     "between installations, so try naming it exactly as OpenPages shows it."),
+    ("OP-60002",
+     "The Query Service could not turn that into SQL. It is almost always COUNT used together "
+     "with a JOIN, which is never allowed, or a function it does not have. Either count on one "
+     "object type with no JOIN at all, or keep the JOIN and select plain columns with no COUNT.",
+     "OpenPages can't count records across a join, so \"how many X for each Y\" can't be asked of "
+     "it directly. Ask for the list of X with its Y, or count X by one of its own fields."),
+    ("may only have one JOIN",
+     "Use exactly one JOIN. Reach what you need from a single hierarchy step, or read one object "
+     "type on its own and use its [Location] field for where it sits.",
+     "OpenPages allows one join per query. Ask for one step of the hierarchy at a time."),
+]
+
+
+def remedy(error: str) -> str:
+    """What to write instead, for an error the Query Service just sent back.
+
+    The Query Service's own messages say what is wrong but not what would work, and a model given
+    only "the query failed to be transformed into SQL" tends to send the same shape back with the
+    brackets moved. Returns "" for anything not recognised, which is left to speak for itself."""
+    return next((fix for marker, fix, _ in _REMEDIES if marker in (error or "")), "")
+
+
+def advice(error: str) -> str:
+    """What to ask instead, in words for the person who asked the question.
+
+    A dead end is worth more with a way out of it: these are the limits of the Query Service
+    rather than anything wrong with the question, and the person has no way of knowing that from
+    "OP-60002: The query failed to be transformed into SQL"."""
+    return next((said for marker, _, said in _REMEDIES if marker in (error or "")), "")
 
 
 class OpenPagesError(Exception):
