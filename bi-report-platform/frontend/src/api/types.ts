@@ -559,6 +559,17 @@ export interface Widget {
   rollup?: { column: string; to: "month" | "quarter" | "year"; format?: string; order?: "asc" | "desc" };
   /** Chart height in pixels (default 280). Tables scroll inside it. */
   height?: number;
+  /**
+   * The page of the report this tile is on, when the report has more than one (see lib/pages).
+   * Missing, or naming a page that has been deleted, puts it on the first page.
+   */
+  page?: string;
+}
+
+/** One page of a report, shown as a tab. A report with fewer than two has no tab bar. */
+export interface DashboardPage {
+  id: string;
+  name: string;
 }
 
 export type WidgetSize = "auto" | "quarter" | "third" | "half" | "twothird" | "full";
@@ -586,6 +597,8 @@ export interface WidgetStyle {
   legend?: boolean;
   /** Tables: the width in pixels of each named column, for the ones that have been set. */
   columnWidths?: Record<string, number>;
+  /** Tables: false takes the row numbers off. Missing means they are shown. */
+  rowNumbers?: boolean;
   /** Tables: columns taken off this table. The query still returns them, so they can come back. */
   hiddenColumns?: string[];
   /** A ring: slices listed down the side with their figure and share, and the total in the hole. */
@@ -618,6 +631,48 @@ export interface DashboardParameters {
   filters: string;
   /** Chart shapes the person asked for. Empty means the model picks whatever fits. */
   charts?: PlannedChart[];
+  /** The look asked for before the build, from the clarification questions. */
+  style?: DashboardStyle;
+}
+
+/**
+ * How the built charts should look, decided before the build rather than after it.
+ *
+ * The planner only knows the six original shapes, so a donut arrives as a flag and is applied to
+ * the pies it produced. The rest are flags the renderer already reads.
+ */
+export interface DashboardStyle {
+  donut?: boolean;
+  horizontal?: boolean;
+  ringLegend?: boolean;
+  showValues?: boolean;
+}
+
+/** One way of answering a clarification question, and what choosing it does. */
+export interface ClarifyOption {
+  id: string;
+  label: string;
+  hint: string;
+  /** The words this answer adds to the request. Shown before anything is built. */
+  adds: string;
+  /** Chart shapes this answer holds the model to. */
+  charts: PlannedChart[];
+  style: DashboardStyle;
+}
+
+export interface ClarifyQuestion {
+  id: string;
+  question: string;
+  hint: string;
+  options: ClarifyOption[];
+}
+
+/** What a request still leaves open. No AI model is used to work this out. */
+export interface ClarifyResult {
+  /** The table and column the request is about, with the values that column can take. */
+  subject: { table: string; column: string; label: string; values: string[] } | null;
+  /** Empty means the request says enough: build it as written. */
+  questions: ClarifyQuestion[];
 }
 
 /** The chart shapes an AI-planned dashboard can use. */
@@ -638,6 +693,11 @@ export interface DashboardConfig {
   theme?: string;
   model?: string;
   filters?: DashboardFilter[];
+  /**
+   * The report's pages, in tab order. Missing or shorter than two means one page holding every
+   * widget, which is how every report behaved before pages existed.
+   */
+  pages?: DashboardPage[];
 }
 
 /** A dashboard-wide filter. The AI model picks each chart's column once, when the filter is added. */

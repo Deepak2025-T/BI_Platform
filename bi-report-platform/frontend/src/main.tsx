@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./auth/AuthContext";
 import { ToastProvider } from "./components/Toast";
+import { BuildJobProvider } from "./lib/buildJob";
 import "./styles/app.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -11,7 +12,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-          <App />
+          {/* A build outlives the page that started it, so the job sits above the routes. */}
+          <BuildJobProvider>
+            <App />
+          </BuildJobProvider>
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>

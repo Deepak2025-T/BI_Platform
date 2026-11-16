@@ -64,9 +64,6 @@ p { margin: 0; max-width: 80ch; }
 .main { flex: 999 1 560px; min-width: 0; }
 @media (min-width: 900px) { .sidebar { flex: 0 0 232px; position: sticky; top: 0; height: 100vh; } }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 6px 16px; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,.08); }
-.brand-mark { width: 34px; height: 34px; border-radius: 9px; background: var(--teal); display: flex; align-items: flex-end; justify-content: center; gap: 3px; padding-bottom: 8px; }
-.brand-mark span { width: 4px; background: var(--sidebar); border-radius: 1px; }
-.brand-mark span:nth-child(1) { height: 8px; } .brand-mark span:nth-child(2) { height: 14px; } .brand-mark span:nth-child(3) { height: 11px; }
 .brand-name { font-weight: 700; color: #FFFFFF; }
 .brand-sub { font-size: 11px; color: #8FA3B8; }
 .nav-btn { display: flex; align-items: center; gap: 10px; width: 100%; height: 42px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #C9D6E3; text-decoration: none; font-size: 13.5px; cursor: pointer; }
@@ -1051,3 +1048,168 @@ a.media-body:hover .media-img, a.media-body:hover .media-icon { opacity: .85; }
   font-size: 12px; line-height: 1.5; padding: 8px 10px;
 }
 .share-copy .btn { flex: none; }
+
+/* ---------------------------------------------------------------------------
+   OptimusBI: the brand mark, the build-progress ring and pill, the folded-away
+   build options, and the template hierarchy (domain tiles and module folders).
+   --------------------------------------------------------------------------- */
+
+/* The mark is drawn as an SVG now, so it keeps its own rounding and gradient. */
+.brand-mark-svg { flex: none; display: block; border-radius: 9px; }
+
+/* ---- Build progress ---- */
+.ring { flex: none; }
+.ring-track { stroke: var(--border-strong); }
+.ring-fill { stroke: var(--accent); transition: stroke-dashoffset .4s ease; }
+.ring-text { fill: var(--fg); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.build-card { padding: 20px; }
+.build-head { display: flex; align-items: center; gap: 18px; margin-bottom: 14px; }
+.build-head .h2 { margin: 0 0 2px; }
+
+/* The build that is still running, in the corner of whatever page the reader is on. */
+.build-pill {
+  position: fixed; right: 20px; bottom: 20px; z-index: 40;
+  display: flex; align-items: center; gap: 12px; width: min(380px, calc(100vw - 40px));
+  padding: 12px 14px; text-align: left;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(13, 27, 42, .16);
+}
+.build-pill-live { cursor: pointer; font: inherit; color: inherit; }
+.build-pill-live:hover { border-color: var(--accent); }
+.build-pill-bad { border-color: var(--warn-border); }
+.build-pill-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.build-pill-text > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media print { .build-pill { display: none; } }
+
+/* ---- The ask box, with its less-used settings folded away ---- */
+.more-btn { gap: 6px; }
+.more-btn.on { background: var(--accent-soft); color: var(--navy); }
+.ask-more {
+  display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end;
+  margin: 10px 0 0; padding: 14px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--row);
+}
+.suggest-row { margin-top: 10px; }
+
+/* An alert that leads with an icon keeps the icon on the first line of the text. */
+.alert-icon { display: flex; align-items: flex-start; gap: 10px; }
+.alert-icon > svg { flex: none; margin-top: 2px; }
+
+/* ---- Template hierarchy ---- */
+.domain-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.domain-tile {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  padding: 18px; text-align: left; text-decoration: none; color: inherit; font: inherit;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.domain-tile:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 6px 18px rgba(13, 27, 42, .08); }
+.domain-icon {
+  display: flex; align-items: center; justify-content: center; width: 38px; height: 38px;
+  border-radius: 10px; background: var(--accent-soft); color: var(--navy); margin-bottom: 2px;
+}
+.domain-count { margin-top: auto; padding-top: 8px; font-size: 12px; font-weight: 600; color: var(--accent); }
+.domain-new { border-style: dashed; }
+
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* One module folder: a row that opens to its cards. */
+.folder {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 10px 14px; text-align: left; font: inherit; color: inherit;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
+}
+.folder:hover { border-color: var(--accent); }
+.folder.open { background: var(--row); }
+.folder-count {
+  flex: none; min-width: 28px; padding: 2px 8px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--navy); font-size: 12px; font-weight: 700; text-align: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .domain-tile:hover { transform: none; }
+  .ring-fill { transition: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   Reports in pages (lib/pages), the row numbers down a table, and how both of
+   those behave when the report goes on paper.
+   --------------------------------------------------------------------------- */
+
+.page-tabs {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  border-bottom: 1px solid var(--border); padding-bottom: 0; margin-bottom: 2px;
+}
+.page-tab { display: flex; align-items: center; position: relative; bottom: -1px; }
+.page-tab > button:first-child {
+  display: flex; align-items: center; gap: 7px;
+  padding: 9px 14px; font: inherit; font-weight: 600; color: var(--fg2); cursor: pointer;
+  background: transparent; border: 1px solid transparent; border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0;
+}
+.page-tab > button:first-child:hover { color: var(--fg); background: var(--row); }
+.page-tab.on > button:first-child { color: var(--navy); border-bottom-color: var(--accent); background: var(--surface); }
+.page-tab-count {
+  min-width: 20px; padding: 1px 6px; border-radius: 999px; text-align: center;
+  background: var(--row); color: var(--fg2); font-size: 11px; font-weight: 700;
+}
+.page-tab.on .page-tab-count { background: var(--accent-soft); color: var(--navy); }
+.page-tab-x {
+  display: flex; align-items: center; padding: 4px; margin-left: -6px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--fg2); cursor: pointer; opacity: 0;
+}
+.page-tab:hover .page-tab-x, .page-tab-x:focus-visible { opacity: 1; }
+.page-tab-x:hover { color: var(--bad); background: var(--bad-bg); }
+.page-tab-input {
+  width: 150px; padding: 7px 10px; font: inherit; font-weight: 600;
+  border: 1px solid var(--accent); border-radius: 8px 8px 0 0;
+}
+.page-tab-add {
+  display: flex; align-items: center; gap: 5px; padding: 8px 12px; margin-left: 4px;
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--fg2); cursor: pointer;
+  background: transparent; border: 1px dashed var(--border-strong); border-radius: 8px;
+}
+.page-tab-add:hover { color: var(--navy); border-color: var(--accent); background: var(--accent-soft); }
+
+/* Printing lays every page out one after another, each under its own name. */
+.page-print-head {
+  grid-column: 1 / -1; display: none;
+  margin: 18px 0 2px; font-size: 19px; font-weight: 700; color: var(--navy);
+  border-bottom: 1px solid var(--border); padding-bottom: 6px;
+}
+body.printing .page-print-head { display: block; break-before: page; }
+body.printing .page-print-head:first-child { break-before: auto; }
+
+/* Row numbers down the left of a table. Narrow, quiet, and never in the way of the data. */
+.result-table .th-index, .result-table .td-index { width: 46px; color: var(--fg2); }
+.result-table .td-index { font-variant-numeric: tabular-nums; font-size: 12px; }
+.result-table .th-index { padding-right: 22px; }
+
+/* ---------------------------------------------------------------------------
+   The questions a request leaves open, asked before the build (ClarifyDialog).
+   Each answer is a tile rather than a radio, because the hint under the label is
+   what makes the choice, and a radio leaves nowhere to put it.
+   --------------------------------------------------------------------------- */
+
+.clarify-q { border: 0; padding: 0; margin: 0; }
+.clarify-q > legend { padding: 0; font-weight: 600; font-size: 15px; color: var(--fg); }
+.clarify-hint { margin: 2px 0 8px; }
+
+.clarify-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.clarify-opt {
+  display: flex; flex-direction: column; gap: 3px; min-height: 58px;
+  padding: 10px 12px; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px;
+  transition: border-color .15s ease, background .15s ease;
+}
+.clarify-opt:hover { border-color: var(--accent); }
+.clarify-opt.on { border-color: var(--accent); background: var(--accent-soft); }
+.clarify-opt.on .muted { color: var(--navy); }
+.clarify-opt-label { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 14px; }
+/* The tick keeps its space whether or not it is showing, so choosing never shifts the label. */
+.clarify-tick { display: flex; align-items: center; width: 13px; color: var(--accent); }
+
+.clarify-preview {
+  padding: 10px 12px; border: 1px dashed var(--border-strong); border-radius: 10px;
+  background: var(--row); font-size: 14px; line-height: 1.5;
+}

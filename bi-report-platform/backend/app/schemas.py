@@ -472,18 +472,40 @@ class WidgetIn(BaseModel):
     data_model: str | None = Field(default=None, max_length=120)
 
 
+class DashboardStyle(BaseModel):
+    """The look asked for before the build, from the clarification questions.
+
+    The planner only knows the six original chart shapes, so a donut arrives here as a flag and is
+    applied to the pies it produced. Everything else is a flag the renderer already reads.
+    """
+    donut: bool = False
+    horizontal: bool = False
+    ringLegend: bool = False
+    showValues: bool = False
+
+
 class DashboardParams(BaseModel):
     date_from: date | None = None
     date_to: date | None = None
     filters: str = Field(default="", max_length=300)
     # Chart shapes to use, when the person asked for particular ones. Empty means any.
     charts: list[Literal["kpi", "bar", "line", "area", "pie", "table"]] = Field(default_factory=list, max_length=6)
+    style: DashboardStyle = DashboardStyle()
 
 
 class DashboardIn(BaseModel):
     source_id: int | None = None
     model_id: int
     prompt: str = Field(min_length=3, max_length=2000)
+    parameters: DashboardParams = DashboardParams()
+    data_model: str | None = Field(default=None, max_length=120)
+
+
+class ClarifyIn(BaseModel):
+    """What is about to be built, so the open questions can be worked out. No AI model is used,
+    so none is asked for."""
+    source_id: int | None = None
+    prompt: str = Field(min_length=1, max_length=2000)
     parameters: DashboardParams = DashboardParams()
     data_model: str | None = Field(default=None, max_length=120)
 

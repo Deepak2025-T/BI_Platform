@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { errorMessage } from "../api/client";
 import { templatesApi } from "../api/endpoints";
 import type { ReportTemplate, TemplateCategory, TemplateInput } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import BuildFromTemplate from "../components/BuildFromTemplate";
+import DomainTiles from "../components/DomainTiles";
 import Icon from "../components/Icon";
 import TemplateCard from "../components/TemplateCard";
 import TemplateForm from "../components/TemplateForm";
@@ -14,40 +15,59 @@ import { CATEGORY_BLURBS, MODULE_LABELS, moduleGroups, TEMPLATE_CATEGORIES } fro
 type Filter = "all" | "mine" | "shared" | "builtin";
 const FILTERS: [Filter, string][] = [["all", "All"], ["mine", "Mine"], ["shared", "Shared"], ["builtin", "Built-in"]];
 
-/** "all", or one domain. Templates are grouped by domain either way. */
-type Domain = TemplateCategory | "all";
-
 type FormState = { template?: ReportTemplate; initial?: Partial<TemplateInput> } | null;
+
+/**
+ * A domain with more templates than this opens with its folders shut.
+ *
+ * Under it, every card fits on a screen or two and opening them all is the friendlier default.
+ * Over it - GRC, with more than a hundred - the folders are the point, and a page that expands
+ * them all is the wall the hierarchy exists to avoid.
+ */
+const COLLAPSE_OVER = 24;
 
 export default function Templates() {
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  // The domain lives in the address, so the Home page can link straight into one and the back
+  // button steps out of it the way people expect.
+  const [params, setParams] = useSearchParams();
+  const domain = (TEMPLATE_CATEGORIES as string[]).includes(params.get("domain") ?? "")
+    ? (params.get("domain") as TemplateCategory) : null;
   const [templates, setTemplates] = useState<ReportTemplate[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
-  const [domain, setDomain] = useState<Domain>("all");
   const [search, setSearch] = useState("");
   const [form, setForm] = useState<FormState>(null);
   const [building, setBuilding] = useState<ReportTemplate | null>(null);
+  // Folders the reader has opened or shut by hand, which beats whatever the default would be.
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
 
   useEffect(() => { templatesApi.list().then(setTemplates).catch((e) => { toast(errorMessage(e)); setTemplates([]); }); }, [toast]);
 
-  const shown = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return (templates ?? []).filter((t) => {
-      if (filter === "mine" && (t.owner_id !== user?.id || t.is_builtin)) return false;
-      if (filter === "shared" && (t.visibility !== "shared" || t.is_builtin)) return false;
-      if (filter === "builtin" && !t.is_builtin) return false;
-      if (domain !== "all" && t.category !== domain) return false;
-      return !q || [t.name, t.description, t.prompt].some((s) => s.toLowerCase().includes(q));
-    });
-  }, [templates, filter, domain, search, user]);
+  const setDomain = (next: TemplateCategory | null) => {
+    setOpened({});
+    setParams(next ? { domain: next } : {}, { replace: false });
+  };
 
-  // One section per domain, in a fixed order, and only for the domains that have something in them.
-  const groups = useMemo(
-    () => TEMPLATE_CATEGORIES.map((c) => [c, shown.filter((t) => t.category === c)] as const)
-      .filter(([, list]) => list.length > 0),
-    [shown]);
+  const q = search.trim().toLowerCase();
+  // Searching looks everywhere at once: someone who types "vendor" wants the template, not a
+  // lecture about which folder it lives in.
+  const searching = q.length > 0;
+
+  const matching = useMemo(() => (templates ?? []).filter((t) => {
+    if (filter === "mine" && (t.owner_id !== user?.id || t.is_builtin)) return false;
+    if (filter === "shared" && (t.visibility !== "shared" || t.is_builtin)) return false;
+    if (filter === "builtin" && !t.is_builtin) return false;
+    return !q || [t.name, t.description, t.prompt].some((str) => str.toLowerCase().includes(q));
+  }), [templates, filter, q, user]);
+
+  const inDomain = useMemo(() => (domain ? matching.filter((t) => t.category === domain) : matching),
+                           [matching, domain]);
+  const groups = useMemo(() => moduleGroups(inDomain), [inDomain]);
+  const openByDefault = inDomain.length <= COLLAPSE_OVER;
+  const isOpen = (module: string) => opened[module] ?? openByDefault;
+  const toggle = (module: string) => setOpened((o) => ({ ...o, [module]: !isOpen(module) }));
 
   function saved(t: ReportTemplate) {
     setTemplates((list) => form?.template ? (list ?? []).map((x) => (x.id === t.id ? t : x)) : [t, ...(list ?? [])]);
@@ -71,6 +91,28 @@ export default function Templates() {
   // Dashboard templates build on a connection; the others start a question on the Ask page.
   const use = (t: ReportTemplate) => (t.layout.kind === "dashboard" ? setBuilding(t) : navigate("/", { state: { template: t } }));
 
+  const cardActions = (t: ReportTemplate) => (
+    <>
+      <button className="btn btn-primary btn-sm" onClick={() => use(t)}>Use</button>
+      {t.can_edit && <button className="btn btn-ghost btn-sm" onClick={() => setForm({ template: t })}>Edit</button>}
+      <span className="grow" />
+      <button className="icon-btn" aria-label={`Duplicate ${t.name}`} title="Duplicate" onClick={() => duplicate(t)}>
+        <Icon name="copy" size={16} />
+      </button>
+      {t.can_edit && (
+        <button className="icon-btn danger" aria-label={`Delete ${t.name}`} title="Delete" onClick={() => remove(t)}>
+          <Icon name="trash" size={16} />
+        </button>
+      )}
+    </>
+  );
+
+  const grid = (list: ReportTemplate[]) => (
+    <div className="tpl-grid">
+      {list.map((t) => <TemplateCard key={t.id} template={t} onUse={() => use(t)} actions={cardActions(t)} />)}
+    </div>
+  );
+
   return (
     <div className="page">
       <div className="stack" style={{ maxWidth: 1100 }}>
@@ -91,72 +133,60 @@ export default function Templates() {
           <label className="search">
             <Icon name="search" size={16} />
             <span className="sr-only">Search templates</span>
-            <input type="search" placeholder="Search templates" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input type="search" placeholder="Search every template" value={search} onChange={(e) => setSearch(e.target.value)} />
           </label>
         </div>
 
-        <div className="pills" role="group" aria-label="Filter by domain">
-          <button className={"pill" + (domain === "all" ? " on" : "")} aria-pressed={domain === "all"}
-            onClick={() => setDomain("all")}>All domains</button>
-          {TEMPLATE_CATEGORIES.map((c) => (
-            <button key={c} className={"pill" + (domain === c ? " on" : "")} aria-pressed={domain === c}
-              onClick={() => setDomain(c)}>{c}</button>
-          ))}
-        </div>
-
-        {templates === null ? <div className="card">Loading…</div> : (
-          <>
-            {groups.map(([category, list]) => (
-              <section key={category} className="stack tpl-domain">
-                <div className="row-between">
-                  <h2 className="h2">{category} <span className="muted small">({list.length})</span></h2>
-                  <span className="muted small">{CATEGORY_BLURBS[category]}</span>
-                </div>
-                {moduleGroups(list).map(([module, inModule]) => (
-                  <section key={module || "_"} className="stack tpl-module">
-                    {module && (
-                      <div className="row-between">
-                        <h3 className="h3">{module} <span className="muted small">({inModule.length})</span></h3>
-                        <span className="muted small">{MODULE_LABELS[module] ?? ""}</span>
-                      </div>
-                    )}
-                <div className="tpl-grid">
-                  {inModule.map((t) => (
-                    <TemplateCard key={t.id} template={t} onUse={() => use(t)} actions={
-                      <>
-                        <button className="btn btn-primary btn-sm" onClick={() => use(t)}>Use</button>
-                        {t.can_edit && <button className="btn btn-ghost btn-sm" onClick={() => setForm({ template: t })}>Edit</button>}
-                        <span className="grow" />
-                        <button className="icon-btn" aria-label={`Duplicate ${t.name}`} title="Duplicate" onClick={() => duplicate(t)}>
-                          <Icon name="copy" size={16} />
-                        </button>
-                        {t.can_edit && (
-                          <button className="icon-btn danger" aria-label={`Delete ${t.name}`} title="Delete" onClick={() => remove(t)}>
-                            <Icon name="trash" size={16} />
-                          </button>
-                        )}
-                      </>
-                    } />
-                  ))}
-                </div>
-                  </section>
-                ))}
-              </section>
-            ))}
-            {filter !== "builtin" && !search && (
-              <div className="tpl-grid">
-                <button className="tpl tpl-new" onClick={() => setForm({})}>
-                  <Icon name="plus" size={22} />
-                  <span className="strong">New template</span>
-                  <span className="muted small">Your own question and layout</span>
-                </button>
-              </div>
+        {/* Where you are, and the way back up. */}
+        {(domain || searching) && (
+          <nav className="crumbs" aria-label="Breadcrumb">
+            <button className="link-btn" onClick={() => { setDomain(null); setSearch(""); }}>All templates</button>
+            {domain && !searching && (
+              <>
+                <Icon name="arrow" size={13} className="faint" />
+                <span className="strong">{domain}</span>
+                <span className="muted small">{CATEGORY_BLURBS[domain]}</span>
+              </>
             )}
-            {groups.length === 0 && (search || filter === "builtin" || domain !== "all") && (
-              <p className="muted">No templates match. Try another search, filter or domain.</p>
+            {searching && (
+              <>
+                <Icon name="arrow" size={13} className="faint" />
+                <span className="strong">{matching.length} match{matching.length === 1 ? "" : "es"} for &ldquo;{search.trim()}&rdquo;</span>
+              </>
             )}
-          </>
+          </nav>
         )}
+
+        {templates === null ? <div className="card">Loading…</div>
+          : searching ? (
+            matching.length ? grid(matching)
+              : <p className="muted">Nothing matches &ldquo;{search.trim()}&rdquo;. Try fewer words.</p>
+          )
+          : !domain ? (
+            // Level one: the domains, and how much is in each.
+            <DomainTiles templates={matching} onPick={setDomain} onNew={() => setForm({})} />
+          )
+          : groups.length === 0 ? (
+            <p className="muted">No templates here match that filter. <button className="link-btn" onClick={() => setFilter("all")}>Show all</button></p>
+          ) : (
+            // Level two: the modules inside one domain, each opening to its cards.
+            groups.map(([module, list]) => {
+              const open = isOpen(module);
+              const name = module || "Not in a module";
+              return (
+                <section key={module || "_"} className="stack tpl-module">
+                  <button className={"folder" + (open ? " open" : "")} aria-expanded={open} onClick={() => toggle(module)}>
+                    <Icon name={open ? "down" : "arrow"} size={16} className="faint" />
+                    <span className="strong">{name}</span>
+                    <span className="muted small">{MODULE_LABELS[module] ?? ""}</span>
+                    <span className="grow" />
+                    <span className="folder-count">{list.length}</span>
+                  </button>
+                  {open && grid(list)}
+                </section>
+              );
+            })
+          )}
       </div>
 
       {building && <BuildFromTemplate template={building} onClose={() => setBuilding(null)} />}

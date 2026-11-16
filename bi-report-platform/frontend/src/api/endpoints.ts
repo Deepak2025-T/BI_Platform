@@ -1,6 +1,6 @@
 import { AI_WAIT, api } from "./client";
 import type {
-  ChatResult, DashboardConfig, DashboardDataRequest, DashboardFilter, DrillResult, DashboardParameters, DataModelDetail, DataModelSummary, DataSourceInfo, QueryData, Widget, WidgetData,
+  ChatResult, ClarifyResult, DashboardConfig, DashboardDataRequest, DashboardFilter, DrillResult, DashboardParameters, DataModelDetail, DataModelSummary, DataSourceInfo, QueryData, Widget, WidgetData,
   AIModel, AIModelInput, ColorPalette, PaletteInput, AIModelPublic, AIModelTestResult, AIProvider, AIProviderInfo, Category, CategoryInput, ConnectionInput, ConnectionTestResult, DataConnection, QueryParams, QueryResult, Report,
   ReportConfig, ReportShare, ReportTemplate, PublicReport, Role, SchemaTables, TemplateInput, User,
 } from "./types";
@@ -130,6 +130,13 @@ export const assistantApi = {
   promptIdeas: (sourceId: number | null) =>
     api.get<{ ideas: string[] }>("/api/assistant/prompt-ideas", { params: { source_id: sourceId } })
       .then((r) => r.data.ideas),
+  /**
+   * The questions a request leaves open, before anything is built from it. No AI model is used,
+   * so this comes back at once and costs nothing; an empty list means build it as written.
+   */
+  clarify: (body: { source_id: number | null; prompt: string; parameters: DashboardParameters;
+                    data_model?: string | null }) =>
+    api.post<ClarifyResult>("/api/assistant/clarify", body, { timeout: 20000 }).then((r) => r.data),
   chat: (body: { source_id: number | null; model_id: number; question: string; data_model?: string | null;
                  history: { question: string; reply: string; sql: string }[] }) =>
     api.post<ChatResult>("/api/assistant/chat", body, { timeout: AI_WAIT }).then((r) => r.data),

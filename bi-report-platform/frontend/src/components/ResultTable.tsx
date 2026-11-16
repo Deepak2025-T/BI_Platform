@@ -13,15 +13,24 @@ interface Props {
   widths?: Record<string, number>;
   /** Columns the person has taken off this table. The query still returns them. */
   hiddenColumns?: string[];
+  /**
+   * Whether to number the rows down the left. On unless it has been turned off, because a table
+   * people read a row out of ("the third one down") is easier to talk about numbered than not.
+   */
+  rowNumbers?: boolean;
   /** Given when the person may change the table: drag a column edge, or take a column off. */
-  onColumns?: (patch: { widths?: Record<string, number>; hiddenColumns?: string[] }) => void;
+  onColumns?: (patch: { widths?: Record<string, number>; hiddenColumns?: string[]; rowNumbers?: boolean }) => void;
 }
+
+/** The width of the row-number column, which never needs dragging. */
+const INDEX_WIDTH = 46;
 
 /** Narrower than this and a column is a sliver with nothing readable in it. */
 const MIN_WIDTH = 60;
 
 /** Any query result as a table. Numbers are right-aligned. */
-export default function ResultTable({ columns, rows, limit = 100, truncated, widths = {}, hiddenColumns = [], onColumns }: Props) {
+export default function ResultTable({ columns, rows, limit = 100, truncated, widths = {}, hiddenColumns = [],
+                                     rowNumbers = true, onColumns }: Props) {
   const hidden = new Set(hiddenColumns);
   const shown = columns.map((c, i) => ({ name: c, i })).filter((c) => !hidden.has(c.name));
   const numeric = columns.map((_, i) => rows.some((r) => typeof r[i] === "number")
@@ -73,11 +82,23 @@ export default function ResultTable({ columns, rows, limit = 100, truncated, wid
       <table className={"table num result-table" + (sized ? " sized" : "") + (onColumns ? " adjustable" : "")}>
         {sized && (
           <colgroup>
+            {rowNumbers && <col style={{ width: INDEX_WIDTH }} />}
             {shown.map((c) => <col key={c.name} style={widthOf(c.name) ? { width: widthOf(c.name) } : undefined} />)}
           </colgroup>
         )}
         <thead ref={head}>
           <tr>
+            {rowNumbers && (
+              <th scope="col" className="th-index r">
+                <span className="th-label" title="Row number">#</span>
+                {onColumns && (
+                  <button type="button" className="th-hide" title="Take the row numbers off this table"
+                    aria-label="Take the row numbers off this table" onClick={() => onColumns({ rowNumbers: false })}>
+                    <Icon name="x" size={12} />
+                  </button>
+                )}
+              </th>
+            )}
             {shown.map((c) => (
               <th key={c.name + c.i} scope="col" data-col={c.name} className={numeric[c.i] ? "r" : ""}>
                 <span className="th-label">{columnLabel(c.name)}</span>
@@ -99,9 +120,12 @@ export default function ResultTable({ columns, rows, limit = 100, truncated, wid
         </thead>
         <tbody>
           {body.map((row, ri) => (
-            <tr key={ri}>{shown.map((c) => <td key={c.i} className={numeric[c.i] ? "r" : ""} title={cellText(row[c.i])}>{cellText(row[c.i])}</td>)}</tr>
+            <tr key={ri}>
+              {rowNumbers && <td className="td-index r">{ri + 1}</td>}
+              {shown.map((c) => <td key={c.i} className={numeric[c.i] ? "r" : ""} title={cellText(row[c.i])}>{cellText(row[c.i])}</td>)}
+            </tr>
           ))}
-          {rows.length === 0 && <tr><td colSpan={shown.length || 1} className="muted">No rows</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={(shown.length || 1) + (rowNumbers ? 1 : 0)} className="muted">No rows</td></tr>}
         </tbody>
       </table>
       <div className="row-wrap table-foot">
@@ -113,6 +137,11 @@ export default function ResultTable({ columns, rows, limit = 100, truncated, wid
         {onColumns && hidden.size > 0 && (
           <button type="button" className="link-btn small no-print" onClick={() => onColumns({ hiddenColumns: [] })}>
             {hidden.size} column{hidden.size === 1 ? "" : "s"} taken off — put {hidden.size === 1 ? "it" : "them"} back
+          </button>
+        )}
+        {onColumns && !rowNumbers && (
+          <button type="button" className="link-btn small no-print" onClick={() => onColumns({ rowNumbers: true })}>
+            Number the rows
           </button>
         )}
         {onColumns && sized && (

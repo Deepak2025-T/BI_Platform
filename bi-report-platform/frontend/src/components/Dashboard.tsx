@@ -14,6 +14,7 @@ import { COMPARE_OPTIONS, type CompareWith, type HistoryPoint, compareAt, timeLa
 import { printReport } from "../lib/print";
 import { prefersReducedMotion } from "../lib/motion";
 import { type Focus, clickColumn, focusIndex, focusLabel, focusRows, showsRecords } from "../lib/focus";
+import { type Page, nextPage, pageOf, pagesOf, splitByHeadings } from "../lib/pages";
 import { useAutosave } from "../lib/useAutosave";
 import { HEIGHT, WIDTHS, hasHeight, sizeForCols, tileCols } from "../lib/tileSize";
 import { CHART_LABELS, cannotDraw, retype } from "../lib/sources";
@@ -90,6 +91,15 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
   // report's tables show just the records behind it (see lib/focus).
   const [focus, setFocus] = useState<Focus | null>(null);
   const [sharing, setSharing] = useState(false);
+  // The page being read. A report with one page has a tab bar only while it is being edited,
+  // where the point of it is to make a second one.
+  const pages = useMemo(() => pagesOf(config), [config]);
+  const [pageId, setPageId] = useState(() => pages[0].id);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  // Printing puts the whole report on the paper, pages and all: a PDF of one tab is not the
+  // report, and the person asking for a PDF is asking for the thing they would have had before
+  // it was split up.
+  const [printAll, setPrintAll] = useState(false);
 
   /** How many levels a chart can be clicked into, from the fields it was built with. */
   const levelsOf = (w: Widget) => w.visual?.drill?.length ?? 0;
@@ -168,6 +178,10 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
+    if (!pages.some((p) => p.id === pageId)) setPageId(pages[0].id);
+  }, [pages, pageId]);
+
+  useEffect(() => {
     // Both of these read the report's saved refreshes, which a share link has no claim on.
     if (shared || !autoOn || !snapshotAt) { setHistoryData({}); return; }
     scheduleApi.history(report.id).then((h) => setHistoryData(h.widgets)).catch(() => setHistoryData({}));
@@ -192,6 +206,18 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
     const v = values[f.id];
     return f.kind === "date" ? !!(v?.date_from || v?.date_to) : !!v?.values?.length;
   });
+
+  /** The whole report on paper, every page of it, then back to the tab that was open. */
+  async function downloadPdf() {
+    setPrintAll(true);
+    // One turn of the loop, so React has drawn the other pages before the print layout measures them.
+    await new Promise((done) => window.setTimeout(done, 0));
+    try {
+      await printReport();
+    } finally {
+      setPrintAll(false);
+    }
+  }
 
   /** Downloads the dashboard as a file, with whatever filters are set, the way the viewer shows it. */
   async function exportFile(kind: "xlsx" | "pptx") {
@@ -284,12 +310,19 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
     // the next reload.
     toast(`Removed "${w.title || "text"}".`, { label: "Undo", onClick: () => setWidgets(before, "Put back") });
   };
-  const menuItems = (w: Widget, i: number) => [
-    ...(w.kind === "text" ? [] : [{ label: "Duplicate", onClick: () => duplicateChart(w) }]),
-    { label: "Move earlier", onClick: () => move(i, -1), disabled: i === 0 },
-    { label: "Move later", onClick: () => move(i, 1), disabled: i === config.widgets.length - 1 },
-    { label: "Remove", onClick: () => remove(w), danger: true },
-  ];
+  const menuItems = (w: Widget, i: number) => {
+    const onSamePage = config.widgets.filter((x) => pageOf(pages, x) === pageOf(pages, w));
+    const place = onSamePage.indexOf(w);
+    return [
+      ...(w.kind === "text" ? [] : [{ label: "Duplicate", onClick: () => duplicateChart(w) }]),
+      { label: "Move earlier", onClick: () => move(i, -1), disabled: place <= 0 },
+      { label: "Move later", onClick: () => move(i, 1), disabled: place === onSamePage.length - 1 },
+      // Only worth offering once there is somewhere else to put it.
+      ...pages.filter((pg) => pg.id !== pageOf(pages, w))
+        .map((pg) => ({ label: `Move to ${pg.name}`, onClick: () => moveToPage(w, pg.id) })),
+      { label: "Remove", onClick: () => remove(w), danger: true },
+    ];
+  };
 
   // Header and card colours: on one tile, or the same on every tile.
   const setLook = (w: Widget, patch: Partial<NonNullable<Widget["style"]>>) =>
@@ -349,11 +382,62 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
 
   const setWidgets = (widgets: Widget[], saved = "Saved") => commit({ ...config, widgets }, saved);
   const change = (id: string, patch: Partial<Widget>) => setWidgets(config.widgets.map((w) => (w.id === id ? { ...w, ...patch } : w)));
+  /**
+   * Moves a tile one place earlier or later among the tiles on its own page.
+   *
+   * Swapping with whatever happens to sit next to it in the saved list would walk a tile onto
+   * another page, which is not what "move later" means to anyone looking at a tab.
+   */
   const move = (i: number, d: number) => {
     const list = [...config.widgets];
-    if (i + d < 0 || i + d >= list.length) return;
-    [list[i], list[i + d]] = [list[i + d], list[i]];
+    const page = pageOf(pages, list[i]);
+    const neighbours = list.map((w, at) => ({ w, at })).filter(({ w }) => pageOf(pages, w) === page);
+    const here = neighbours.findIndex(({ at }) => at === i);
+    const there = neighbours[here + d];
+    if (!there) return;
+    [list[i], list[there.at]] = [list[there.at], list[i]];
     setWidgets(list);
+  };
+
+  /** Writes a new set of pages and the widgets that go with them, in one saved change. */
+  const setPages = (nextPages: Page[], widgets = config.widgets, saved = "Saved") =>
+    commit({ ...config, pages: nextPages.length > 1 ? nextPages : undefined, widgets }, saved);
+
+  const addPage = () => {
+    const page = nextPage(pages);
+    // The first time a report gains a page, the one it already had needs a name to sit beside it.
+    const base = config.pages?.length ? pages : [{ id: pages[0].id, name: "Overview" }];
+    setPages([...base, page], config.widgets, "Page added");
+    setPageId(page.id);
+    setRenaming(page.id);
+  };
+
+  const renamePage = (id: string, name: string) =>
+    setPages(pages.map((p) => (p.id === id ? { ...p, name } : p)), config.widgets, "");
+
+  /** Takes a page away. Its tiles move to the first remaining page rather than going with it. */
+  const removePage = (id: string) => {
+    const left = pages.filter((p) => p.id !== id);
+    if (!left.length) return;
+    const widgets = config.widgets.map((w) => (pageOf(pages, w) === id ? { ...w, page: left[0].id } : w));
+    const moved = widgets.filter((w, at) => w !== config.widgets[at]).length;
+    setPages(left, widgets, moved ? `Page removed, ${moved} tile${moved === 1 ? "" : "s"} moved` : "Page removed");
+    setPageId(left[0].id);
+  };
+
+  const moveToPage = (w: Widget, id: string) => {
+    patchWidget(w.id, { page: id }, `Moved to ${pages.find((p) => p.id === id)?.name ?? "another page"}`);
+  };
+
+  /** Turns a long single-page report into one page per section heading. */
+  const splitIntoPages = () => {
+    const split = splitByHeadings(config.widgets);
+    if (!split) { toast("This report needs at least two section headings to split into tabs."); return; }
+    const before = config;
+    setPages(split.pages, split.widgets, "");
+    setPageId(split.pages[0].id);
+    toast(`Split into ${split.pages.length} tabs.`,
+          { label: "Undo", onClick: () => { commit(before, "Put back"); setPageId(pagesOf(before)[0].id); } });
   };
 
   async function publish(categoryId: number | null) {
@@ -362,6 +446,14 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
     toast(published.category ? `Published in ${published.category.name}.` : "Published. Everyone in your organisation can open it.");
     navigate(`/reports/${report.id}`);
   }
+
+  // What the grid draws: the open page, or every page one after another when printing.
+  type Tile = { heading: string } | { w: Widget; i: number };
+  const onPage = (pid: string): Tile[] =>
+    config.widgets.map((w, i) => ({ w, i })).filter(({ w }) => pageOf(pages, w) === pid);
+  const tiles: Tile[] = printAll && pages.length > 1
+    ? pages.flatMap((pg) => [{ heading: pg.name } as Tile, ...onPage(pg.id)])
+    : onPage(pageId);
 
   const params = config.parameters;
   const paramText = [
@@ -418,7 +510,7 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
               </div>
             </div>
             <div className="row-wrap no-print">
-              <button className="btn btn-ghost" onClick={printReport}>Download PDF</button>
+              <button className="btn btn-ghost" onClick={downloadPdf}>Download PDF</button>
               <button className="btn btn-ghost" onClick={() => exportFile("xlsx")} disabled={!!exporting || loading}>
                 {exporting === "xlsx" ? "Preparing Excel…" : "Download Excel"}
               </button>
@@ -502,6 +594,48 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
               title="Run every query again now and show the latest data">Refresh</button>
           )}
         </div>
+        {(pages.length > 1 || editable) && (
+          <div className="page-tabs no-print" role="tablist" aria-label="Report pages">
+            {pages.map((pg) => {
+              const on = pg.id === pageId;
+              const count = config.widgets.filter((w) => pageOf(pages, w) === pg.id).length;
+              return (
+                <div key={pg.id} className={"page-tab" + (on ? " on" : "")}>
+                  {editable && on && renaming === pg.id ? (
+                    <input className="page-tab-input" value={pg.name} aria-label="Page name" autoFocus
+                      onChange={(e) => renamePage(pg.id, e.target.value)}
+                      onBlur={() => setRenaming(null)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setRenaming(null); }} />
+                  ) : (
+                    <button role="tab" aria-selected={on} onClick={() => (on && editable ? setRenaming(pg.id) : setPageId(pg.id))}
+                      title={editable && on ? "Click again to rename this page" : `${count} tile${count === 1 ? "" : "s"}`}>
+                      {pg.name || "Untitled"}
+                      <span className="page-tab-count">{count}</span>
+                    </button>
+                  )}
+                  {editable && pages.length > 1 && (
+                    <button className="page-tab-x" aria-label={`Remove the page ${pg.name}`}
+                      title="Remove this page. Its tiles move to the first page."
+                      onClick={() => removePage(pg.id)}><Icon name="x" size={12} /></button>
+                  )}
+                </div>
+              );
+            })}
+            {editable && (
+              <>
+                <button className="page-tab-add" onClick={addPage} title="Add a page">
+                  <Icon name="plus" size={14} />Page
+                </button>
+                {pages.length === 1 && config.widgets.filter((w) => w.kind === "text" && w.title.trim()).length > 1 && (
+                  <button className="link-btn small" onClick={splitIntoPages}
+                    title="Give each section heading a page of its own">
+                    Split into tabs by section
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
         {focus && (
           <div className="drill-banner no-print" role="status">
             <span className="drill-banner-label">Drilled into</span>
@@ -519,7 +653,10 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
         {loadError && <div className="alert alert-error">{loadError}</div>}
 
         <div className="dash-grid" ref={gridRef}>
-          {config.widgets.map((w, i) => {
+          {tiles.map((t) => {
+            // Printing lays the pages out one after another, each under its own name.
+            if ("heading" in t) return <h2 key={`page-${t.heading}`} className="page-print-head">{t.heading}</h2>;
+            const { w, i } = t;
             if (w.kind === "media") {
               return (
                 <section key={w.id} className={`widget w-media size-${w.size ?? "third"}${editable || w.style?.cardBg ? " card" : ""}${editable ? " editing" : ""}${cardLook(w.style).className}${dragClass(w.id)}${resizeClass(w)}`}

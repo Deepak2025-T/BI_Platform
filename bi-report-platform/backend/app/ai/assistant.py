@@ -17,6 +17,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from ..config import settings
+from ..prompt_clarify import apply_style
 from ..datasources import DataSource, QueryFailed, describe, run_sql
 from ..sql_guard import UnsafeSQL
 from .colors import apply_color_rules, color_rules_from_prompt
@@ -352,6 +353,9 @@ and which chart shape fits. The queries are written separately.
     # Colours named in the request ("Major - Red") are read here rather than asked of the model,
     # so every model honours them and none of them has to copy a hex code correctly.
     apply_color_rules(widgets, color_rules_from_prompt(prompt))
+    # The look chosen before the build: a donut the planner could only express as a pie, bars on
+    # their side, figures on the chart. Each one is set only where it means something.
+    apply_style(widgets, parameters.get("style"))
     return {"title": str(outline.get("title", "")).strip() or prompt[:80], "widgets": widgets, "failed": failed}
 
 

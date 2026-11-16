@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
-from .. import dashboard_filters
+from .. import dashboard_filters, dashboard_pages
 from ..database import get_db
 from ..datasources import QueryFailed, SourceError, get_source, run_sql
 from ..erp_templates import template_rows as erp_template_rows
@@ -242,6 +242,11 @@ def build_dashboard(template_id: int, body: BuildIn, db: Session = Depends(get_d
     # A template may ask for a look as well as a set of charts: the report carries the theme so it
     # still reads as that design after it is saved, published and printed.
     extra = {"filters": filters, "template": t.name}
+    # A long report is split into one page per section, so it opens as tabs rather than a scroll.
+    # Short ones are left alone, and the pages can be renamed, merged or dropped in the editor.
+    pages, widgets = dashboard_pages.split_by_headings(widgets)
+    if pages:
+        extra["pages"] = pages
     if isinstance(layout.get("theme"), str) and layout["theme"]:
         extra["theme"] = layout["theme"][:40]
     report = _save(db, user, title=title, prompt=t.prompt, source=source, widgets=widgets, extra=extra)

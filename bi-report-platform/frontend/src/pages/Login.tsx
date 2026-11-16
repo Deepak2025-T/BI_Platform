@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import Brand from "../components/Brand";
 import { errorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 
@@ -34,10 +35,7 @@ export default function Login() {
   return (
     <div className="login">
       <aside className="login-side">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true"><span /><span /><span /></div>
-          <div className="brand-name">BI Reports</div>
-        </div>
+        <Brand sub={null} />
         <div>
           <h1 className="login-headline">Ask a question. Get a report you can trust.</h1>
           <p className="login-copy">Every number shows the query and table it came from.</p>

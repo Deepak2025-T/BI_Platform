@@ -35,8 +35,8 @@ interface Props {
   fitAxis?: boolean;
   /** Called with the category that was clicked, when the chart can be drilled into. */
   onPoint?: (name: string) => void;
-  /** Tables: given when the person may set column widths or take a column off. */
-  onColumns?: (patch: { widths?: Record<string, number>; hiddenColumns?: string[] }) => void;
+  /** Tables: given when the person may set column widths, take a column off, or number the rows. */
+  onColumns?: (patch: { widths?: Record<string, number>; hiddenColumns?: string[]; rowNumbers?: boolean }) => void;
 }
 
 /** A small line of a number tile's history. */
@@ -109,7 +109,8 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
       || (chart.type === "heatmap" && gridIndex < 0)) {
     const table = (
       <ResultTable columns={columns} rows={sorted} truncated={truncated} limit={50}
-        widths={style.columnWidths} hiddenColumns={style.hiddenColumns} onColumns={onColumns} />
+        widths={style.columnWidths} hiddenColumns={style.hiddenColumns}
+        rowNumbers={style.rowNumbers !== false} onColumns={onColumns} />
     );
     return tableHeight ? <div className="table-scroll" style={{ maxHeight: tableHeight }}>{table}</div> : table;
   }
@@ -154,11 +155,16 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     const down = [...new Set(labels)];
     const across = [...new Set(sorted.map((r) => String(r[gridIndex] ?? "")))];
     const vi = columns.indexOf(ys[0]);
-    const cells = sorted.map((r) => [
-      across.indexOf(String(r[gridIndex] ?? "")),
-      down.indexOf(String(r[xi] ?? "")),
-      typeof r[vi] === "number" ? r[vi] as number : Number(r[vi]),
-    ]).filter((c) => Number.isFinite(c[2] as number));
+    // The query only returns the pairs that have something in them, so a grid drawn straight from
+    // the rows has holes in it - and a hole reads as "no data here" when what it means is "none".
+    // Every pair is laid out, and one that never came back counts as zero.
+    const counted = new Map<string, number>();
+    for (const r of sorted) {
+      const value = typeof r[vi] === "number" ? r[vi] as number : Number(r[vi]);
+      if (Number.isFinite(value)) counted.set(`${String(r[gridIndex] ?? "")}\u0000${String(r[xi] ?? "")}`, value);
+    }
+    const cells = across.flatMap((col, ax) =>
+      down.map((row, dy) => [ax, dy, counted.get(`${col}\u0000${row}`) ?? 0]));
     const numbers = cells.map((c) => c[2] as number);
     const low = Math.min(0, ...numbers), high = Math.max(...numbers, 1);
     const main = colors[0];

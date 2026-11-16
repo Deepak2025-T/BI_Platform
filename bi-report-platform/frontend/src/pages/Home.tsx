@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { errorMessage } from "../api/client";
 import { aiModelsApi, assistantApi, dataModelsApi, reportsApi, templatesApi } from "../api/endpoints";
-import type { AIModelPublic, DataModelSummary, DataSourceInfo, PlannedChart, Report, ReportTemplate, TemplateCategory } from "../api/types";
+import type { AIModelPublic, ClarifyResult, DashboardParameters, DataModelSummary, DataSourceInfo, PlannedChart, Report, ReportTemplate, TemplateCategory } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import CategoryBadge from "../components/CategoryBadge";
+import ClarifyDialog from "../components/ClarifyDialog";
+import DomainTiles from "../components/DomainTiles";
 import FlowDiagram, { type FlowStep } from "../components/FlowDiagram";
 import Icon from "../components/Icon";
-import TemplateCard from "../components/TemplateCard";
 import TemplateForm from "../components/TemplateForm";
 import { useToast } from "../components/Toast";
 import { type AskModel, rememberModel, rememberedModel } from "../lib/aiModels";
@@ -16,21 +17,36 @@ import { shortDate } from "../lib/format";
 import { useCountUp, useReveal } from "../lib/motion";
 import { TEMPLATE_CATEGORIES } from "../lib/report";
 import { rememberSource, rememberedSource, sourceIdOf, sourceValue } from "../lib/sources";
-import type { BuildRequest } from "./BuildDashboard";
+import { type BuildRequest, useBuildJob } from "../lib/buildJob";
 
-/** Shown until the chosen database suggests its own, and if it has nothing to suggest. */
+/**
+ * Shown until the chosen database suggests its own, and if it has nothing to suggest.
+ *
+ * They are deliberately of different shapes - a trend, a ranking, a comparison, a share of a
+ * whole, a question about what is missing - because the first thing someone types tends to be a
+ * variation on whatever they were shown, and one shape of example teaches one shape of question.
+ */
 const SUGGESTIONS = [
   "Show monthly revenue by region for Q1 2024 and the top 5 products",
   "Gross revenue by region for Q4 2023",
   "Show customer churn by signup cohort",
+  "Which region grew fastest in the last six months",
+  "Top 10 customers by revenue, and what they bought",
+  "Revenue this year against last, by month",
+  "Which products have not sold at all this quarter",
+  "Average order value by channel",
+  "Orders by status, and how long each status takes",
+  "Where is revenue concentrated: share by customer",
 ];
+
+/** How many suggestions appear before the rest are folded behind "N more". */
+const IDEAS_SHOWN = 4;
 
 /** The chart shapes an AI-planned dashboard can be held to. */
 const CHARTS: [PlannedChart, string][] = [
   ["kpi", "Number"], ["bar", "Bars"], ["line", "Line"], ["area", "Area"], ["pie", "Pie"], ["table", "Table"],
 ];
 
-const HOME_TEMPLATES = 7; // plus the "New template" card
 const RECENT_SHOWN = 4;
 
 type Mode = "chat" | "build";
@@ -52,6 +68,7 @@ export default function Home() {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
+  const { job: buildJob, start: startBuild } = useBuildJob();
   const state = location.state as { prompt?: string; template?: ReportTemplate; model?: AskModel | null;
                                    mode?: Mode; dataModel?: string; source?: string } | null;
   const [prompt, setPrompt] = useState(state?.prompt ?? state?.template?.prompt ?? "");
@@ -75,8 +92,19 @@ export default function Home() {
   // Questions this database can answer, from its own columns.
   const [ideas, setIdeas] = useState<string[]>([]);
   const [building, setBuilding] = useState(false);
+  // Working out what the request leaves open, and the questions it left open. No AI model is used
+  // for either, so the wait is a round trip rather than a generation.
+  const [checking, setChecking] = useState(false);
+  const [clarifying, setClarifying] = useState<
+    { prompt: string; parameters: DashboardParameters; result: ClarifyResult } | null>(null);
   // Templates are chosen in two steps: the domain first, then the templates filed under it.
   const [domain, setDomain] = useState<TemplateCategory | "">("");
+  // The settings most questions never need. They are folded away so the box reads as a box to
+  // type in, and the button says how many are set, because a hidden setting that is doing
+  // something is worse than a visible one that isn't.
+  const [more, setMore] = useState(false);
+  // How many suggested questions are on screen; the rest are one click away.
+  const [shownIdeas, setShownIdeas] = useState(IDEAS_SHOWN);
   const [tplSection, tplShown] = useReveal<HTMLElement>();
   const [recentSection, recentShown] = useReveal<HTMLElement>();
 
@@ -112,12 +140,17 @@ export default function Home() {
   useEffect(() => {
     let current = true;
     assistantApi.promptIdeas(sourceIdOf(sourceChoice))
-      .then((list) => { if (current) setIdeas(list); })
+      .then((list) => { if (current) { setIdeas(list); setShownIdeas(IDEAS_SHOWN); } })
       .catch(() => { if (current) setIdeas([]); });
     return () => { current = false; };
   }, [sourceChoice]);
 
+  // A build already running. One AI model answers one of these at a time, so the box points at
+  // the one in flight rather than quietly replacing it.
+  const buildRunning = !!buildJob && !buildJob.result && !buildJob.error;
   const recent = reports.slice(0, RECENT_SHOWN);
+  // The database's own questions when it has any, the general ones when it hasn't.
+  const suggestions = ideas.length ? ideas : SUGGESTIONS;
   // The templates the Template picker offers: all of them, or one category's.
   const inDomain = domain ? templates.filter((t) => t.category === domain) : templates;
 
@@ -134,6 +167,10 @@ export default function Home() {
     setDataModel(rememberedDataModel(v));
   };
   const chooseDataModel = (v: string) => { setDataModel(v); rememberDataModel(sourceChoice, v); };
+  // What the folded-away settings are doing. The button says the count, because a setting that is
+  // quietly changing the result is worse out of sight than a setting that is merely in the way.
+  const extrasSet = [template, isOpenPages && dataModel, params.date_from, params.date_to,
+                     params.filters.trim(), charts.length].filter(Boolean).length;
   // A model only applies where there is one, so it is never sent for a plain SQL database.
   const dataModelSent = isOpenPages && dataModel ? dataModel : null;
 
@@ -169,7 +206,7 @@ export default function Home() {
     : classic ? "Builds the standard sales report from the sample data."
     : `${chosenModel?.name} plans a dashboard of 4 to 6 charts from ${chosenSource?.name ?? "the database"}.`;
 
-  const ready = (!!readyMade || prompt.trim().length >= 3) && !needsModel && !building;
+  const ready = (!!readyMade || prompt.trim().length >= 3) && !needsModel && !building && !checking && !buildRunning;
 
   // The diagram mirrors the choices above it, so the picture is never out of date.
   const words = prompt.trim() ? prompt.trim().split(/\s+/).length : 0;
@@ -209,7 +246,49 @@ export default function Home() {
     }
   }
 
+  /** Hands the request to the job above the routes, so walking away doesn't cancel it. */
+  function startReport(text: string, parameters: DashboardParameters) {
+    if (!chosenModel) return;
+    setClarifying(null);
+    const req: BuildRequest = {
+      source: { id: sourceIdOf(sourceChoice), name: chosenSource?.name ?? "" },
+      model: { id: chosenModel.id, name: chosenModel.name },
+      prompt: text,
+      parameters,
+      dataModel: dataModelSent,
+    };
+    startBuild(req);
+    navigate("/build");
+  }
+
+  /**
+   * Asks what the request leaves open before building it.
+   *
+   * A request that already says the shape, the measure and the colours gets no questions and goes
+   * straight to the build - which is the common case once someone has typed a few of these. The
+   * questions are a help and never a gate: if they can't be worked out, the report is built as
+   * written rather than held up.
+   */
+  async function askToClarify(text: string) {
+    const parameters: DashboardParameters = {
+      date_from: params.date_from || null, date_to: params.date_to || null,
+      filters: params.filters.trim(), charts,
+    };
+    setChecking(true);
+    try {
+      const result = await assistantApi.clarify({ source_id: sourceIdOf(sourceChoice), prompt: text,
+                                                  parameters, data_model: dataModelSent });
+      if (result.questions.length) { setClarifying({ prompt: text, parameters, result }); return; }
+    } catch {
+      // Nothing here is worth stopping a build for.
+    } finally {
+      setChecking(false);
+    }
+    startReport(text, parameters);
+  }
+
   function ask() {
+    if (buildRunning) { navigate("/build"); return; }
     if (readyMade) { buildTemplate(readyMade); return; }
     const text = prompt.trim();
     if (text.length < 3 || needsModel) return;
@@ -220,15 +299,7 @@ export default function Home() {
       navigate("/ask", { state: { prompt: text, template: template ?? undefined,
                                   model: chosenModel ? { id: chosenModel.id, name: chosenModel.name } : null } });
     } else {
-      const req: BuildRequest = {
-        source: { id: sourceIdOf(sourceChoice), name: chosenSource?.name ?? "" },
-        model: { id: chosenModel.id, name: chosenModel.name },
-        prompt: text,
-        parameters: { date_from: params.date_from || null, date_to: params.date_to || null,
-                      filters: params.filters.trim(), charts },
-        dataModel: dataModelSent,
-      };
-      navigate("/build", { state: req });
+      askToClarify(text);
     }
   }
 
@@ -277,58 +348,71 @@ export default function Home() {
               <textarea id="ask" rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)}
                 placeholder={mode === "chat" ? "e.g. Which region grew fastest last quarter?" : "e.g. Sales dashboard for Q1 2024 by region and product"}
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) ask(); }} />
-              {mode === "build" && !classic && !needsModel && (
-                <fieldset className="ask-params">
-                  <legend className="muted small">Parameters (optional)</legend>
-                  <label className="field">From
-                    <input type="date" value={params.date_from} onChange={(e) => setParams({ ...params, date_from: e.target.value })} />
-                  </label>
-                  <label className="field">To
-                    <input type="date" value={params.date_to} onChange={(e) => setParams({ ...params, date_to: e.target.value })} />
-                  </label>
-                  <label className="field grow">Filter
-                    <input value={params.filters} maxLength={300} placeholder="e.g. region = North, status = paid"
-                      onChange={(e) => setParams({ ...params, filters: e.target.value })} />
-                  </label>
-                  <div className="field grow">
-                    <span>Charts</span>
-                    <div className="chip-row tight" role="group" aria-label="Chart types to use">
-                      {CHARTS.map(([id, label]) => {
-                        const on = charts.includes(id);
-                        return (
-                          <button key={id} type="button" className={"chip-btn sm" + (on ? " on" : "")} aria-pressed={on}
-                            onClick={() => setCharts(on ? charts.filter((c) => c !== id) : [...charts, id])}>
-                            {label}
-                          </button>
-                        );
-                      })}
-                      {charts.length > 0 && (
-                        <button type="button" className="link-btn small" onClick={() => setCharts([])}>Any</button>
-                      )}
-                    </div>
-                    <span className="hint">{charts.length ? "Only these shapes are used." : "The model picks what fits."}</span>
-                  </div>
-                </fieldset>
-              )}
+              {/* Questions to try, against the box they fill: a blank box always has a way in. */}
+              <div className="chip-row suggest-row">
+                <span className="muted small">Try</span>
+                {suggestions.slice(0, shownIdeas).map((idea) => (
+                  <button key={idea} className="chip-btn" onClick={() => setPrompt(idea)}>{idea}</button>
+                ))}
+                {suggestions.length > shownIdeas && (
+                  <button className="link-btn small" onClick={() => setShownIdeas(suggestions.length)}>
+                    {suggestions.length - shownIdeas} more
+                  </button>
+                )}
+              </div>
+
               <div className="ask-foot">
                 <div className="row-wrap">
-                  {mode === "build" && templates.length > 0 && (
+                  <label className="model-picker">
+                    <span className="muted small">Database</span>
+                    <select value={sourceChoice} onChange={(e) => chooseSource(e.target.value)} aria-label="Database" disabled={classic}>
+                      {sources.map((x) => <option key={sourceValue(x)} value={sourceValue(x)}>{x.name}</option>)}
+                      {sources.length === 0 && <option value="builtin">Sample sales data</option>}
+                    </select>
+                  </label>
+                  <label className="model-picker">
+                    <span className="muted small">AI model</span>
+                    <select value={modelChoice} onChange={(e) => chooseModel(e.target.value)}
+                      aria-label="AI model for this question" disabled={!!readyMade}>
+                      {models.map((m) => (
+                        <option key={m.id} value={m.id} title={m.provider_label}>{m.name}{m.is_default ? " (default)" : ""}</option>
+                      ))}
+                      <option value="builtin">Built-in engine (no AI)</option>
+                    </select>
+                  </label>
+                  {mode === "build" && (
+                    <button type="button" className={"btn btn-ghost btn-sm more-btn" + (more ? " on" : "")}
+                      aria-expanded={more} onClick={() => setMore((m) => !m)}
+                      title="Start from a template, limit the dates, or choose the chart shapes">
+                      <Icon name="settings" size={15} />
+                      More options{extrasSet > 0 ? ` · ${extrasSet} set` : ""}
+                      <Icon name={more ? "up" : "down"} size={14} />
+                    </button>
+                  )}
+                </div>
+                <button className="btn btn-primary btn-lg btn-go" onClick={ask} disabled={!ready}>
+                  {building ? "Building…" : checking ? "Checking…" : mode === "chat" ? "Ask"
+                    : readyMade ? "Build this template" : "Build my report"}
+                  <Icon name="arrow" size={17} className="go-arrow" />
+                </button>
+              </div>
+
+              {mode === "build" && more && (
+                <fieldset className="ask-more">
+                  <legend className="sr-only">More options</legend>
+                  {templates.length > 0 && (
                     <>
-                      <label className="model-picker">
-                        <span className="muted small">Category</span>
+                      <label className="field">Start from
                         <select value={domain} aria-label="Template category"
                           onChange={(e) => { setDomain(e.target.value as TemplateCategory | ""); pick(null); }}>
                           <option value="">All categories</option>
                           {TEMPLATE_CATEGORIES.filter((c) => templates.some((t) => t.category === c))
                             .map((c) => (
-                              <option key={c} value={c}>
-                                {c} ({templates.filter((t) => t.category === c).length})
-                              </option>
+                              <option key={c} value={c}>{c} ({templates.filter((t) => t.category === c).length})</option>
                             ))}
                         </select>
                       </label>
-                      <label className="model-picker">
-                        <span className="muted small">Template</span>
+                      <label className="field grow">Template
                         <select value={template?.id ?? ""} aria-label="Template to build from"
                           onChange={(e) => pick(inDomain.find((t) => String(t.id) === e.target.value) ?? null)}>
                           <option value="">{inDomain.length ? "No template" : "None in this category"}</option>
@@ -344,16 +428,8 @@ export default function Home() {
                       </label>
                     </>
                   )}
-                  <label className="model-picker">
-                    <span className="muted small">Database</span>
-                    <select value={sourceChoice} onChange={(e) => chooseSource(e.target.value)} aria-label="Database" disabled={classic}>
-                      {sources.map((x) => <option key={sourceValue(x)} value={sourceValue(x)}>{x.name}</option>)}
-                      {sources.length === 0 && <option value="builtin">Sample sales data</option>}
-                    </select>
-                  </label>
                   {isOpenPages && dataModels.length > 0 && (
-                    <label className="model-picker">
-                      <span className="muted small">Data model</span>
+                    <label className="field grow">Data model
                       <select value={dataModel} onChange={(e) => chooseDataModel(e.target.value)}
                         aria-label="OpenPages data model" disabled={!!readyMade}>
                         <option value="">Every shared object type</option>
@@ -369,30 +445,49 @@ export default function Home() {
                       </select>
                     </label>
                   )}
-                  <label className="model-picker">
-                    <span className="muted small">AI model</span>
-                    <select value={modelChoice} onChange={(e) => chooseModel(e.target.value)}
-                      aria-label="AI model for this question" disabled={!!readyMade}>
-                      {models.map((m) => (
-                        <option key={m.id} value={m.id} title={m.provider_label}>{m.name}{m.is_default ? " (default)" : ""}</option>
-                      ))}
-                      <option value="builtin">Built-in engine (no AI)</option>
-                    </select>
-                  </label>
-                </div>
-                <button className="btn btn-primary btn-lg btn-go" onClick={ask} disabled={!ready}>
-                  {building ? "Building…" : mode === "chat" ? "Ask" : readyMade ? "Build this template" : "Build my report"}
-                  <Icon name="arrow" size={17} className="go-arrow" />
-                </button>
+                  {!classic && !needsModel && (
+                    <>
+                      <label className="field">From
+                        <input type="date" value={params.date_from} onChange={(e) => setParams({ ...params, date_from: e.target.value })} />
+                      </label>
+                      <label className="field">To
+                        <input type="date" value={params.date_to} onChange={(e) => setParams({ ...params, date_to: e.target.value })} />
+                      </label>
+                      <label className="field grow">Filter
+                        <input value={params.filters} maxLength={300} placeholder="e.g. region = North, status = paid"
+                          onChange={(e) => setParams({ ...params, filters: e.target.value })} />
+                      </label>
+                      <div className="field grow">
+                        <span>Charts</span>
+                        <div className="chip-row tight" role="group" aria-label="Chart types to use">
+                          {CHARTS.map(([id, label]) => {
+                            const on = charts.includes(id);
+                            return (
+                              <button key={id} type="button" className={"chip-btn sm" + (on ? " on" : "")} aria-pressed={on}
+                                onClick={() => setCharts(on ? charts.filter((c) => c !== id) : [...charts, id])}>
+                                {label}
+                              </button>
+                            );
+                          })}
+                          {charts.length > 0 && (
+                            <button type="button" className="link-btn small" onClick={() => setCharts([])}>Any</button>
+                          )}
+                        </div>
+                        <span className="hint">{charts.length ? "Only these shapes are used." : "The model picks what fits."}</span>
+                      </div>
+                    </>
+                  )}
+                </fieldset>
+              )}
+              <div className="ask-plan muted small">
+                {buildRunning ? (
+                  <>
+                    A report is building now.{" "}
+                    <button className="link-btn" onClick={() => navigate("/build")}>Watch it</button>{" "}
+                    — it carries on while you work, and this box is free again when it lands.
+                  </>
+                ) : <>{plan} Ctrl+Enter to send.</>}
               </div>
-              <div className="ask-plan muted small">{plan} Ctrl+Enter to send.</div>
-            </div>
-
-            <div className="chip-row rise rise-5">
-              <span className="muted small">Try</span>
-              {(ideas.length ? ideas : SUGGESTIONS).map((s) => (
-                <button key={s} className="chip-btn" onClick={() => setPrompt(s)}>{s}</button>
-              ))}
             </div>
           </div>
         </div>
@@ -400,18 +495,9 @@ export default function Home() {
         <section ref={tplSection} className={"stack reveal" + (tplShown ? " in" : "")} aria-labelledby="tpl-h">
           <div className="row-between">
             <h2 id="tpl-h" className="h2 head-icon"><Icon name="template" size={17} />Or start from a template</h2>
-            <Link to="/templates" className="small">Manage templates</Link>
+            <Link to="/templates" className="small">Browse all {templates.length}</Link>
           </div>
-          <div className="tpl-grid stagger">
-            {templates.slice(0, HOME_TEMPLATES).map((t) => (
-              <TemplateCard key={t.id} template={t} selected={template?.id === t.id} onUse={() => pick(t)} />
-            ))}
-            <button className="tpl tpl-new" onClick={() => setCreating(true)}>
-              <Icon name="plus" size={22} />
-              <span className="strong">New template</span>
-              <span className="muted small">Save your own question and layout</span>
-            </button>
-          </div>
+          <DomainTiles templates={templates} onNew={() => setCreating(true)} />
         </section>
 
         <section ref={recentSection} className={"card stack-sm reveal" + (recentShown ? " in" : "")} aria-labelledby="rec-h">
@@ -431,6 +517,10 @@ export default function Home() {
           ))}
         </section>
       </div>
+      {clarifying && (
+        <ClarifyDialog prompt={clarifying.prompt} parameters={clarifying.parameters} result={clarifying.result}
+          onBuild={startReport} onClose={() => setClarifying(null)} />
+      )}
       {creating && (
         <TemplateForm initial={prompt.trim() ? { prompt: prompt.trim() } : undefined} onClose={() => setCreating(false)}
           onSaved={(t) => {

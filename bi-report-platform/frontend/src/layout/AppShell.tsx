@@ -1,5 +1,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import Brand from "../components/Brand";
+import BuildProgress from "../components/BuildProgress";
 import Icon from "../components/Icon";
 
 export default function AppShell() {
@@ -10,13 +12,7 @@ export default function AppShell() {
   return (
     <div className="shell">
       <nav className="sidebar" aria-label="Main">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true"><span /><span /><span /></div>
-          <div>
-            <div className="brand-name">BI Reports</div>
-            <div className="brand-sub">Ask your data</div>
-          </div>
-        </div>
+        <Brand />
 
         <NavLink to="/" end className={navClass}><Icon name="home" />Ask a question</NavLink>
         <NavLink to="/chat" className={navClass}><Icon name="chat" />Chat with data</NavLink>
@@ -48,6 +44,8 @@ export default function AppShell() {
       <main className="main">
         <Outlet />
       </main>
+      {/* A report still building, wherever the reader has gone in the meantime. */}
+      <BuildProgress />
     </div>
   );
 }

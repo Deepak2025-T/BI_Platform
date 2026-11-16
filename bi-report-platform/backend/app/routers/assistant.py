@@ -14,11 +14,12 @@ from ..datasources import QueryFailed, SourceError, get_source, list_sources, na
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import AIModel, Report, User
+from ..prompt_clarify import clarify
 from ..prompt_ideas import ideas_for
 from ..excel_export import dashboard_workbook
 from ..ppt_export import dashboard_deck
-from ..schemas import (AddWidgetsIn, ChatIn, DashboardDataIn, DashboardIn, DrillIn, FilterMapIn, ReportOut,
-                       SaveDashboardIn, SourceOut, WidgetIn)
+from ..schemas import (AddWidgetsIn, ChatIn, ClarifyIn, DashboardDataIn, DashboardIn, DrillIn, FilterMapIn,
+                       ReportOut, SaveDashboardIn, SourceOut, WidgetIn)
 from ..refresh import RefreshFailed, as_utc, latest_snapshot, refresh_report, snapshot_matches
 from ..report_data import active_filters, run_widgets
 from ..datasources import check_query
@@ -70,6 +71,18 @@ def sources(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
 def prompt_ideas(source_id: int | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     """Questions worth asking of one database, from its own columns. No AI model is used."""
     return {"ideas": ideas_for(_source(db, source_id))}
+
+
+@router.post("/api/assistant/clarify")
+def clarify_prompt(body: ClarifyIn, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """The questions a request leaves open, before anything is built from it.
+
+    "Build a Risk Status Chart" does not say what shape the chart should be, whether it should
+    carry counts or shares, or whether each status keeps its own colour; a request that says all
+    three gets no questions and goes straight to the build. No AI model is used: what is already
+    settled is read out of the words, and the values a status can take come from the schema."""
+    return clarify(_source(db, body.source_id, body.data_model), body.prompt,
+                   body.parameters.model_dump(mode="json"))
 
 
 @router.post("/api/assistant/chat")
