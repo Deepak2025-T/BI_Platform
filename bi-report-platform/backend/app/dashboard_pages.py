@@ -66,3 +66,25 @@ def split_by_headings(widgets: list[dict], split_over: int = SPLIT_OVER) -> tupl
     if len(kept) < 2:
         return [], widgets
     return kept, out
+
+
+# The id the single implied page goes by when a report has no pages of its own. It matches
+# lib/pages.ts in the frontend, so the two agree about what "the first page" means.
+ONE_PAGE = "main"
+
+
+def pages_of(config: dict) -> list[dict]:
+    """The report's pages, or the one implied page. Never empty, so callers need no special case."""
+    pages = [p for p in (config.get("pages") or []) if isinstance(p, dict) and p.get("id")]
+    return pages or [{"id": ONE_PAGE, "name": "Report"}]
+
+
+def page_of(pages: list[dict], widget: dict) -> str:
+    """Which page a widget is on.
+
+    A widget with no page, or one naming a page that has since been deleted, belongs to the first
+    page - the same rule the frontend follows, so a tile orphaned by an edit is still drawn and
+    still filtered, rather than quietly falling out of both.
+    """
+    named = widget.get("page")
+    return named if named and any(p["id"] == named for p in pages) else pages[0]["id"]

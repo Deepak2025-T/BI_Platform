@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -67,7 +67,8 @@ class Report(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String(200))
-    prompt: Mapped[str] = mapped_column(String(2000))
+    # Unbounded: a report is often asked for with a whole specification pasted in.
+    prompt: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="draft")  # "draft" | "published"
     # Query parameters + layout (sections, chart type, palette, number format ...)
     config: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -137,7 +138,7 @@ class ReportTemplate(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
     description: Mapped[str] = mapped_column(String(200), default="")
-    prompt: Mapped[str] = mapped_column(String(2000))
+    prompt: Mapped[str] = mapped_column(Text)
     color: Mapped[str] = mapped_column(String(9), default="#00B4D8")
     # The domain this template belongs to: ERP, GRC, Common or Uncategorised (see template_data).
     category: Mapped[str] = mapped_column(String(40), default="Uncategorised", server_default="Uncategorised")
@@ -232,7 +233,7 @@ class ChatMessage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     conversation_id: Mapped[int] = mapped_column(ForeignKey("chat_conversations.id", ondelete="CASCADE"), index=True)
-    question: Mapped[str] = mapped_column(String(2000))
+    question: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(10))  # "ok" | "error"
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # what POST /api/assistant/chat returns
     error: Mapped[str] = mapped_column(String(1000), default="")

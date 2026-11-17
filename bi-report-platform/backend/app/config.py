@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     # A dashboard is many model calls (an outline, then one per chart), so it gets its own budget.
     # When it runs out, the charts already built are kept and the rest are reported as failed.
     ai_dashboard_budget_seconds: int = 900
+    # A floor, not a cap: a wide report is given this long for each round of charts it has to
+    # write, so forty charts get about four times the time twelve do rather than running out
+    # half-way. Charts are written `ai_max_parallel` at a time, so a round is that many charts.
+    ai_dashboard_seconds_per_widget: int = 150
+    # The ceiling on that growth. The browser gives a build about 28 minutes before it stops
+    # listening, so there is nothing to be gained by letting the server work for longer.
+    ai_dashboard_max_seconds: int = 1500
     # How many charts are written at once. Ollama queues what it can't run in parallel, so raising
     # this helps a hosted model far more than a local one.
     ai_max_parallel: int = 4

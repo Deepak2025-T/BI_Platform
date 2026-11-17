@@ -515,7 +515,129 @@ for _w in ORM_OVERVIEW["widgets"] + ORM_EVENTS["widgets"]:
         _w["style"]["goodWhen"] = "down"
 
 
+# ---------- the single-page ORM overview ----------
+#
+# The two dashboards above are one design across two pages. This is the one-page reading of the
+# same object types asked for as an "ORM Overview": twelve number tiles across the top, then one
+# band per object type, each drawn as the rings and bar rows the design uses.
+#
+# Every tile counts its own object type and nothing else - COUNT in OpenPages SQL works on a single
+# object type and never alongside a JOIN - so no record is counted twice and no two tiles share a
+# query. Charts whose field this installation doesn't have are dropped at build time with the
+# reason shown, so the page degrades rather than failing.
+
+ORM_OVERVIEW_KPIS = (
+    kpis(RSK, [("Total risks", "")]) +
+    kpis(CTL, [("Total controls", "")]) +
+    kpis(PRC, [("Total business processes", "")]) +
+    kpis(ENT, [("Total business entities", "")]) +
+    kpis(LOSS, [("Total loss events", "")]) +
+    kpis(KRI, [("Total KRIs", "")]) +
+    kpis(ISS, [("Total issues", "")]) +
+    kpis(ACT, [("Total action items", "")]) +
+    kpis(ISS, [("Open issues", f"[{ISS}].[OPSS-Iss:Status] = 'Open'")]) +
+    # Overdue is a stored flag on the action item: OpenPages SQL has no date arithmetic, so
+    # "past its due date" cannot be worked out in the query.
+    kpis(ACT, [("Overdue action items", f"[{ACT}].[OPSS-ActItem:Overdue] = 'Yes'")]) +
+    kpis(RSK, [("Major residual risks", where_any(RSK, RESIDUAL, "= 'Major'"))]) +
+    kpis(KRI, [("Red breach KRIs", f"[{KRI}].[OPSS-KRI-Shared:Breach Status] = 'Red'")]))
+
+ORM_OVERVIEW_BODY = [
+    # ---- risks ----
+    heading("Risk analysis", "How the risks are rated and how much of the exposure sits inside "
+                             "tolerance. Minor green, Moderate yellow, Significant orange, Major red."),
+    mix(count_by(RSK, RSK_STATUS, "Risks by status", "pie", size="third")),
+    tint(count_by(RSK, TOLERANCE, "Risks within tolerance", "pie", size="third"), TOLERANCE_COLOURS),
+    plain(count_by(RSK, DOMAIN[RSK], "Risks by domain", size="third")),
+    tint(count_by(RSK, INHERENT, "Risks by inherent risk rating", size="half"), RISK_COLOURS),
+    tint(count_by(RSK, RESIDUAL, "Risks by residual risk rating", size="half"), RISK_COLOURS),
+    # ---- controls ----
+    heading("Control analysis", "Coverage and effectiveness. Effective green, Partially Effective "
+                                "orange, Ineffective red, Not Determined grey."),
+    mix(count_by(CTL, "OPSS-Ctl:Status", "Controls by status", "pie", size="half")),
+    mix(count_by(CTL, "OPSS-Ctl:Control Type", "Controls by control type", "pie", size="half")),
+    tint(count_by(CTL, "OPSS-Ctl:Design Effectiveness", "Controls by design effectiveness", size="half"),
+         CTL_COLOURS),
+    tint(count_by(CTL, "OPSS-Ctl:Operating Effectiveness", "Controls by operating effectiveness",
+                  size="half"), CTL_COLOURS),
+    # ---- business processes ----
+    heading("Business process analysis", "What the risks and controls hang off, and how much of it "
+                                         "is in scope."),
+    mix(count_by(PRC, PRC_STATUS, "Processes by status", "pie", size="third")),
+    tint(count_by(PRC, PRC_SCOPE, "Processes by in scope", "pie", size="third"), SCOPE_COLOURS),
+    plain(count_by(PRC, DOMAIN[PRC], "Processes by domain", size="third")),
+    # ---- business entities ----
+    heading("Business entity analysis", "The hierarchy everything above sits under, and how much "
+                                        "of it is assessed."),
+    mix(count_by(ENT, ENT_TYPE, "Business entities by entity type", "pie", size="third")),
+    tint(count_by(ENT, ENT_SCOPE, "Business entities by in scope", "pie", size="third"), SCOPE_COLOURS),
+    tint(count_by(ENT, ENT_RCSA, "Business entities by in RCSA scope", "pie", size="third"),
+         SCOPE_COLOURS),
+    plain(count_by(ENT, ENT_FRAMEWORK, "Business entities by framework", size="full")),
+    # ---- loss events ----
+    heading("Loss event analysis", "What actually happened. Low green, Moderate yellow, High orange, "
+                                   "Major red."),
+    mix(count_by(LOSS, "OPSS-LossEv:Outcome", "Loss events by outcome", "pie", size="third")),
+    tint(count_by(LOSS, LOSS_SEVERITY, "Loss events by severity", size="third"), LOSS_COLOURS),
+    plain(count_by(LOSS, BASEL_CATEGORY, "Loss events by Basel risk category L1", size="third")),
+    # ---- key risk indicators ----
+    heading("KRI analysis", "Breach status and trend on the indicators being watched. Green green, "
+                            "Yellow yellow, Red red."),
+    mix(count_by(KRI, "OPSS-KRI:Status", "KRIs by status", "pie", size="third")),
+    tint(count_by(KRI, "OPSS-KRI-Shared:Breach Status", "KRIs by breach status", "pie", size="third"),
+         KRI_COLOURS),
+    mix(count_by(KRI, "OPSS-KRI:Frequency", "KRIs by frequency", "pie", size="third")),
+    tint(count_by(KRI, "OPSS-KRI:Indicator Trend", "KRIs by indicator trend", size="full"),
+         TREND_COLOURS),
+    # ---- issues ----
+    heading("Issue analysis", "What assessment and testing turned up. Low green, Medium yellow, "
+                              "High orange, Critical red."),
+    mix(count_by(ISS, "OPSS-Iss:Status", "Issues by status", "pie", size="half")),
+    tint(count_by(ISS, "OPSS-Iss:Priority", "Issues by priority", "pie", size="half"), ISS_COLOURS),
+    plain(count_by(ISS, "OPSS-Iss:Issue Type", "Issues by issue type", size="third")),
+    plain(count_by(ISS, DOMAIN[ISS], "Issues by domain", size="third")),
+    plain(count_by(ISS, "OPSS-Iss:Root Cause Type", "Issues by root cause type", size="third")),
+    # ---- action items ----
+    heading("Action item analysis", "What is being done about all of it. Completed green, In Progress "
+                                    "blue, Overdue red, Pending orange. The ageing buckets run "
+                                    "1-10, 11-30, 31-60 and above 60 days."),
+    tint(count_by(ACT, "OPSS-ActItem:Status", "Action items by status", "pie", size="third"),
+         ACT_COLOURS),
+    tint(count_by(ACT, "OPSS-ActItem:Overdue", "Overdue against not yet due action items", "pie",
+                  size="third"), ACT_COLOURS),
+    tint(count_by(ACT, "OPSS-ActItem:Aging Bucket", "Action items by ageing bucket", size="third"),
+         AGEING_COLOURS),
+    plain(count_by(ACT, "OPSS-ActItem:Percent Complete", "Action items by percent complete",
+                   size="full", by_value=True)),
+]
+
+ORM_SINGLE_OVERVIEW = {
+    "module": "ORM",
+    "name": "ORM: ORM overview",
+    "description": "One page across risks, controls, processes, entities, loss events, KRIs, issues "
+                   "and action items, with the twelve ORM counts across the top",
+    "color": ORM_COLOR,
+    "prompt": "Give me a single operational risk overview: total risks, controls, business processes, "
+              "business entities, loss events, KRIs, issues and action items, with open issues, "
+              "overdue actions, major residual risks and red breach KRIs, then a breakdown of each",
+    "widgets": ORM_OVERVIEW_KPIS + ORM_OVERVIEW_BODY,
+    "filters": [ROOT_FILTER,
+                filter_on("Residual rating", RSK, RESIDUAL),
+                filter_on("Breach status", KRI, "OPSS-KRI-Shared:Breach Status"),
+                filter_on("Action item status", ACT, "OPSS-ActItem:Status")],
+    "theme": "plex",
+}
+
+# The exception tiles read in the colour of what they count, and fall rather than rise.
+for _w in ORM_SINGLE_OVERVIEW["widgets"]:
+    _ink = {"Major residual risks": RED, "Red breach KRIs": RED, "Overdue action items": RED,
+            "Open issues": ORANGE}.get(_w["title"])
+    if _ink:
+        _w["style"] = {**(_w.get("style") or {}), "color": _ink, "goodWhen": "down"}
+
+
 ORM = [
+    ORM_SINGLE_OVERVIEW,
     ORM_OVERVIEW,
     ORM_EVENTS,
     report("ORM", "Risk and control profile",

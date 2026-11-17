@@ -361,3 +361,61 @@ def test_a_dashboard_that_builds_nothing_still_says_why(monkeypatch, source_id):
                                      budget_seconds=-1, max_parallel=1)
     finally:
         db.close()
+
+
+def test_a_request_for_forty_charts_builds_forty_charts(monkeypatch, source_id):
+    """The cap used to be 12, so a full risk-and-control overview - a dozen headline numbers and
+    three dozen breakdowns - came back as the first 8 KPIs and 4 charts, whatever the prompt said.
+    The rest were not refused or reported: they were silently cut off the plan."""
+    from app.ai import assistant
+    from app.database import SessionLocal
+    from app.datasources import get_source
+
+    wide = {"title": "ORM overview", "widgets": [
+        {"title": f"Chart {n}", "question": "Total by region", "chart": "bar"} for n in range(40)]}
+
+    def reply(spec, system, user, schema):
+        return wide if "design BI dashboards" in system else _reply(system, user)
+
+    monkeypatch.setattr(assistant, "complete_json", reply)
+    db = SessionLocal()
+    try:
+        plan = assistant.plan_dashboard(assistant.ModelSpec(provider="ollama", model="x"),
+                                        get_source(db, source_id), "Build the whole ORM overview", {})
+    finally:
+        db.close()
+    assert len(plan["widgets"]) == 40 and not plan["failed"]
+    assert plan["widgets"][-1]["title"] == "Chart 39"
+
+
+def test_a_wide_report_is_given_proportionally_more_time():
+    """40 charts cannot be written in the time 4 take. The grant is per round of charts, so the
+    deadline grows with the plan - otherwise raising the cap only moves where the build gives up.
+    It stops growing at the point the browser stops waiting for the answer."""
+    from app.ai.assistant import allowance
+    from app.config import settings
+
+    four = allowance(4, workers=4)
+    forty = allowance(40, workers=4)
+    assert forty > four, "a plan ten times as wide gets more time than one round of charts"
+    assert allowance(4, workers=1) == 4 * allowance(4, workers=4), "one at a time takes four rounds"
+    assert allowance(1000, workers=4) == settings.ai_dashboard_max_seconds, "the grant has a ceiling"
+    assert allowance(0, workers=4) == allowance(1, workers=4), "an empty plan is not a negative one"
+
+
+def test_the_outline_schema_uses_nothing_claude_refuses():
+    """Claude's structured output rejects the request outright - 400, nothing built - when the
+    schema carries a keyword it does not support, rather than ignoring the keyword. maxItems on
+    the widget list cost a whole build that way."""
+    import json
+
+    from app.ai import assistant
+    from app.dashboard_filters import _MAP_SCHEMA
+
+    unsupported = {"maxItems", "minItems", "maxLength", "minLength", "minimum", "maximum",
+                   "pattern", "format", "uniqueItems", "default"}
+    schemas = [assistant._CHART_SCHEMA, assistant._ANSWER_SCHEMA, assistant._EXPLAIN_SCHEMA,
+               assistant._OUTLINE_SCHEMA, _MAP_SCHEMA]
+    for schema in schemas:
+        found = unsupported.intersection(json.dumps(schema).replace('"', " ").split())
+        assert not found, f"{sorted(found)} is not supported by Claude's structured output"

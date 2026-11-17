@@ -16,6 +16,7 @@ from ..ai.assistant import chat
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import ChatConversation, ChatMessage, User, now_utc
+from ..schemas import PROMPT_MAX
 from .assistant import _ai_call, _model, _source
 
 router = APIRouter(prefix="/api/chats", tags=["chat history"])
@@ -38,7 +39,7 @@ class ChatUpdate(BaseModel):
 
 
 class MessageIn(BaseModel):
-    question: str = Field(min_length=2, max_length=2000)
+    question: str = Field(min_length=2, max_length=PROMPT_MAX)
     # The model for this question; leave out to use the chat's model.
     model_id: int | None = None
 

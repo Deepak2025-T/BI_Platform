@@ -36,7 +36,8 @@ interface Props {
   /** Called with the category that was clicked, when the chart can be drilled into. */
   onPoint?: (name: string) => void;
   /** Tables: given when the person may set column widths, take a column off, or number the rows. */
-  onColumns?: (patch: { widths?: Record<string, number>; hiddenColumns?: string[]; rowNumbers?: boolean }) => void;
+  onColumns?: (patch: { widths?: Record<string, number>; hiddenColumns?: string[]; rowNumbers?: boolean;
+                        wrapText?: boolean }) => void;
 }
 
 /** A small line of a number tile's history. */
@@ -110,7 +111,7 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     const table = (
       <ResultTable columns={columns} rows={sorted} truncated={truncated} limit={50}
         widths={style.columnWidths} hiddenColumns={style.hiddenColumns}
-        rowNumbers={style.rowNumbers !== false} onColumns={onColumns} />
+        rowNumbers={style.rowNumbers !== false} wrapText={!!style.wrapText} onColumns={onColumns} />
     );
     return tableHeight ? <div className="table-scroll" style={{ maxHeight: tableHeight }}>{table}</div> : table;
   }

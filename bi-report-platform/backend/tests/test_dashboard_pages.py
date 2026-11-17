@@ -85,3 +85,53 @@ def test_every_widget_keeps_its_own_fields():
     _, out = split_by_headings(widgets)
     assert all(w.get("chart") for w in out)
     assert all("page" in w for w in out)
+
+
+# ---------------------------------------------------------------- filters that belong to one tab
+
+from app.dashboard_pages import ONE_PAGE, page_of, pages_of          # noqa: E402
+from app.report_data import filters_for                              # noqa: E402
+
+
+def test_a_report_with_no_pages_has_one_implied_one():
+    """Every report saved before pages existed, and every short one since."""
+    pages = pages_of({})
+    assert [p["id"] for p in pages] == [ONE_PAGE]
+    assert page_of(pages, {"id": "a"}) == ONE_PAGE
+
+
+def test_a_tile_naming_a_deleted_page_falls_to_the_first():
+    """A tile can be orphaned by an edit; it can never become invisible."""
+    pages = [{"id": "p1", "name": "One"}, {"id": "p2", "name": "Two"}]
+    assert page_of(pages, {"page": "gone"}) == "p1"
+    assert page_of(pages, {"page": "p2"}) == "p2"
+
+
+_PAGES = [{"id": "p1", "name": "Overview"}, {"id": "p2", "name": "Controls"}]
+
+
+def test_a_filter_on_the_whole_report_reaches_every_tab():
+    config = {"pages": _PAGES, "filters": [{"id": "f1", "label": "Date"}]}
+    for widget in ({"id": "w", "page": "p1"}, {"id": "w", "page": "p2"}):
+        assert [f["id"] for f in filters_for(config, widget)] == ["f1"]
+
+
+def test_a_filter_given_a_tab_leaves_the_other_tabs_alone():
+    """Two tabs can sit at two different dates at once, which is the point of it."""
+    config = {"pages": _PAGES, "filters": [{"id": "f1", "label": "Date"},
+                                           {"id": "f2", "label": "Status", "page": "p2"}]}
+    assert [f["id"] for f in filters_for(config, {"id": "w", "page": "p1"})] == ["f1"]
+    assert [f["id"] for f in filters_for(config, {"id": "w", "page": "p2"})] == ["f1", "f2"]
+
+
+def test_a_tab_filter_reaches_the_tiles_that_never_named_a_page():
+    """Those tiles are drawn on the first page, so they are filtered by the first page's filters."""
+    config = {"pages": _PAGES, "filters": [{"id": "f2", "label": "Status", "page": "p1"}]}
+    assert [f["id"] for f in filters_for(config, {"id": "w"})] == ["f2"]
+
+
+def test_nothing_changes_for_a_report_whose_filters_name_no_page():
+    """The common case stays the cheap case: the list is handed back as it is."""
+    filters = [{"id": "f1"}, {"id": "f2"}]
+    config = {"pages": _PAGES, "filters": filters}
+    assert filters_for(config, {"id": "w", "page": "p2"}) == filters

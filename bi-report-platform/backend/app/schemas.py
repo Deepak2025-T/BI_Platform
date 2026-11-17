@@ -7,6 +7,22 @@ from .ai.colors import normalize_hex
 
 Role = Literal["user", "manager"]
 
+# How long a prompt or a question may be.
+#
+# A report request is often a whole specification pasted in - nine tabs, their KPIs and their
+# charts - and cutting that off at a couple of thousand characters refused exactly the requests
+# that most needed writing down. The columns behind these fields are unbounded text, so this is
+# only a guard against something absurd arriving, not a budget anyone should feel.
+PROMPT_MAX = 100_000
+
+# How many charts one report may hold.
+#
+# A full risk-and-control overview is 8 to 12 headline numbers and three dozen breakdowns, and
+# building it in five passes and stitching the pages together by hand was the only way to get it.
+# The real cost of a wide report is the time to write and run that many queries, which the build's
+# own budget already covers, so the count itself is only bounded to keep a runaway plan finite.
+MAX_WIDGETS = 60
+
 
 class LoginIn(BaseModel):
     email: str
@@ -52,7 +68,7 @@ class QueryParams(BaseModel):
 
 
 class GenerateIn(BaseModel):
-    prompt: str = Field(min_length=3, max_length=2000)
+    prompt: str = Field(min_length=3, max_length=PROMPT_MAX)
     params: QueryParams | None = None
     # The AI model to understand the question with; None uses the built-in keyword engine.
     model_id: int | None = None
@@ -149,14 +165,14 @@ class TemplateLayout(BaseModel):
     # Dashboard templates: ready-written charts built on a chosen connection (see routers/templates.build).
     kind: Literal["dashboard"] | None = None
     source_type: str | None = Field(default=None, max_length=20)  # e.g. "openpages": which connections fit
-    widgets: list[dict] | None = Field(default=None, max_length=30)
+    widgets: list[dict] | None = Field(default=None, max_length=MAX_WIDGETS)
     filters: list[dict] | None = Field(default=None, max_length=10)
 
 
 class TemplateIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=200)
-    prompt: str = Field(min_length=3, max_length=2000)
+    prompt: str = Field(min_length=3, max_length=PROMPT_MAX)
     color: str = Field(default="#00B4D8", pattern=r"^#[0-9A-Fa-f]{6}$")
     category: TemplateCategory = "Uncategorised"
     # A folder inside the category, e.g. "ORM" for an OpenPages Operational Risk template.
@@ -168,7 +184,7 @@ class TemplateIn(BaseModel):
 class TemplateUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
     description: str | None = Field(default=None, max_length=200)
-    prompt: str | None = Field(default=None, min_length=3, max_length=2000)
+    prompt: str | None = Field(default=None, min_length=3, max_length=PROMPT_MAX)
     color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     category: TemplateCategory | None = None
     module: str | None = Field(default=None, max_length=40)
@@ -452,15 +468,15 @@ class SourceOut(BaseModel):
 
 
 class ChatTurn(BaseModel):
-    question: str = Field(max_length=2000)
-    reply: str = Field(default="", max_length=4000)
+    question: str = Field(max_length=PROMPT_MAX)
+    reply: str = Field(default="", max_length=20_000)
     sql: str = Field(default="", max_length=8000)
 
 
 class ChatIn(BaseModel):
     source_id: int | None = None
     model_id: int
-    question: str = Field(min_length=2, max_length=2000)
+    question: str = Field(min_length=2, max_length=PROMPT_MAX)
     history: list[ChatTurn] = Field(default_factory=list, max_length=20)
     data_model: str | None = Field(default=None, max_length=120)
 
@@ -468,7 +484,7 @@ class ChatIn(BaseModel):
 class WidgetIn(BaseModel):
     source_id: int | None = None
     model_id: int
-    question: str = Field(min_length=2, max_length=1000)
+    question: str = Field(min_length=2, max_length=PROMPT_MAX)
     data_model: str | None = Field(default=None, max_length=120)
 
 
@@ -496,7 +512,7 @@ class DashboardParams(BaseModel):
 class DashboardIn(BaseModel):
     source_id: int | None = None
     model_id: int
-    prompt: str = Field(min_length=3, max_length=2000)
+    prompt: str = Field(min_length=3, max_length=PROMPT_MAX)
     parameters: DashboardParams = DashboardParams()
     data_model: str | None = Field(default=None, max_length=120)
 
@@ -505,7 +521,7 @@ class ClarifyIn(BaseModel):
     """What is about to be built, so the open questions can be worked out. No AI model is used,
     so none is asked for."""
     source_id: int | None = None
-    prompt: str = Field(min_length=1, max_length=2000)
+    prompt: str = Field(min_length=1, max_length=PROMPT_MAX)
     parameters: DashboardParams = DashboardParams()
     data_model: str | None = Field(default=None, max_length=120)
 
@@ -551,21 +567,21 @@ class AddWidgetsIn(BaseModel):
     so a chart never ends up on a report whose filters and refresh read somewhere else."""
 
     source_id: int | None = None
-    widgets: list[Widget] = Field(min_length=1, max_length=12)
+    widgets: list[Widget] = Field(min_length=1, max_length=MAX_WIDGETS)
 
 
 class SaveDashboardIn(BaseModel):
     source_id: int | None = None
     title: str = Field(min_length=1, max_length=200)
-    prompt: str = Field(default="", max_length=2000)
-    widgets: list[Widget] = Field(min_length=1, max_length=12)
+    prompt: str = Field(default="", max_length=PROMPT_MAX)
+    widgets: list[Widget] = Field(min_length=1, max_length=MAX_WIDGETS)
 
     # The same reasoning as Widget: a report named after a long question is still a report worth
-    # saving. 2000 is also the prompt column's width, so clipping keeps the insert from failing.
+    # saving, so an over-long title or prompt is trimmed to fit rather than refused.
     @field_validator("title", "prompt", mode="before")
     @classmethod
     def _clip(cls, value, info):
-        return clip(value, 200 if info.field_name == "title" else 2000)
+        return clip(value, 200 if info.field_name == "title" else PROMPT_MAX)
 
 
 class FilterValue(BaseModel):
@@ -593,4 +609,4 @@ class FilterMapIn(BaseModel):
     label: str = Field(min_length=1, max_length=60)
     kind: Literal["date", "category"]
     id: str | None = Field(default=None, max_length=40)  # set to map an existing filter again
-    widgets: list[Widget] = Field(max_length=40)
+    widgets: list[Widget] = Field(max_length=MAX_WIDGETS)

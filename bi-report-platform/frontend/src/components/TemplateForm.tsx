@@ -83,7 +83,7 @@ export default function TemplateForm({ template, initial, onClose, onSaved }: Pr
             placeholder="What the report shows, in a few words" />
         </label>
         <label className="field">Question
-          <textarea rows={3} value={form.prompt} maxLength={2000} required onChange={(e) => set("prompt", e.target.value)}
+          <textarea rows={3} value={form.prompt} required onChange={(e) => set("prompt", e.target.value)}
             placeholder="e.g. Show monthly revenue by region for Q1 2024 and the top 5 products" />
           <span className="hint">This is asked every time someone starts a report from the template.</span>
         </label>

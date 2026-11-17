@@ -288,8 +288,8 @@ def test_a_report_named_after_a_long_question_is_trimmed_not_refused(client, use
                             "widgets": [widget]})
     assert res.status_code == 201, res.text
     assert len(res.json()["title"]) == 200
-    # The prompt column is 2000 wide, so clipping is what keeps the insert from failing too.
-    assert len(res.json()["prompt"]) == 2000
+    # The prompt itself is kept whole: a specification pasted in is the thing worth saving.
+    assert len(res.json()["prompt"]) == 9000
 
 
 def test_a_label_that_already_fits_is_left_exactly_as_it_was(client, user):
@@ -302,3 +302,14 @@ def test_a_label_that_already_fits_is_left_exactly_as_it_was(client, user):
     assert res.status_code == 201, res.text
     saved = res.json()["config"]["widgets"][0]
     assert saved["question"] == "How many are open?" and saved["title"] == "Open items"
+
+
+def test_a_report_asked_for_with_a_whole_specification_is_accepted(client, user, source):
+    """A request listing nine tabs, their KPIs and their charts runs to several thousand
+    characters. It used to come back as "String should have at most 2000 characters"."""
+    prompt = ("Build an operational risk report. Tab Risk: 8 KPIs - total, approved, major, "
+              "significant, moderate, minor, within tolerance, overdue. ") * 60
+    assert len(prompt) > 2000
+    res = client.post("/api/assistant/clarify", headers=user,
+                      json={"source_id": source, "prompt": prompt})
+    assert res.status_code == 200, res.text

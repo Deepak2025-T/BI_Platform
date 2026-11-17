@@ -2,15 +2,17 @@ import { useEffect, useState } from "react";
 import { errorMessage } from "../api/client";
 import { aiModelsApi } from "../api/endpoints";
 import { reportToolsApi } from "../api/reportTools";
-import type { AIModelPublic, ChartType, QueryData, Widget, WidgetData, WidgetSize, WidgetStyle } from "../api/types";
+import type { AIModelPublic, ChartType, DashboardConfig, QueryData, Widget, WidgetData, WidgetSize, WidgetStyle } from "../api/types";
 import { rememberedModel } from "../lib/aiModels";
 import { appendSpoken } from "../lib/dictation";
 import { CURRENCIES, SCALES, columnLabel, formatValue } from "../lib/format";
+import { tileLook } from "../lib/tileLook";
 import { CHART_LABELS, cannotDraw, numericColumns, retype } from "../lib/sources";
 import { ColorPicker, Seg } from "./Controls";
 import { HEIGHT, HEIGHTS, WIDTHS, clampHeight, hasHeight } from "../lib/tileSize";
-import { cardLook } from "../lib/cardColors";
+
 import { CardColorFields } from "./CardColors";
+import { TileLookFields } from "./LookFields";
 import ColorRules from "./ColorRules";
 import DataChart from "./DataChart";
 import Dictate from "./Dictate";
@@ -42,10 +44,13 @@ interface Props {
   onApplyColorToAll?: (color: string) => void;
   /** Gives every card on the dashboard these header and card colours. */
   onApplyCardToAll?: (patch: Pick<WidgetStyle, "headBg" | "cardBg">) => void;
+  /** The report this chart is on, so the look panel can say what each setting inherits. */
+  config?: Pick<DashboardConfig, "typography">;
 }
 
 /** Edits one dashboard chart: how it looks, its SQL, or a change described to the AI model. */
-export default function ChartEditor({ reportId, widget, data, onClose, onSave, onApplyColorToAll, onApplyCardToAll }: Props) {
+export default function ChartEditor({ reportId, widget, data, onClose, onSave, onApplyColorToAll, onApplyCardToAll,
+                                     config }: Props) {
   const [draft, setDraft] = useState<Widget>({ ...widget, size: widget.size ?? "auto" });
   const [result, setResult] = useState<QueryData | null>(data?.ok ? data : null);
   const [sql, setSql] = useState(widget.sql);
@@ -142,7 +147,7 @@ export default function ChartEditor({ reportId, widget, data, onClose, onSave, o
         </>
       }>
       <div className="stack chart-editor">
-        <div className={"chart-preview card widget" + cardLook(style).className} style={cardLook(style).style}>
+        <div className={"chart-preview card widget" + tileLook(style).className} style={tileLook(style).style}>
           <div className="widget-head"><div className="strong">{draft.title || "Untitled chart"}</div></div>
           {result ? (ready && <DataChart columns={result.columns} rows={result.rows} chart={draft.chart} style={style} height={220} truncated={result.truncated} />)
             : <p className="muted small">Run the SQL to see the chart.</p>}
@@ -276,6 +281,8 @@ export default function ChartEditor({ reportId, widget, data, onClose, onSave, o
             <div className="box stack-sm">
               <div className="strong small">Card</div>
               <CardColorFields style={style} onChange={setStyle} />
+              <TileLookFields style={style} config={config ?? {}} onChange={setStyle}
+                isTable={draft.chart.type === "table" || draft.chart.type === "matrix"} />
               <div className="row-wrap">
                 {(style.headBg || style.cardBg) && (
                   <button type="button" className="link-btn" onClick={() => setStyle({ headBg: undefined, cardBg: undefined })}>Reset card colours</button>

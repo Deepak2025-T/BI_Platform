@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from ..config import settings
 from ..connections import openpages
 from ..prompt_clarify import apply_style
+from ..schemas import MAX_WIDGETS
 from ..datasources import DataSource, QueryFailed, describe, run_sql
 from ..sql_guard import UnsafeSQL
 from .colors import apply_color_rules, color_rules_from_prompt
@@ -29,7 +30,11 @@ ROWS_SHOWN_TO_MODEL = 20
 # A dashboard is planned as an outline first, then one small call per chart, because one call that
 # writes every chart's SQL at once is a single long generation: a slow local model runs out of time
 # part-way and nothing at all comes back. Small calls also let the slow ones run side by side.
-MAX_WIDGETS = 12
+#
+# How many charts a plan may hold is MAX_WIDGETS, shared with the schemas so that what can be
+# planned is also what can be saved. The number of charts is not what makes a build slow - the
+# queries are - so a wide request is given proportionally more time rather than being cut down to
+# a width that fits a fixed one (see the deadline in plan_dashboard).
 CHART_TYPES = ["kpi", "bar", "line", "area", "pie", "table"]
 
 _DIALECT_TIPS = {
@@ -89,6 +94,9 @@ _OUTLINE_SCHEMA = {
                 "required": ["title", "question", "chart"],
                 "additionalProperties": False,
             },
+            # No "maxItems" here, however tempting: Claude's structured output refuses the whole
+            # request with "property 'maxItems' is not supported" rather than ignoring it. The
+            # width is set by the instructions above and enforced by the slice below.
         },
     },
     "required": ["title", "widgets"],
@@ -293,6 +301,19 @@ def _history_text(history: list[dict]) -> str:
 
 # ---------- Dashboards ----------
 
+
+def allowance(charts: int, workers: int) -> float:
+    """How long a plan of this width is allowed, in seconds.
+
+    Charts are written `workers` at a time, so a plan four times as wide takes about four times as
+    long, and holding every plan to one flat budget would leave a wide report half-built - which is
+    the whole reason the chart count used to be capped instead. The grant therefore grows per round
+    of charts, up to a ceiling: past that the browser stops waiting for the answer, and a build
+    nobody is still listening to is worse than a partial one that arrives.
+    """
+    rounds = -(-max(charts, 1) // max(1, workers))  # ceiling division
+    return min(settings.ai_dashboard_seconds_per_widget * rounds, settings.ai_dashboard_max_seconds)
+
 def plan_dashboard(spec: ModelSpec, source: DataSource, prompt: str, parameters: dict,
                    budget_seconds: float | None = None, max_parallel: int | None = None) -> dict:
     """Plans and runs a dashboard. Returns {"title", "widgets": [...], "failed": [...]}.
@@ -314,8 +335,10 @@ def plan_dashboard(spec: ModelSpec, source: DataSource, prompt: str, parameters:
         outline_schema = copy.deepcopy(_OUTLINE_SCHEMA)
         outline_schema["properties"]["widgets"]["items"]["properties"]["chart"]["enum"] = wanted
     system = f"""You design BI dashboards. Turn the request into the charts that answer it.
-When the request lists the charts it wants, give exactly those, in that order; otherwise give 4 to 6.
-Never more than {MAX_WIDGETS}. Start with the headline numbers as "kpi" charts, then the breakdowns.
+When the request lists the charts it wants, give every one of them, in that order, however many
+there are - a request for forty charts is a request for forty charts, not for the first few.
+When it does not say, give 4 to 6. Never more than {MAX_WIDGETS}.
+Start with the headline numbers as "kpi" charts, then the breakdowns.
 
 Do NOT write any SQL here. For each chart give only a short title, the one-line question it answers,
 and which chart shape fits. The queries are written separately.
@@ -329,6 +352,10 @@ and which chart shape fits. The queries are written separately.
     if not items:
         raise AssistantError("The model couldn't plan any charts for that request. "
                              "Try naming the tables or measures you want.")
+
+    # A budget passed in is honoured exactly as given; otherwise a wide plan is given more time.
+    if budget_seconds is None:
+        deadline = max(deadline, time.monotonic() + allowance(len(items), workers))
 
     def build(item: dict) -> dict:
         """One chart, written and run on its own. Never raises: the caller reports the failures."""

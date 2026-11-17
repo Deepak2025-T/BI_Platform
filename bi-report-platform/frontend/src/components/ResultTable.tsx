@@ -18,8 +18,17 @@ interface Props {
    * people read a row out of ("the third one down") is easier to talk about numbered than not.
    */
   rowNumbers?: boolean;
+  /**
+   * Whether a value too long for its column wraps onto more lines instead of being held on one.
+   *
+   * Off by default: a table of short values reads best as a grid of rows the same height, and
+   * wrapping them all would make it ragged for no gain. A description column is the opposite
+   * case. Line breaks written into a value are kept once this is on.
+   */
+  wrapText?: boolean;
   /** Given when the person may change the table: drag a column edge, or take a column off. */
-  onColumns?: (patch: { widths?: Record<string, number>; hiddenColumns?: string[]; rowNumbers?: boolean }) => void;
+  onColumns?: (patch: { widths?: Record<string, number>; hiddenColumns?: string[]; rowNumbers?: boolean;
+                        wrapText?: boolean }) => void;
 }
 
 /** The width of the row-number column, which never needs dragging. */
@@ -30,7 +39,7 @@ const MIN_WIDTH = 60;
 
 /** Any query result as a table. Numbers are right-aligned. */
 export default function ResultTable({ columns, rows, limit = 100, truncated, widths = {}, hiddenColumns = [],
-                                     rowNumbers = true, onColumns }: Props) {
+                                     rowNumbers = true, wrapText = false, onColumns }: Props) {
   const hidden = new Set(hiddenColumns);
   const shown = columns.map((c, i) => ({ name: c, i })).filter((c) => !hidden.has(c.name));
   const numeric = columns.map((_, i) => rows.some((r) => typeof r[i] === "number")
@@ -79,7 +88,8 @@ export default function ResultTable({ columns, rows, limit = 100, truncated, wid
 
   return (
     <div className="table-scroll">
-      <table className={"table num result-table" + (sized ? " sized" : "") + (onColumns ? " adjustable" : "")}>
+      <table className={"table num result-table" + (sized ? " sized" : "") + (wrapText ? " wrap" : "")
+                        + (onColumns ? " adjustable" : "")}>
         {sized && (
           <colgroup>
             {rowNumbers && <col style={{ width: INDEX_WIDTH }} />}
@@ -122,7 +132,14 @@ export default function ResultTable({ columns, rows, limit = 100, truncated, wid
           {body.map((row, ri) => (
             <tr key={ri}>
               {rowNumbers && <td className="td-index r">{ri + 1}</td>}
-              {shown.map((c) => <td key={c.i} className={numeric[c.i] ? "r" : ""} title={cellText(row[c.i])}>{cellText(row[c.i])}</td>)}
+              {shown.map((c) => (
+                <td key={c.i} className={numeric[c.i] ? "r" : ""}
+                  // Held on one line, the whole value is only readable as a tooltip. Wrapped, it
+                  // is all on screen already and a tooltip repeating it is just in the way.
+                  title={wrapText ? undefined : cellText(row[c.i])}>
+                  {cellText(row[c.i])}
+                </td>
+              ))}
             </tr>
           ))}
           {rows.length === 0 && <tr><td colSpan={(shown.length || 1) + (rowNumbers ? 1 : 0)} className="muted">No rows</td></tr>}
@@ -142,6 +159,11 @@ export default function ResultTable({ columns, rows, limit = 100, truncated, wid
         {onColumns && !rowNumbers && (
           <button type="button" className="link-btn small no-print" onClick={() => onColumns({ rowNumbers: true })}>
             Number the rows
+          </button>
+        )}
+        {onColumns && (
+          <button type="button" className="link-btn small no-print" onClick={() => onColumns({ wrapText: !wrapText })}>
+            {wrapText ? "Keep each value on one line" : "Wrap long values onto more lines"}
           </button>
         )}
         {onColumns && sized && (

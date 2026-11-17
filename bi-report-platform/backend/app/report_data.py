@@ -1,6 +1,6 @@
 """Runs a dashboard's charts. Shared by the viewer, Excel export and scheduled refreshes."""
 
-from . import dashboard_filters, date_rollup
+from . import dashboard_filters, dashboard_pages, date_rollup
 from .datasources import DataSource, QueryFailed, run_sql
 from .sql_guard import UnsafeSQL
 
@@ -20,13 +20,29 @@ def active_filters(config: dict, values: dict) -> list[dict]:
             if isinstance(f, dict) and f.get("id") and dashboard_filters.is_active(f, values.get(f["id"]))]
 
 
+def filters_for(config: dict, widget: dict) -> list[dict]:
+    """The filters that apply to one chart.
+
+    A filter given a page belongs to that tab alone: it filters the charts on it and leaves the
+    rest of the report as it was, so two tabs can be read at two different dates at the same time.
+    A filter with no page is a filter on the whole report, which is how every filter behaved
+    before pages existed and is still the default.
+    """
+    filters = [f for f in config.get("filters") or [] if isinstance(f, dict) and f.get("id")]
+    if not any(f.get("page") for f in filters):
+        return filters
+    pages = dashboard_pages.pages_of(config)
+    here = dashboard_pages.page_of(pages, widget)
+    return [f for f in filters if not f.get("page") or f["page"] == here]
+
+
 def run_widgets(config: dict, source: DataSource, values: dict, refresh: bool = False) -> list[dict]:
     """Runs every chart's saved SQL with the filter values applied. A chart that fails gets an error
     entry instead of stopping the others. refresh skips the result cache."""
-    filters = [f for f in config.get("filters") or [] if isinstance(f, dict) and f.get("id")]
     out = []
     for w in query_widgets(config):
-        sql, params, applied, skipped = dashboard_filters.apply(w["sql"], source, filters, values, w["id"])
+        sql, params, applied, skipped = dashboard_filters.apply(w["sql"], source, filters_for(config, w),
+                                                                values, w["id"])
         try:
             result = run_sql(source, sql, params, refresh=refresh)
             # A chart that asked for its dates by month, quarter or year: the rows are folded here,

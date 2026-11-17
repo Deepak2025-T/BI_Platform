@@ -8,13 +8,16 @@ import type {
   AIModelPublic, Cell, ChartType, DashboardConfig, DashboardFilter, DrillResult, FilterValue, Report, Widget, WidgetData,
 } from "../api/types";
 import { rememberedModel } from "../lib/aiModels";
-import { cardLook } from "../lib/cardColors";
+
 import { columnLabel, shortDate } from "../lib/format";
 import { COMPARE_OPTIONS, type CompareWith, type HistoryPoint, compareAt, timeLabels } from "../lib/history";
 import { printReport } from "../lib/print";
 import { prefersReducedMotion } from "../lib/motion";
 import { type Focus, clickColumn, focusIndex, focusLabel, focusRows, showsRecords } from "../lib/focus";
 import { type Page, nextPage, pageOf, pagesOf, splitByHeadings } from "../lib/pages";
+import { reportLook, tileLook } from "../lib/tileLook";
+import { ReportLookFields } from "./LookFields";
+import PageTabSettings from "./PageTabSettings";
 import { useAutosave } from "../lib/useAutosave";
 import { HEIGHT, WIDTHS, hasHeight, sizeForCols, tileCols } from "../lib/tileSize";
 import { CHART_LABELS, cannotDraw, retype } from "../lib/sources";
@@ -202,7 +205,14 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
 
   const setValue = (id: string, patch: FilterValue) =>
     setValues((v) => ({ ...v, [id]: { ...v[id], ...patch } }));
-  const active = filters.filter((f) => {
+  /**
+   * The filters on the tab being read: the report's own, plus this page's.
+   *
+   * A filter given a page is for that page alone, so two tabs can sit at two different dates at
+   * once. Printing shows every page, so it shows every filter with it.
+   */
+  const shownFilters = printAll ? filters : filters.filter((f) => !f.page || f.page === pageId);
+  const active = shownFilters.filter((f) => {
     const v = values[f.id];
     return f.kind === "date" ? !!(v?.date_from || v?.date_to) : !!v?.values?.length;
   });
@@ -412,8 +422,15 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
     setRenaming(page.id);
   };
 
-  const renamePage = (id: string, name: string) =>
-    setPages(pages.map((p) => (p.id === id ? { ...p, name } : p)), config.widgets, "");
+  /** Moves a tab one place left or right. The tiles go with it; only the tab order changes. */
+  const movePage = (id: string, dir: -1 | 1) => {
+    const at = pages.findIndex((p) => p.id === id);
+    const to = at + dir;
+    if (at < 0 || to < 0 || to >= pages.length) return;
+    const list = [...pages];
+    [list[at], list[to]] = [list[to], list[at]];
+    setPages(list, config.widgets, dir < 0 ? "Tab moved left" : "Tab moved right");
+  };
 
   /** Takes a page away. Its tiles move to the first remaining page rather than going with it. */
   const removePage = (id: string) => {
@@ -487,7 +504,8 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
             <span className="muted small" aria-live="polite">
               {saveState === "saving" ? "Saving…" : saveState === "error" ? "Couldn't save. Check your connection." : report.status === "published" ? "Published, changes saved" : "Draft, saved"}
             </span>
-            <button className="btn btn-ghost" onClick={() => setPalettePanel(true)}>Colour palette</button>
+            <button className="btn btn-ghost" onClick={() => setPalettePanel(true)}
+              title="The report's colours, font and text size">Look</button>
             <button className="btn btn-ghost" onClick={duplicateReport} disabled={duplicating}>{duplicating ? "Duplicating…" : "Duplicate"}</button>
             <FullscreenButton />
             <button className="btn btn-ghost" onClick={() => navigate(`/reports/${report.id}`)}>See it as viewers will</button>
@@ -532,7 +550,7 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
       </header>
       )}
 
-      <div className="viewer-body stack">
+      <div className="viewer-body stack" style={reportLook(config.typography)}>
         {!shared && (
         <div className="row-wrap muted small dash-meta">
           <span className="chip"><span className="muted">Data</span> <b>{config.source_name}</b></span>
@@ -549,13 +567,13 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
         )}
 
         {editable && (
-          <FilterDesigner reportId={report.id} widgets={chartWidgets} filters={filters}
+          <FilterDesigner reportId={report.id} widgets={chartWidgets} filters={filters} pages={pages}
             onChange={(list) => setConfig((c) => ({ ...c, filters: list }))}
             onCustom={(filter) => setFilterDialog({ filter })} />
         )}
 
         <div className="filter-bar" role="group" aria-label="Dashboard filters">
-          {filters.map((f) => f.kind === "date" ? (
+          {shownFilters.map((f) => f.kind === "date" ? (
             <div key={f.id} className="filter-field">
               <span className="filter-label">{f.label}</span>
               <input type="date" aria-label={`${f.label} from`} value={values[f.id]?.date_from ?? ""}
@@ -596,27 +614,30 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
         </div>
         {(pages.length > 1 || editable) && (
           <div className="page-tabs no-print" role="tablist" aria-label="Report pages">
-            {pages.map((pg) => {
+            {pages.map((pg, at) => {
               const on = pg.id === pageId;
               const count = config.widgets.filter((w) => pageOf(pages, w) === pg.id).length;
+              // A tab given a colour draws in it; the rest use the report's accent as they always did.
+              const tint = pg.color ? { "--tab-color": pg.color } as React.CSSProperties : undefined;
               return (
-                <div key={pg.id} className={"page-tab" + (on ? " on" : "")}>
-                  {editable && on && renaming === pg.id ? (
-                    <input className="page-tab-input" value={pg.name} aria-label="Page name" autoFocus
-                      onChange={(e) => renamePage(pg.id, e.target.value)}
-                      onBlur={() => setRenaming(null)}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setRenaming(null); }} />
-                  ) : (
-                    <button role="tab" aria-selected={on} onClick={() => (on && editable ? setRenaming(pg.id) : setPageId(pg.id))}
-                      title={editable && on ? "Click again to rename this page" : `${count} tile${count === 1 ? "" : "s"}`}>
-                      {pg.name || "Untitled"}
-                      <span className="page-tab-count">{count}</span>
-                    </button>
-                  )}
-                  {editable && pages.length > 1 && (
-                    <button className="page-tab-x" aria-label={`Remove the page ${pg.name}`}
-                      title="Remove this page. Its tiles move to the first page."
-                      onClick={() => removePage(pg.id)}><Icon name="x" size={12} /></button>
+                <div key={pg.id} className={"page-tab" + (on ? " on" : "") + (pg.color ? " tinted" : "")} style={tint}>
+                  <button role="tab" aria-selected={on}
+                    // On the tab you are already reading, a click opens its settings: that is where
+                    // the name, the colour, the symbol and the order all live, rather than three
+                    // more buttons crowding every tab.
+                    onClick={() => (on && editable ? setRenaming(renaming === pg.id ? null : pg.id) : setPageId(pg.id))}
+                    title={editable && on ? "Click again for this tab's name, colour and order"
+                                          : `${count} tile${count === 1 ? "" : "s"}`}>
+                    {pg.icon && <Icon name={pg.icon} size={15} />}
+                    {pg.name || "Untitled"}
+                    <span className="page-tab-count">{count}</span>
+                  </button>
+                  {editable && on && renaming === pg.id && (
+                    <PageTabSettings page={pg} at={at} total={pages.length}
+                      onChange={(patch) => setPages(pages.map((x) => (x.id === pg.id ? { ...x, ...patch } : x)), config.widgets, "")}
+                      onMove={(dir) => movePage(pg.id, dir)}
+                      onRemove={pages.length > 1 ? () => { removePage(pg.id); setRenaming(null); } : undefined}
+                      onClose={() => setRenaming(null)} />
                   )}
                 </div>
               );
@@ -659,8 +680,8 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
             const { w, i } = t;
             if (w.kind === "media") {
               return (
-                <section key={w.id} className={`widget w-media size-${w.size ?? "third"}${editable || w.style?.cardBg ? " card" : ""}${editable ? " editing" : ""}${cardLook(w.style).className}${dragClass(w.id)}${resizeClass(w)}`}
-                  style={cardLook(w.style).style} aria-label={w.title || w.alt || "Picture"} {...dragProps(w.id)}>
+                <section key={w.id} className={`widget w-media size-${w.size ?? "third"}${editable || w.style?.cardBg ? " card" : ""}${editable ? " editing" : ""}${tileLook(w.style).className}${dragClass(w.id)}${resizeClass(w)}`}
+                  style={tileLook(w.style).style} aria-label={w.title || w.alt || "Picture"} {...dragProps(w.id)}>
                   <div className="widget-head">
                     {handle(w)}
                     {editable ? (
@@ -672,7 +693,8 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
                         <select className="chart-pick" value={sizeForCols(tileCols(w))} aria-label="Width" onChange={(e) => change(w.id, { size: e.target.value as Widget["size"] })}>
                           {WIDTHS.map((x) => <option key={x.size} value={x.size}>{x.label}</option>)}
                         </select>
-                        <CardColors name={w.title || "picture"} style={w.style ?? {}} onChange={(p) => setLook(w, p)} onApplyAll={lookAll} />
+                        <CardColors name={w.title || "picture"} style={w.style ?? {}} config={config}
+                          onChange={(p) => setLook(w, p)} onApplyAll={lookAll} />
                         <TileMenu name={w.title || "picture"} items={menuItems(w, i)} />
                       </div>
                     )}
@@ -684,8 +706,8 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
             }
             if (w.kind === "text") {
               return (
-                <section key={w.id} className={`widget w-text size-${w.size ?? "auto"}${editable || w.style?.cardBg ? " card" : ""}${editable ? " editing" : ""}${cardLook(w.style).className}${dragClass(w.id)}${resizeClass(w)}`}
-                  style={cardLook(w.style).style} aria-label={w.title || "Text"} {...dragProps(w.id)}>
+                <section key={w.id} className={`widget w-text size-${w.size ?? "auto"}${editable || w.style?.cardBg ? " card" : ""}${editable ? " editing" : ""}${tileLook(w.style).className}${dragClass(w.id)}${resizeClass(w)}`}
+                  style={tileLook(w.style).style} aria-label={w.title || "Text"} {...dragProps(w.id)}>
                   <div className="widget-head">
                     {handle(w)}
                     {editable ? (
@@ -697,7 +719,8 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
                         <select className="chart-pick" value={sizeForCols(tileCols(w))} aria-label="Width" onChange={(e) => change(w.id, { size: e.target.value as Widget["size"] })}>
                           {WIDTHS.map((x) => <option key={x.size} value={x.size}>{x.label}</option>)}
                         </select>
-                        <CardColors name={w.title || "text"} style={w.style ?? {}} onChange={(p) => setLook(w, p)} onApplyAll={lookAll} />
+                        <CardColors name={w.title || "text"} style={w.style ?? {}} config={config}
+                          onChange={(p) => setLook(w, p)} onApplyAll={lookAll} />
                         <TileMenu name={w.title || "text"} items={menuItems(w, i)} />
                       </div>
                     )}
@@ -730,8 +753,8 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
             const pickable = !canDrill && !showHistory && !!d?.ok ? clickColumn(shown.chart) : "";
             return (
               <section key={w.id} data-widget={w.id}
-                className={`card widget w-${w.chart.type} size-${w.size ?? "auto"}${cardLook(w.style).className}${dragClass(w.id)}${resizeClass(w)}`}
-                style={cardLook(w.style).style} aria-label={w.title} {...dragProps(w.id)}>
+                className={`card widget w-${w.chart.type} size-${w.size ?? "auto"}${tileLook(w.style).className}${dragClass(w.id)}${resizeClass(w)}`}
+                style={tileLook(w.style).style} aria-label={w.title} {...dragProps(w.id)}>
                 <div className="widget-head">
                   {handle(w)}
                   {editable ? (
@@ -772,7 +795,9 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
                       <button className="icon-btn" aria-label={`About ${w.title}`} aria-expanded={info === w.id} title="Where this comes from"
                         onClick={() => setInfo(info === w.id ? null : w.id)}><Icon name="info" size={16} /></button>
                     )}
-                    {editable && <CardColors name={w.title} style={w.style ?? {}} onChange={(p) => setLook(w, p)} onApplyAll={lookAll} />}
+                    {editable && <CardColors name={w.title} style={w.style ?? {}} config={config}
+                      isTable={w.chart.type === "table" || w.chart.type === "matrix"}
+                      onChange={(p) => setLook(w, p)} onApplyAll={lookAll} />}
                     {/* Anyone who may edit a chart from here may also move or remove it: the
                         pencil is already offered, and a report with a chart that can't be taken
                         off it sends people to the edit page for one click. */}
@@ -852,15 +877,26 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
       </div>
 
       {palettePanel && (
-        <Modal title="Colour palette" size="lg" onClose={() => setPalettePanel(false)}
+        <Modal title="How this report looks" size="lg" onClose={() => setPalettePanel(false)}
           footer={<button type="button" className="btn" onClick={() => setPalettePanel(false)}>Done</button>}>
-          <PalettePicker value={config.palette} onChange={paletteAll}
-            hint="Charts use these colours in order. A chart given its own colour or palette keeps it." />
+          <div className="stack">
+            <PalettePicker value={config.palette} onChange={paletteAll}
+              hint="Charts use these colours in order. A chart given its own colour or palette keeps it." />
+            <div className="box stack-sm">
+              <div className="strong small">Type</div>
+              <ReportLookFields typography={config.typography}
+                onChange={(typography) => commit({ ...config, typography }, "Saved")} />
+              <p className="muted small">
+                Every tile is set in this unless it says otherwise. One tile can be set on its own
+                in its <b>⋯ → Edit chart → Look</b>.
+              </p>
+            </div>
+          </div>
         </Modal>
       )}
       {editingChart && config.widgets.some((w) => w.id === editingChart) && (
         <ChartEditor reportId={report.id} widget={config.widgets.find((w) => w.id === editingChart)!} data={data[editingChart]}
-          onClose={() => setEditingChart(null)} onSave={saveChart} onApplyColorToAll={colorAll}
+          config={config} onClose={() => setEditingChart(null)} onSave={saveChart} onApplyColorToAll={colorAll}
           onApplyCardToAll={(patch) => commit({ ...config, widgets: config.widgets.map((x) => ({ ...x, style: { ...x.style, ...patch } })) })} />
       )}
       {filterDialog && (
@@ -923,8 +959,11 @@ function HistoryChart({ widget, points, height }: { widget: Widget; points: Hist
   );
 }
 
-function FilterDesigner({ reportId, widgets, filters, onChange, onCustom }: {
-  reportId: number; widgets: Widget[]; filters: DashboardFilter[]; onChange: (list: DashboardFilter[]) => void;
+function FilterDesigner({ reportId, widgets, filters, pages, onChange, onCustom }: {
+  reportId: number; widgets: Widget[]; filters: DashboardFilter[];
+  /** The report's tabs, so a filter can be made to belong to one of them. */
+  pages: Page[];
+  onChange: (list: DashboardFilter[]) => void;
   /** Opens the dialog for choosing columns by hand: a filter to edit, or none for a new one. */
   onCustom: (filter?: DashboardFilter) => void;
 }) {
@@ -975,6 +1014,17 @@ function FilterDesigner({ reportId, widgets, filters, onChange, onCustom }: {
             </span>
             <button className="btn btn-ghost btn-sm" disabled={!!busy || !model || !widgets.length} onClick={() => map(f.label, f.kind, f.id)}
               title="Ask the AI model again, for example after adding charts">{busy === f.id ? "Mapping…" : "Map again"}</button>
+            {pages.length > 1 && (
+              <label className="filter-scope">
+                <span className="sr-only">Which tab the {f.label} filter is on</span>
+                <select value={f.page ?? ""} aria-label={`Which tab the ${f.label} filter is on`}
+                  title="A filter on one tab leaves the charts on the other tabs alone"
+                  onChange={(e) => onChange(filters.map((x) => (x.id === f.id ? { ...x, page: e.target.value || undefined } : x)))}>
+                  <option value="">Whole report</option>
+                  {pages.map((p) => <option key={p.id} value={p.id}>{p.name || "Untitled"} only</option>)}
+                </select>
+              </label>
+            )}
             <button className="btn btn-ghost btn-sm" onClick={() => onCustom(f)} title="Choose each chart's column yourself">Edit</button>
             <button className="icon-btn danger" aria-label={`Remove the ${f.label} filter`} title="Remove"
               onClick={() => onChange(filters.filter((x) => x.id !== f.id))}><Icon name="trash" size={16} /></button>

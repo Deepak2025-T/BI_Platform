@@ -9,12 +9,10 @@
  * has one implied page holding everything, draws no tab bar, and behaves exactly as it did.
  */
 
-import type { DashboardConfig, Widget } from "../api/types";
+import type { DashboardConfig, DashboardPage, Widget } from "../api/types";
 
-export interface Page {
-  id: string;
-  name: string;
-}
+/** One page of a report. The same shape the config saves (api/types DashboardPage). */
+export type Page = DashboardPage;
 
 /** The id the single implied page goes by when a report has no pages of its own. */
 export const ONE_PAGE = "main";

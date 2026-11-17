@@ -18,8 +18,8 @@ from ..prompt_clarify import clarify
 from ..prompt_ideas import ideas_for
 from ..excel_export import dashboard_workbook
 from ..ppt_export import dashboard_deck
-from ..schemas import (AddWidgetsIn, ChatIn, ClarifyIn, DashboardDataIn, DashboardIn, DrillIn, FilterMapIn,
-                       ReportOut, SaveDashboardIn, SourceOut, WidgetIn)
+from ..schemas import (PROMPT_MAX, AddWidgetsIn, ChatIn, ClarifyIn, DashboardDataIn, DashboardIn, DrillIn,
+                       FilterMapIn, ReportOut, SaveDashboardIn, SourceOut, WidgetIn)
 from ..refresh import RefreshFailed, as_utc, latest_snapshot, refresh_report, snapshot_matches
 from ..report_data import active_filters, run_widgets
 from ..datasources import check_query
@@ -303,7 +303,7 @@ def _run_widgets(config: dict, source, body: DashboardDataIn) -> list[dict]:
 
 def _save(db: Session, user: User, *, title: str, prompt: str, source, widgets: list[dict], extra: dict) -> ReportOut:
     config = {"kind": "dashboard", "source_id": source.id, "source_name": source.name, "widgets": widgets, **extra}
-    r = Report(title=title[:200], prompt=(prompt or title)[:2000], config=config, owner_id=user.id)
+    r = Report(title=title[:200], prompt=(prompt or title)[:PROMPT_MAX], config=config, owner_id=user.id)
     db.add(r)
     db.commit()
     return to_out(get_visible(db, r.id, user))

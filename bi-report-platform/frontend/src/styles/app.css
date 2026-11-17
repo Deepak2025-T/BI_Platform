@@ -1252,3 +1252,120 @@ body.printing .page-print-head:first-child { break-before: auto; }
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px;
   box-shadow: 0 6px 18px rgba(13, 27, 42, .1);
 }
+
+/* ---------------------------------------------------------------------------
+   The look of a report and its tiles (lib/tileLook.ts): font, size, weight,
+   spacing, borders, and where a heading sits. Everything here is driven by a
+   variable that is only set when someone chose it, so a report that says
+   nothing is drawn by the rules above exactly as it always was.
+   --------------------------------------------------------------------------- */
+
+/* Set on the report, inherited by every tile under it. */
+.viewer-body { font-family: var(--report-font, inherit); font-size: var(--report-size, inherit); }
+
+/* A tile's own font and size win over the report's. */
+.widget.has-font { font-family: var(--tile-font); }
+.widget.has-size { font-size: var(--tile-size); }
+.widget.has-font .h2, .widget.has-font .widget-title-input,
+.widget.has-font .text-tile-title, .widget.has-font .text-tile-body { font-family: inherit; }
+/* Headings and figures keep their relative scale rather than all becoming one size. */
+.widget.has-size .h2, .widget.has-size .widget-title-input, .widget.has-size .text-tile-title { font-size: 1.07em; }
+.widget.has-size .small, .widget.has-size .muted.small, .widget.has-size .hint { font-size: .86em; }
+.widget.has-size .result-table { font-size: .96em; }
+.widget.tile-bold { font-weight: 600; }
+.widget.tile-bold .h2, .widget.tile-bold .widget-title-input, .widget.tile-bold .text-tile-title { font-weight: 800; }
+.widget.tile-bold .result-table td { font-weight: 600; }
+
+/* Padding, border and corners. The card padding is what the header band is pulled out against,
+   so the band's negative margin has to follow it. */
+.widget.has-pad.card, .widget.has-pad.w-kpi { padding: var(--tile-pad); }
+.widget.has-pad.has-head-bg > .widget-head {
+  margin: calc(var(--tile-pad) * -1) calc(var(--tile-pad) * -1) 0;
+  padding: 10px var(--tile-pad);
+}
+.widget.has-border.card, .widget.has-border.w-kpi {
+  border-style: solid;
+  border-width: var(--tile-border-w, 1px);
+  border-color: var(--tile-border, var(--border));
+}
+.widget.has-radius.card, .widget.has-radius.w-kpi { border-radius: var(--tile-radius); }
+.widget.has-radius.has-head-bg > .widget-head { border-radius: var(--tile-radius) var(--tile-radius) 0 0; }
+
+/* Where the heading sits. The tools stay at the right-hand end whatever the words do, so the
+   menu and the drag handle never move about as a report is restyled. */
+.widget.align-center > .widget-head > .h2, .widget.align-center > .widget-head > .widget-title-input,
+.widget.align-center > .widget-head > .text-tile-title { text-align: center; }
+.widget.align-right > .widget-head > .h2, .widget.align-right > .widget-head > .widget-title-input,
+.widget.align-right > .widget-head > .text-tile-title { text-align: right; }
+.widget.align-center > .widget-head, .widget.align-right > .widget-head { position: relative; }
+.widget.align-center > .widget-head > .h2, .widget.align-right > .widget-head > .h2 { flex: 1; min-width: 0; }
+.widget.valign-top > .widget-head { align-items: flex-start; }
+.widget.valign-bottom > .widget-head { align-items: flex-end; }
+
+/* Long values in a table wrap instead of being held on one line, and line breaks inside a value
+   are kept. Only the text columns wrap: a number that folded in half would be unreadable. */
+.result-table.wrap td:not(.r), .result-table.wrap th:not(.r) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.result-table.wrap td, .result-table.wrap th { vertical-align: top; }
+.result-table.wrap .td-index { white-space: nowrap; }
+
+/* Tab colour, symbol and settings (components/PageTabSettings). A tab with no colour of its own
+   draws in the report's accent, exactly as the tab bar always did. */
+.page-tab.tinted.on > button:first-child { border-bottom-color: var(--tab-color); color: var(--tab-color); }
+.page-tab.tinted.on .page-tab-count { background: var(--tab-color); color: #FFFFFF; }
+.page-tab.tinted:not(.on) > button:first-child > svg { color: var(--tab-color); }
+.page-tab { position: relative; }
+
+.tab-settings {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+  display: flex; flex-direction: column; gap: 10px;
+  min-width: 290px; max-width: 340px; padding: 12px 14px; cursor: default;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(13, 27, 42, .14);
+}
+.tab-icons { display: flex; flex-wrap: wrap; gap: 4px; }
+.tab-icon {
+  display: flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--fg2); cursor: pointer; font: inherit; font-size: 13px;
+}
+.tab-icon:hover { border-color: var(--accent); color: var(--fg); }
+.tab-icon.on { border-color: var(--accent); background: var(--accent-soft); color: var(--navy); }
+
+/* Which tab a filter belongs to, in the filter designer. */
+.filter-scope select { height: 32px; font-size: 12.5px; max-width: 170px; }
+
+/* The look popover carries more than the two colour rows it started as, so it is given room and
+   allowed to scroll rather than running off the bottom of a tile near the foot of the page. */
+.card-colors { min-width: 320px; max-width: 360px; max-height: min(70vh, 560px); overflow-y: auto; }
+.card-colors .form-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+.card-colors .field { font-size: 12.5px; }
+.card-colors select { height: 32px; font-size: 12.5px; }
+
+/* `.tile-menu-list button` dresses every button in a popover as a menu row, which is right for a
+   menu and wrong for a colour dot, a segment or an icon. These put the controls back; the
+   selectors are deliberately two classes deep, because that rule is more specific than the
+   single-class ones the controls are drawn by. */
+.card-colors .color-dot, .tab-settings .color-dot {
+  width: 30px; height: 30px; padding: 0; border-radius: 50%;
+  border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--border-strong);
+}
+.card-colors .color-dot.on, .tab-settings .color-dot.on { box-shadow: 0 0 0 2px var(--accent); }
+.card-colors .color-dot.color-none, .tab-settings .color-dot.color-none {
+  background: linear-gradient(135deg, #FFFFFF 45%, #E05252 46%, #E05252 54%, #FFFFFF 55%);
+}
+.card-colors .seg, .tab-settings .seg {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 32px; padding: 0 10px; font-size: 12.5px; text-align: center;
+  border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface);
+}
+.card-colors .seg.on, .tab-settings .seg.on { border-color: var(--accent); background: var(--accent-soft); font-weight: 650; }
+.tab-settings .tab-icon {
+  justify-content: center; width: 30px; height: 30px; padding: 0;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+}
+.tab-settings .tab-icon.on { border-color: var(--accent); background: var(--accent-soft); color: var(--navy); }
+.tab-settings .btn, .card-colors .btn { text-align: center; }

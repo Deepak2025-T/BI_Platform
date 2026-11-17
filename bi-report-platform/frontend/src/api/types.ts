@@ -570,6 +570,26 @@ export interface Widget {
 export interface DashboardPage {
   id: string;
   name: string;
+  /** The tab's own colour, for telling pages apart at a glance. Missing uses the report's accent. */
+  color?: string;
+  /** An icon's name (see components/Icon) shown before the tab's name. */
+  icon?: string;
+}
+
+/** The fonts a report can be set in. "" is the app's own, which is what every report starts as. */
+export type ReportFont = "" | "serif" | "mono" | "system";
+
+/**
+ * How a whole report is set: the font and its size. Not to be confused with `theme`, which is the
+ * look a template was drawn in.
+ *
+ * A tile may override either of these for itself; this is what the rest of them inherit, so
+ * changing a report's font is one change rather than one per chart.
+ */
+export interface ReportTypography {
+  font?: ReportFont;
+  /** Base text size in pixels. Missing is the app's 14. */
+  fontSize?: number;
 }
 
 export type WidgetSize = "auto" | "quarter" | "third" | "half" | "twothird" | "full";
@@ -597,6 +617,32 @@ export interface WidgetStyle {
   legend?: boolean;
   /** Tables: the width in pixels of each named column, for the ones that have been set. */
   columnWidths?: Record<string, number>;
+  /**
+   * Tables: long values wrap onto more lines instead of being held on one.
+   *
+   * Off by default, because a table of short values reads best as a grid of rows the same
+   * height. A description column is the opposite case, and this is the switch for it. Line
+   * breaks inside a value are honoured either way once it is on.
+   */
+  wrapText?: boolean;
+  /** The font this tile is set in. Missing inherits the report's. */
+  font?: ReportFont;
+  /** Text size in pixels for this tile. Missing inherits the report's. */
+  fontSize?: number;
+  /** Heavier text throughout the tile, not only its heading. */
+  bold?: boolean;
+  /** Where the heading sits across the tile. Missing is left. */
+  align?: "left" | "center" | "right";
+  /** Where the heading sits down its band, when the band is taller than the words. Missing is middle. */
+  vAlign?: "top" | "middle" | "bottom";
+  /** Space inside the tile's edge, in pixels. Missing is the app's 18. */
+  padding?: number;
+  /** The tile's border colour. Missing is the app's hairline. */
+  border?: string;
+  /** How thick that border is, in pixels. 0 takes it off. */
+  borderWidth?: number;
+  /** How round the tile's corners are, in pixels. Missing is the app's 12. */
+  radius?: number;
   /** Tables: false takes the row numbers off. Missing means they are shown. */
   rowNumbers?: boolean;
   /** Tables: columns taken off this table. The query still returns them, so they can come back. */
@@ -698,6 +744,8 @@ export interface DashboardConfig {
    * widget, which is how every report behaved before pages existed.
    */
   pages?: DashboardPage[];
+  /** The font and text size the whole report is set in. Missing is the app's own. */
+  typography?: ReportTypography;
 }
 
 /** A dashboard-wide filter. The AI model picks each chart's column once, when the filter is added. */
@@ -709,6 +757,15 @@ export interface DashboardFilter {
   options: string[];
   /** Chart id -> the column it filters on. Charts missing here aren't filtered. */
   columns: Record<string, { table: string; column: string }>;
+  /**
+   * The page this filter belongs to, when it is only for that one.
+   *
+   * Missing means it is a filter on the whole report: it shows above every page and applies to
+   * every chart it was mapped to, which is how filters behaved before pages existed. A filter
+   * given a page shows only on that tab and leaves the charts on the other tabs alone, so two
+   * pages can be read at two different dates at the same time.
+   */
+  page?: string;
 }
 
 export interface FilterValue {
