@@ -49,6 +49,18 @@ export const V_ALIGNMENTS: [NonNullable<WidgetStyle["vAlign"]>, string][] =
 /** Border colours offered: the app's own lines first, then something to pick a tile out with. */
 export const BORDER_COLORS = ["#DCE5EE", "#CFDCE8", "#0D3B66", "#00B4D8", "#2A9D8F", "#F5A623", "#A63D40", "#1A2332"];
 
+/** Colours for words: dark enough to read on a pale card, pale enough to read on a dark one. */
+export const TEXT_COLORS = ["#1A2332", "#4A5568", "#0D3B66", "#00779E", "#1E5B3A", "#8A2A1F", "#6D597A", "#FFFFFF"];
+
+/** Heading sizes for a heading tile, in pixels. 19 is what a heading has always been. */
+export const HEADING_SIZES: [number, string][] = [
+  [15, "Small"], [17, "Medium"], [19, "Default"], [24, "Large"], [30, "Huge"], [38, "Banner"],
+];
+
+/** Where a tile narrower than its row sits in it. */
+export const JUSTIFIES: [NonNullable<WidgetStyle["justify"]>, string][] =
+  [["left", "Left"], ["center", "Centre"], ["right", "Right"]];
+
 const FONT_STACK = new Map(FONTS.map((f) => [f.key, f.stack]));
 
 /** The CSS font stack for a font key, or "" for the app's own. */
@@ -90,6 +102,18 @@ export function tileLook(style?: WidgetStyle): { className: string; style: CSSPr
     vars["--head-fg"] = isDark(style.headBg) ? "#FFFFFF" : "#1A2332";
     className += " has-head-bg";
   }
+  // Set by hand, the tile's words are that colour whatever is behind them: a choice beats the
+  // automatic white-on-dark, which is only there to keep an unset tile readable.
+  if (style?.textColor) {
+    vars["--tile-fg"] = style.textColor;
+    className += " has-fg";
+  }
+  const heading = within(style?.headingSize, 10, 64);
+  if (heading !== undefined) {
+    vars["--tile-heading"] = `${heading}px`;
+    className += " has-heading-size";
+  }
+  if (style?.justify && style.justify !== "left") className += ` justify-${style.justify}`;
 
   const stack = fontStack(style?.font);
   if (stack) {
@@ -134,14 +158,16 @@ export function tileLook(style?: WidgetStyle): { className: string; style: CSSPr
 
 /** Whether a tile is set in anything other than the report's own look. */
 export const isStyled = (style?: WidgetStyle): boolean =>
-  !!(style && (style.headBg || style.cardBg || style.font || style.fontSize || style.bold
-    || style.align || style.vAlign || style.padding !== undefined || style.border
+  !!(style && (style.headBg || style.cardBg || style.textColor || style.legendColor || style.font
+    || style.fontSize || style.bold || style.align || style.vAlign || style.justify
+    || style.headingSize !== undefined || style.padding !== undefined || style.border
     || style.borderWidth !== undefined || style.radius !== undefined));
 
 /** Everything the look panel sets, cleared. Used by "Reset this tile's look". */
 export const CLEARED_LOOK: Partial<WidgetStyle> = {
-  headBg: undefined, cardBg: undefined, font: undefined, fontSize: undefined, bold: undefined,
-  align: undefined, vAlign: undefined, padding: undefined, border: undefined,
+  headBg: undefined, cardBg: undefined, textColor: undefined, legendColor: undefined,
+  font: undefined, fontSize: undefined, bold: undefined, align: undefined, vAlign: undefined,
+  justify: undefined, headingSize: undefined, padding: undefined, border: undefined,
   borderWidth: undefined, radius: undefined,
 };
 

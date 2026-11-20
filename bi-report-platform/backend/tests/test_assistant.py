@@ -419,3 +419,52 @@ def test_the_outline_schema_uses_nothing_claude_refuses():
     for schema in schemas:
         found = unsupported.intersection(json.dumps(schema).replace('"', " ").split())
         assert not found, f"{sorted(found)} is not supported by Claude's structured output"
+
+
+def test_a_request_for_tabs_builds_a_report_with_tabs(monkeypatch, source_id):
+    """"A tab for X, a tab for Y" used to put every chart in one stack: the planner had nowhere
+    to say which tab a chart belonged on, so nothing downstream could know."""
+    from app.ai import assistant
+    from app.database import SessionLocal
+    from app.datasources import get_source
+
+    outline = {"title": "Two tabs", "widgets": [
+        {"title": "Totals", "question": "Total by region", "chart": "bar", "section": "Sales"},
+        {"title": "Orders", "question": "Total by region", "chart": "bar", "section": "Operations"},
+        {"title": "More sales", "question": "Total by region", "chart": "bar", "section": "Sales"},
+    ]}
+
+    def reply(spec, system, user, schema):
+        if "design BI dashboards" in system:
+            assert "section" in system, "the planner has to be told what a section is for"
+            return outline
+        return _reply(system, user)
+
+    monkeypatch.setattr(assistant, "complete_json", reply)
+    db = SessionLocal()
+    try:
+        plan = assistant.plan_dashboard(assistant.ModelSpec(provider="ollama", model="x"),
+                                        get_source(db, source_id), "A tab for sales, a tab for operations", {})
+    finally:
+        db.close()
+    assert [p["name"] for p in plan["pages"]] == ["Sales", "Operations"]
+    # The charts of one tab sit together, and every chart is on the tab it was planned for.
+    tabs = [w["page"] for w in plan["widgets"]]
+    assert tabs == [plan["pages"][0]["id"], plan["pages"][0]["id"], plan["pages"][1]["id"]]
+    assert [w["title"] for w in plan["widgets"]] == ["Totals", "More sales", "Orders"]
+
+
+def test_a_request_that_asked_for_no_tabs_gets_none(monkeypatch, source_id):
+    from app.ai import assistant
+    from app.database import SessionLocal
+    from app.datasources import get_source
+
+    monkeypatch.setattr(assistant, "complete_json",
+                        lambda spec, system, user, schema: _reply(system, user))
+    db = SessionLocal()
+    try:
+        plan = assistant.plan_dashboard(assistant.ModelSpec(provider="ollama", model="x"),
+                                        get_source(db, source_id), "Orders dashboard", {})
+    finally:
+        db.close()
+    assert plan["pages"] == [] and all("page" not in w for w in plan["widgets"])

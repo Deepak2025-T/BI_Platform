@@ -1,6 +1,7 @@
 """Runs a dashboard's charts. Shared by the viewer, Excel export and scheduled refreshes."""
 
 from . import dashboard_filters, dashboard_pages, date_rollup
+from .connections import openpages
 from .datasources import DataSource, QueryFailed, run_sql
 from .sql_guard import UnsafeSQL
 
@@ -54,5 +55,11 @@ def run_widgets(config: dict, source: DataSource, values: dict, refresh: bool = 
             out.append({"id": w["id"], "ok": True, **result,
                         "filtered": applied, "not_filtered": skipped})
         except (UnsafeSQL, QueryFailed) as err:
-            out.append({"id": w["id"], "ok": False, "error": str(err), "filtered": applied, "not_filtered": skipped})
+            # OpenPages reports its limits by code ("OP-60002: The query failed to be transformed
+            # into SQL"), which tells the person reading the report nothing they can act on. Where
+            # we know what it means, the message says so.
+            said = openpages.advice(str(err)) if source.is_openpages else ""
+            message = f"{err} {said}".strip() if said else str(err)
+            out.append({"id": w["id"], "ok": False, "error": message,
+                        "filtered": applied, "not_filtered": skipped})
     return out

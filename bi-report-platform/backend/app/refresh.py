@@ -82,6 +82,59 @@ def snapshot_matches(report: Report, snap: ReportSnapshot) -> bool:
     return snap.data.get("params") == report.config.get("params")
 
 
+def saved_data(db: Session, report: Report) -> ReportSnapshot | None:
+    """This dashboard's numbers as they were last run, or None when there are none to show.
+
+    What makes a saved copy usable is that it was taken from the queries the report has now: a
+    chart added, edited or removed since means the saved copy answers a different question, and
+    showing it would be showing something that is no longer the report.
+    """
+    if not is_dashboard(report):
+        return None
+    snap = latest_snapshot(db, report.id)
+    if snap is None or not snapshot_matches(report, snap) or snap.data.get("widgets") is None:
+        return None
+    return snap
+
+
+def snapshot_body(snap: ReportSnapshot, source_name: str = "") -> dict:
+    """A saved snapshot in the shape the dashboard endpoints answer with."""
+    at = as_utc(snap.created_at).isoformat(timespec="seconds")
+    return {"source": snap.data.get("source", source_name), "snapshot_at": at,
+            "widgets": [{**w, "ran_at": at, "cached": False} for w in snap.data["widgets"]]}
+
+
+def keep_results(db: Session, report: Report, widgets: list[dict], source_name: str) -> ReportSnapshot | None:
+    """Saves what a live run just produced, so the next person to open the report waits for nothing.
+
+    This is what turns "every chart runs its query again on every open" into "the numbers are
+    already there": the first open after a report is built or edited pays for the queries once and
+    everybody after that is served the result. Best effort - a report that cannot be saved is
+    still a report that can be shown, so the caller is handed None rather than an error.
+
+    A run where nothing worked is never kept. Saving a page of error messages would mean a
+    database that was briefly unreachable left the report showing failures until someone noticed
+    and refreshed by hand.
+    """
+    if not is_dashboard(report) or not widgets or not any(w.get("ok") for w in widgets):
+        return None
+    now = utcnow()
+    data = {"widgets": widgets, "source": source_name,
+            "sql": {w["id"]: w["sql"] for w in query_widgets(report.config)}}
+    try:
+        snap = ReportSnapshot(report_id=report.id, created_at=now, trigger="open", data=data,
+                              summary=summarize(report.config, data))
+        db.add(snap)
+        db.flush()
+        thin(db, report, now)
+        db.commit()
+        return snap
+    except Exception:                       # a read that shows numbers must not fail over a write
+        log.exception("could not save the results of report %s", report.id)
+        db.rollback()
+        return None
+
+
 def refresh_report(db: Session, report: Report, trigger: str) -> ReportSnapshot:
     """Runs the report's saved queries now (no AI) and saves the result as a snapshot.
     Raises RefreshFailed; the error is also recorded on the report."""

@@ -87,6 +87,15 @@ SQL_GUIDE = """OpenPages Query Service SQL (not database SQL). It is much smalle
 # what to ask instead - the person cannot act on "use a PARENT join" and the model cannot act on
 # "try asking for the list".
 _REMEDIES: list[tuple[str, str, str]] = [
+    # Checked before OP-60002, which this one usually arrives alongside: the transform failed, and
+    # this says where. It means the Query Service read something where it expected a field - an
+    # empty [Type].[], or an expression in brackets it does not accept in a WHERE.
+    ("columnReference cannot be null",
+     "Something in the WHERE clause is not a field: an empty [Type].[] reference, or a condition "
+     "wrapped in brackets. Write each condition as [Type].[Field] = 'value', join them with AND, "
+     "and use IN ('a', 'b') for several values rather than brackets around ORs.",
+     "A filter on this chart doesn't name a field OpenPages knows. Check the filter's columns for "
+     "this chart, or clear the filter to see the report unfiltered."),
     ("OP-60008",
      "ANCESTOR() needs a scoping filter on the ancestor type in the WHERE clause, and then the "
      "SELECT may name no other field of that type - so it cannot group every record by its "
@@ -603,18 +612,48 @@ def field_ref(type_name: str, field: str) -> str:
     return f"[{type_name.replace(']', ']]')}].[{field.replace(']', ']]')}]"
 
 
+def has_or(condition: str) -> bool:
+    """Whether a condition joins its parts with OR outside of any brackets or quotes.
+
+    `[T].[F] IN ('a', 'b')` does not: its brackets are part of IN. `[T].[F] = 'a' OR [T].[F] = 'b'`
+    does, and ANDing anything onto that changes what it means.
+    """
+    masked = mask(condition)
+    depth = 0
+    for m in re.finditer(r"[()]|\bOR\b", masked, re.I):
+        token = m.group()
+        if token == "(":
+            depth += 1
+        elif token == ")":
+            depth -= 1
+        elif depth == 0:
+            return True
+    return False
+
+
 def add_conditions(sql: str, conditions: list[str]) -> str:
-    """Adds conditions to the query's WHERE (or a new WHERE), before GROUP BY / ORDER BY / HAVING."""
-    if not conditions:
+    """Adds conditions to the query's WHERE (or a new WHERE), before GROUP BY / ORDER BY / HAVING.
+
+    Nothing is bracketed that does not have to be. The Query Service's SQL is a small grammar, not
+    a database's: a WHERE it cannot parse comes back as "columnReference cannot be null", and a
+    predicate wrapped in brackets it did not ask for is the quickest way to get there. Brackets go
+    on only around a part that joins with OR, where leaving them off would quietly change which
+    rows come back - correctness first, and a query it may reject second.
+    """
+    parts = [c.strip() for c in conditions if c and c.strip()]
+    if not parts:
         return sql
-    cond = " AND ".join(f"({c})" for c in conditions)
+    cond = " AND ".join(f"({c})" if has_or(c) else c for c in parts)
     masked = mask(sql)
     tail = re.search(r"\b(GROUP\s+BY|ORDER\s+BY|HAVING)\b", masked, re.I)
     cut = tail.start() if tail else len(sql)
     head, rest = sql[:cut], sql[cut:]
     where = re.search(r"\bWHERE\b", masked[:cut], re.I)
     if where:
-        head = f"{head[:where.end()]} {cond} AND ({head[where.end():].strip()})"
+        # The query's own conditions stay first and keep their shape; ours are ANDed on the end.
+        body = head[where.end():].strip()
+        body = f"({body})" if has_or(body) else body
+        head = f"{head[:where.end()]} {body} AND {cond}"
     else:
         head = f"{head.rstrip()} WHERE {cond}"
     return f"{head} {rest}".strip()

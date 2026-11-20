@@ -15,6 +15,7 @@ import { printReport } from "../lib/print";
 import { prefersReducedMotion } from "../lib/motion";
 import { type Focus, clickColumn, focusIndex, focusLabel, focusRows, showsRecords } from "../lib/focus";
 import { type Page, nextPage, pageOf, pagesOf, splitByHeadings } from "../lib/pages";
+import { isDark } from "../lib/cardColors";
 import { reportLook, tileLook } from "../lib/tileLook";
 import { ReportLookFields } from "./LookFields";
 import PageTabSettings from "./PageTabSettings";
@@ -327,6 +328,9 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
       ...(w.kind === "text" ? [] : [{ label: "Duplicate", onClick: () => duplicateChart(w) }]),
       { label: "Move earlier", onClick: () => move(i, -1), disabled: place <= 0 },
       { label: "Move later", onClick: () => move(i, 1), disabled: place === onSamePage.length - 1 },
+      { label: "Move to the top", onClick: () => moveEnd(i, "top"), disabled: place <= 0 },
+      { label: "Move to the bottom", onClick: () => moveEnd(i, "bottom"),
+        disabled: place === onSamePage.length - 1 },
       // Only worth offering once there is somewhere else to put it.
       ...pages.filter((pg) => pg.id !== pageOf(pages, w))
         .map((pg) => ({ label: `Move to ${pg.name}`, onClick: () => moveToPage(w, pg.id) })),
@@ -407,6 +411,26 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
     if (!there) return;
     [list[i], list[there.at]] = [list[there.at], list[i]];
     setWidgets(list);
+  };
+
+  /**
+   * Straight to the top or the bottom of the tab it is on.
+   *
+   * Stepping a tile up thirty times to reach the top is not arranging a report, it is work; and
+   * dragging across a scroll is worse. The tile keeps its page - this moves it within the tab,
+   * never off it.
+   */
+  const moveEnd = (i: number, to: "top" | "bottom") => {
+    const list = [...config.widgets];
+    const [tile] = list.splice(i, 1);
+    const page = pageOf(pages, tile);
+    const neighbours = list.map((w, at) => ({ w, at })).filter(({ w }) => pageOf(pages, w) === page);
+    // Where its own page starts and ends in the report's one list of tiles. A page with nothing
+    // else left on it puts the tile back where it was.
+    const at = !neighbours.length ? i
+      : to === "top" ? neighbours[0].at : neighbours[neighbours.length - 1].at + 1;
+    list.splice(at, 0, tile);
+    setWidgets(list, to === "top" ? "Moved to the top" : "Moved to the bottom");
   };
 
   /** Writes a new set of pages and the widgets that go with them, in one saved change. */
@@ -557,7 +581,7 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
           {config.model && <span className="chip"><span className="muted">Built with</span> <b>{config.model}</b></span>}
           {paramText && <span className="chip"><span className="muted">Parameters</span> <b>{paramText}</b></span>}
           <span>{schedule.refresh_every === "off"
-            ? "Each chart re-runs its saved query when the dashboard opens. No AI is used to show it."
+            ? "Opens on the numbers from its last run; Refresh runs every chart's saved query again. No AI is used to show it."
             : "Shows the latest scheduled refresh of each chart's saved query (setting filters queries live). No AI is used."}</span>
         </div>
         )}
@@ -605,7 +629,7 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
             ? <span className="muted small">Comparisons use unfiltered data; clear the filters to see them.</span>
             : snapshotAt && !baseline && <span className="muted small">No earlier refresh to compare with yet.</span>)}
           <span className="filter-status muted small" aria-live="polite">
-            {updating && !loading ? "Updating…" : ranAt ? `Data from ${new Date(ranAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${snapshotAt ? " (auto-refresh)" : anyCached ? ", saved for up to 15 minutes" : ""}` : ""}
+            {updating && !loading ? "Updating…" : ranAt ? `Data from ${new Date(ranAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${snapshotAt ? (autoOn ? " (auto-refresh)" : " (saved — Refresh re-runs it)") : anyCached ? ", saved for up to 15 minutes" : ""}` : ""}
           </span>
           {!shared && (
             <button className="btn btn-ghost btn-sm no-print" onClick={() => load(true)} disabled={updating}
@@ -617,10 +641,16 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
             {pages.map((pg, at) => {
               const on = pg.id === pageId;
               const count = config.widgets.filter((w) => pageOf(pages, w) === pg.id).length;
-              // A tab given a colour draws in it; the rest use the report's accent as they always did.
-              const tint = pg.color ? { "--tab-color": pg.color } as React.CSSProperties : undefined;
+              // A tab given a colour draws in it; the rest use the report's accent as they always
+              // did. A tab given a background is filled with it, and its words switch to white or
+              // dark so they can still be read.
+              const tint = (pg.color || pg.bg) ? {
+                ...(pg.color ? { "--tab-color": pg.color } : {}),
+                ...(pg.bg ? { "--tab-bg": pg.bg, "--tab-fg": isDark(pg.bg) ? "#FFFFFF" : "#1A2332" } : {}),
+              } as React.CSSProperties : undefined;
               return (
-                <div key={pg.id} className={"page-tab" + (on ? " on" : "") + (pg.color ? " tinted" : "")} style={tint}>
+                <div key={pg.id} className={"page-tab" + (on ? " on" : "") + (pg.color ? " tinted" : "")
+                                            + (pg.bg ? " has-tab-bg" : "")} style={tint}>
                   <button role="tab" aria-selected={on}
                     // On the tab you are already reading, a click opens its settings: that is where
                     // the name, the colour, the symbol and the order all live, rather than three
@@ -719,7 +749,7 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
                         <select className="chart-pick" value={sizeForCols(tileCols(w))} aria-label="Width" onChange={(e) => change(w.id, { size: e.target.value as Widget["size"] })}>
                           {WIDTHS.map((x) => <option key={x.size} value={x.size}>{x.label}</option>)}
                         </select>
-                        <CardColors name={w.title || "text"} style={w.style ?? {}} config={config}
+                        <CardColors name={w.title || "text"} style={w.style ?? {}} config={config} isHeading
                           onChange={(p) => setLook(w, p)} onApplyAll={lookAll} />
                         <TileMenu name={w.title || "text"} items={menuItems(w, i)} />
                       </div>
@@ -795,7 +825,7 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
                       <button className="icon-btn" aria-label={`About ${w.title}`} aria-expanded={info === w.id} title="Where this comes from"
                         onClick={() => setInfo(info === w.id ? null : w.id)}><Icon name="info" size={16} /></button>
                     )}
-                    {editable && <CardColors name={w.title} style={w.style ?? {}} config={config}
+                    {editable && <CardColors name={w.title} style={w.style ?? {}} config={config} isChart
                       isTable={w.chart.type === "table" || w.chart.type === "matrix"}
                       onChange={(p) => setLook(w, p)} onApplyAll={lookAll} />}
                     {/* Anyone who may edit a chart from here may also move or remove it: the
@@ -880,8 +910,15 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
         <Modal title="How this report looks" size="lg" onClose={() => setPalettePanel(false)}
           footer={<button type="button" className="btn" onClick={() => setPalettePanel(false)}>Done</button>}>
           <div className="stack">
-            <PalettePicker value={config.palette} onChange={paletteAll}
-              hint="Charts use these colours in order. A chart given its own colour or palette keeps it." />
+            {/* Named for what it actually paints. Someone looking for "the heading colour" and
+                finding a row of colours here changes every chart's series instead, which is how
+                a legend ends up a different colour than anyone meant. */}
+            <PalettePicker value={config.palette} onChange={paletteAll} label="Chart colours"
+              hint="The colours charts cycle through, in order. A chart given its own colour or palette keeps it." />
+            <p className="muted small">
+              Headings, card backgrounds, text and legend colours belong to one tile, not to the
+              report: open a tile's palette button, or <b>⋯ → Edit chart → Look</b>.
+            </p>
             <div className="box stack-sm">
               <div className="strong small">Type</div>
               <ReportLookFields typography={config.typography}

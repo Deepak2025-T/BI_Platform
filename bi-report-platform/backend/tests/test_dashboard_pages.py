@@ -1,6 +1,6 @@
 """Splitting a long report into one page per section heading."""
 
-from app.dashboard_pages import FIRST_PAGE, split_by_headings
+from app.dashboard_pages import FIRST_PAGE, pages_from_sections, split_by_headings
 
 
 def _heading(title, text=""):
@@ -135,3 +135,67 @@ def test_nothing_changes_for_a_report_whose_filters_name_no_page():
     filters = [{"id": "f1"}, {"id": "f2"}]
     config = {"pages": _PAGES, "filters": filters}
     assert filters_for(config, {"id": "w", "page": "p2"}) == filters
+
+
+# ---------- Tabs the request itself asked for ----------
+
+def _charts(n: int) -> list[dict]:
+    return [{"id": f"w{i}", "title": f"Chart {i}"} for i in range(n)]
+
+
+def test_charts_are_put_on_the_tab_the_request_named():
+    widgets = _charts(4)
+    pages = pages_from_sections(widgets, ["Risk", "Risk", "Control", "Control"])
+    assert [p["name"] for p in pages] == ["Risk", "Control"]
+    assert [w["page"] for w in widgets] == [pages[0]["id"], pages[0]["id"], pages[1]["id"], pages[1]["id"]]
+
+
+def test_the_tabs_come_out_in_the_order_they_were_asked_for():
+    widgets = _charts(3)
+    pages = pages_from_sections(widgets, ["Issues", "Risk", "Issues"])
+    assert [p["name"] for p in pages] == ["Issues", "Risk"]
+
+
+def test_a_tab_named_twice_in_different_words_is_one_tab():
+    """A model that writes "Risk profile" once and "risk  profile" the next time meant one tab,
+    and two tabs of the same name is the thing people notice first."""
+    widgets = _charts(3)
+    pages = pages_from_sections(widgets, ["Risk profile", "risk  profile", "Controls"])
+    assert [p["name"] for p in pages] == ["Risk profile", "Controls"]
+    assert widgets[0]["page"] == widgets[1]["page"]
+
+
+def test_the_charts_of_a_tab_are_put_together():
+    """A report filters by tab on screen whatever the order, but it prints and exports in the
+    order the list is in, and interleaved is how that comes out wrong."""
+    widgets = _charts(4)
+    pages = pages_from_sections(widgets, ["A", "B", "A", "B"])
+    assert [w["id"] for w in widgets] == ["w0", "w2", "w1", "w3"]
+    assert [w["page"] for w in widgets] == [pages[0]["id"]] * 2 + [pages[1]["id"]] * 2
+
+
+def test_one_tab_is_no_tabs():
+    """A report of one page is a report of one page: a lone tab is a click with nothing behind it."""
+    widgets = _charts(2)
+    assert pages_from_sections(widgets, ["Everything", "Everything"]) == []
+    assert all("page" not in w for w in widgets)
+
+
+def test_a_plan_that_named_no_tabs_is_left_alone():
+    widgets = _charts(3)
+    assert pages_from_sections(widgets, ["", "", ""]) == []
+    assert all("page" not in w for w in widgets)
+
+
+def test_tabs_are_refused_unless_every_chart_landed_on_one():
+    """Half an answer would scatter the unnamed charts onto a tab they were never meant for,
+    which is worse than the single page they would otherwise have shared."""
+    widgets = _charts(3)
+    assert pages_from_sections(widgets, ["Risk", "", "Control"]) == []
+    assert all("page" not in w for w in widgets)
+
+
+def test_a_mismatched_plan_changes_nothing():
+    widgets = _charts(3)
+    assert pages_from_sections(widgets, ["Risk", "Control"]) == []
+    assert all("page" not in w for w in widgets)

@@ -1,3 +1,4 @@
+import logging
 import re
 import uuid
 from urllib.parse import quote
@@ -16,17 +17,19 @@ from ..deps import get_current_user
 from ..models import AIModel, Report, User
 from ..prompt_clarify import clarify
 from ..prompt_ideas import ideas_for
+from ..report_ideas import recommend
 from ..excel_export import dashboard_workbook
 from ..ppt_export import dashboard_deck
 from ..schemas import (PROMPT_MAX, AddWidgetsIn, ChatIn, ClarifyIn, DashboardDataIn, DashboardIn, DrillIn,
                        FilterMapIn, ReportOut, SaveDashboardIn, SourceOut, WidgetIn)
-from ..refresh import RefreshFailed, as_utc, latest_snapshot, refresh_report, snapshot_matches
+from ..refresh import (RefreshFailed, as_utc, keep_results, refresh_report, saved_data, snapshot_body)
 from ..report_data import active_filters, run_widgets
 from ..datasources import check_query
 from ..sql_guard import UnsafeSQL
 from ..visual_query import SpecError, compile_spec
 from .reports import check_can_edit, get_visible, to_out
 
+log = logging.getLogger("uvicorn.error")
 router = APIRouter(tags=["assistant"])
 
 
@@ -73,6 +76,16 @@ def prompt_ideas(source_id: int | None = None, db: Session = Depends(get_db), _:
     return {"ideas": ideas_for(_source(db, source_id))}
 
 
+@router.get("/api/assistant/report-ideas")
+def report_ideas(source_id: int | None = None, db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """Whole reports worth building on this connection, before anyone has typed anything.
+
+    Worked out from the object types or columns the connection shares and from this person's own
+    past requests on it. No AI model is used, so it comes back at once and costs nothing."""
+    return {"ideas": recommend(db, user, _source(db, source_id))}
+
+
 @router.post("/api/assistant/clarify")
 def clarify_prompt(body: ClarifyIn, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     """The questions a request leaves open, before anything is built from it.
@@ -112,6 +125,9 @@ def build_dashboard(body: DashboardIn, db: Session = Depends(get_db), user: User
     extra = {"parameters": params, "model": model.name}
     if body.data_model:
         extra["data_model"] = body.data_model
+    # A request that asked for tabs was planned with the charts already on them.
+    if plan.get("pages"):
+        extra["pages"] = plan["pages"]
     report = _save(db, user, title=plan["title"], prompt=body.prompt, source=source, widgets=plan["widgets"],
                    extra=extra)
     return {"report": report, "failed": plan["failed"]}
@@ -167,26 +183,44 @@ def add_widgets(report_id: int, body: AddWidgetsIn, db: Session = Depends(get_db
 @router.post("/api/reports/{report_id}/data")
 def dashboard_data(report_id: int, body: DashboardDataIn | None = None, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
-    """Runs every chart's saved SQL (no AI), with the dashboard filters applied. Each chart is checked
-    again against the tables that are allowed now, so a table a manager has since removed stops
-    working. Results come from the cache for 15 minutes unless refresh is set.
+    """The numbers for a dashboard: the ones already saved where there are any, otherwise run now.
 
-    A dashboard with automatic refresh shows its latest snapshot instead, unless filters are set:
-    everyone sees the same numbers, and refresh runs the queries now and saves a new snapshot."""
+    Opening a report shows what it last ran, immediately, instead of starting forty queries and
+    watching them come back one by one. The saved copy is only used while it still matches the
+    charts the report has now, so an edited chart is never answered with the old one's numbers.
+
+    The queries do run here in three cases: nothing has been saved yet (a report just built, or
+    one whose charts have changed), someone asks for a refresh, or filters are set - a filtered
+    view is this person's own question, not the shared picture everyone sees. The first of those
+    saves what it produced, so it only ever happens once.
+
+    Every chart is checked again against the tables that are allowed now, so a table a manager has
+    since removed stops working. No AI is involved at any point."""
     report, source = _dashboard(db, report_id, user)
     body = body or DashboardDataIn()
     values = {k: v.model_dump() for k, v in body.filters.items()}
-    if report.refresh_every != "off" and not active_filters(report.config, values):
-        snap = None if body.refresh else latest_snapshot(db, report.id)
-        if snap is None or not snapshot_matches(report, snap):
+    filtered = active_filters(report.config, values)
+
+    if not filtered:
+        if not body.refresh:
+            snap = saved_data(db, report)
+            if snap is not None:
+                return snapshot_body(snap, source.name)
+        elif report.refresh_every != "off":
+            # A report that refreshes on a schedule keeps its history through refresh_report, so
+            # a refresh by hand goes the same way and lands in the same history.
             try:
-                snap = refresh_report(db, report, "manual")
+                return snapshot_body(refresh_report(db, report, "manual"), source.name)
             except RefreshFailed as err:
                 raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"The dashboard couldn't be refreshed: {err}")
-        at = as_utc(snap.created_at).isoformat(timespec="seconds")
-        return {"source": snap.data.get("source", source.name), "snapshot_at": at,
-                "widgets": [{**w, "ran_at": at, "cached": False} for w in snap.data["widgets"]]}
-    return {"source": source.name, "snapshot_at": None, "widgets": _run_widgets(report.config, source, body)}
+
+    widgets = _run_widgets(report.config, source, body)
+    if not filtered:
+        # Kept for whoever opens the report next. These numbers are this moment's, so they are
+        # still answered as live: "snapshot_at" says the data is older than the request, and
+        # after a run of our own it is not.
+        keep_results(db, report, widgets, source.name)
+    return {"source": source.name, "snapshot_at": None, "widgets": widgets}
 
 
 @router.post("/api/reports/{report_id}/drill")
@@ -306,4 +340,12 @@ def _save(db: Session, user: User, *, title: str, prompt: str, source, widgets: 
     r = Report(title=title[:200], prompt=(prompt or title)[:PROMPT_MAX], config=config, owner_id=user.id)
     db.add(r)
     db.commit()
+    # Keep the numbers with the report, so the first person to open it sees a page of charts and
+    # not a page of spinners. Every one of these queries has just been run to build the report, so
+    # the result cache answers most of them; the rest are the price of never making a reader wait.
+    # A failure here is nothing to report: the report saved, and opening it will run the queries.
+    try:
+        keep_results(db, r, run_widgets(config, source, {}, refresh=False), source.name)
+    except Exception:
+        log.exception("could not keep the results of the new report %s", r.id)
     return to_out(get_visible(db, r.id, user))

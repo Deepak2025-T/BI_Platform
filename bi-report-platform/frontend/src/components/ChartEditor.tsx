@@ -281,7 +281,7 @@ export default function ChartEditor({ reportId, widget, data, onClose, onSave, o
             <div className="box stack-sm">
               <div className="strong small">Card</div>
               <CardColorFields style={style} onChange={setStyle} />
-              <TileLookFields style={style} config={config ?? {}} onChange={setStyle}
+              <TileLookFields style={style} config={config ?? {}} onChange={setStyle} isChart
                 isTable={draft.chart.type === "table" || draft.chart.type === "matrix"} />
               <div className="row-wrap">
                 {(style.headBg || style.cardBg) && (

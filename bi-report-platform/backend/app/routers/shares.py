@@ -22,7 +22,7 @@ from ..database import get_db
 from ..datasources import SourceError, get_source
 from ..deps import get_current_user
 from ..models import Report, ReportShare, User, now_utc
-from ..refresh import as_utc, latest_snapshot
+from ..refresh import as_utc, keep_results, saved_data, snapshot_body
 from ..report_data import active_filters, run_widgets
 from ..schemas import DashboardDataIn, PublicReportOut, ShareIn, ShareOut
 from .reports import check_can_edit, get_visible
@@ -143,26 +143,29 @@ def public_report(token: str, db: Session = Depends(get_db)):
 def public_data(token: str, body: DashboardDataIn | None = None, db: Session = Depends(get_db)):
     """The numbers behind a shared report, with its filters applied.
 
-    A public caller can never ask for a refresh: the queries run through the ordinary cache, and a
-    dashboard that refreshes on a schedule serves its latest saved refresh rather than making a new
-    one. An open link is not a way to put load on the database behind it."""
+    A public caller can never ask for a refresh: the report's saved numbers are served where there
+    are any, and otherwise the queries run through the ordinary cache and what they produce is
+    saved for the next visitor. An open link is not a way to put load on the database behind it."""
     _, report = _shared_report(db, token)
     config = report.config or {}
     if config.get("kind") != "dashboard":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This report isn't a dashboard")
     body = body or DashboardDataIn()
     values = {k: v.model_dump() for k, v in body.filters.items()}
-    if report.refresh_every != "off" and not active_filters(config, values):
-        snap = latest_snapshot(db, report.id)
+    filtered = active_filters(config, values)
+    if not filtered:
+        snap = saved_data(db, report)
         if snap is not None:
-            at = as_utc(snap.created_at).isoformat(timespec="seconds")
-            return {"source": "", "snapshot_at": at,
-                    "widgets": [{**w, "ran_at": at, "cached": False} for w in snap.data["widgets"]]}
+            # The connection's name is the owner's business, not the visitor's, so it is dropped
+            # here as it is below.
+            return {**snapshot_body(snap), "source": ""}
     try:
         source = get_source(db, config.get("source_id"))
     except SourceError as err:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(err))
     widgets = run_widgets(config, source, values, refresh=False)
+    if not filtered:
+        keep_results(db, report, widgets, source.name)   # for the next visitor; these are live
     # A failed query can name tables and columns in its message, which is the one thing a public
     # page must not hand out. Whoever can open the report itself still sees the real reason.
     safe = [w if w.get("ok") else {**w, "error": "This chart couldn't be shown."} for w in widgets]

@@ -100,10 +100,17 @@ def _summary(db: Session, report: Report, snap_id: int, created, summary: dict |
 
 
 def series(db: Session, report: Report) -> dict:
-    """Each chart's points, oldest first: {chart id: [{"t", "value"} | {"t", "values"}]}."""
+    """Each chart's points, oldest first: {chart id: [{"t", "value"} | {"t", "values"}]}.
+
+    Only refreshes count. A report also saves what it last ran so that opening it doesn't query
+    the database again (refresh.keep_results, trigger "open"), and those are a side effect of
+    somebody reading the page rather than a measurement anybody chose to take: counting them would
+    put a point on the trend every time a report was opened after an edit.
+    """
     current = {w["id"]: w.get("sql") for w in query_widgets(report.config)}
     rows = db.execute(select(ReportSnapshot.id, ReportSnapshot.created_at, ReportSnapshot.summary)
-                      .where(ReportSnapshot.report_id == report.id).order_by(ReportSnapshot.created_at)).all()
+                      .where(ReportSnapshot.report_id == report.id, ReportSnapshot.trigger != "open")
+                      .order_by(ReportSnapshot.created_at)).all()
     out: dict[str, list] = {wid: [] for wid in current}
     for sid, created, summary in rows:
         summary = _summary(db, report, sid, created, summary)
@@ -118,7 +125,10 @@ def series(db: Session, report: Report) -> dict:
 def snapshot_at(db: Session, report: Report, at: dt.datetime | None) -> ReportSnapshot | None:
     """at=None: the snapshot before the newest one. Otherwise the newest snapshot at or before `at`,
     or the oldest one after it when history doesn't go back that far."""
-    base = select(ReportSnapshot).where(ReportSnapshot.report_id == report.id)
+    # As in series(): comparing against what the page happened to save on an open would mean
+    # "since the last refresh" quietly meaning "since somebody last looked".
+    base = select(ReportSnapshot).where(ReportSnapshot.report_id == report.id,
+                                        ReportSnapshot.trigger != "open")
     # Two refreshes within the same second share a created_at, and then "the one before the newest"
     # would be whichever the database happened to return first - sometimes the newest itself, which
     # reads as nothing to compare with. The id is in the order they were taken, so it breaks the tie.

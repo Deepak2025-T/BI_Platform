@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { errorMessage } from "../api/client";
 import { aiModelsApi, assistantApi, dataModelsApi, reportsApi, templatesApi } from "../api/endpoints";
-import type { AIModelPublic, ClarifyResult, DashboardParameters, DataModelSummary, DataSourceInfo, PlannedChart, Report, ReportTemplate, TemplateCategory } from "../api/types";
+import type { AIModelPublic, ClarifyResult, DashboardParameters, DataModelSummary, DataSourceInfo, PlannedChart, Report, ReportIdea, ReportTemplate, TemplateCategory } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import CategoryBadge from "../components/CategoryBadge";
 import ClarifyDialog from "../components/ClarifyDialog";
@@ -10,6 +10,7 @@ import Dictate from "../components/Dictate";
 import DomainTiles from "../components/DomainTiles";
 import FlowDiagram, { type FlowStep } from "../components/FlowDiagram";
 import Icon from "../components/Icon";
+import ReportIdeas from "../components/ReportIdeas";
 import TemplateForm from "../components/TemplateForm";
 import { useToast } from "../components/Toast";
 import { type AskModel, rememberModel, rememberedModel } from "../lib/aiModels";
@@ -93,6 +94,13 @@ export default function Home() {
   const [charts, setCharts] = useState<PlannedChart[]>([]);
   // Questions this database can answer, from its own columns.
   const [ideas, setIdeas] = useState<string[]>([]);
+  // Whole reports worth building on it, from what it holds and what this person asked for before.
+  const [recommended, setRecommended] = useState<ReportIdea[]>([]);
+  const [recommending, setRecommending] = useState(false);
+  // Hidden once they start typing their own request, and by the panel's own "I'll write my own".
+  // Choosing another database brings it back, because the suggestions are then about something
+  // else and worth a look again.
+  const [hideIdeas, setHideIdeas] = useState(false);
   const [building, setBuilding] = useState(false);
   // Working out what the request leaves open, and the questions it left open. No AI model is used
   // for either, so the wait is a round trip rather than a generation.
@@ -144,6 +152,19 @@ export default function Home() {
     assistantApi.promptIdeas(sourceIdOf(sourceChoice))
       .then((list) => { if (current) { setIdeas(list); setShownIdeas(IDEAS_SHOWN); } })
       .catch(() => { if (current) setIdeas([]); });
+    return () => { current = false; };
+  }, [sourceChoice]);
+
+  // ...and its own reports worth building. A failure here is silent on purpose: suggestions are
+  // an offer, and an error about an offer nobody asked for is worse than no offer.
+  useEffect(() => {
+    let current = true;
+    setRecommending(true);
+    setHideIdeas(false);
+    assistantApi.reportIdeas(sourceIdOf(sourceChoice))
+      .then((list) => { if (current) setRecommended(list); })
+      .catch(() => { if (current) setRecommended([]); })
+      .finally(() => { if (current) setRecommending(false); });
     return () => { current = false; };
   }, [sourceChoice]);
 
@@ -352,6 +373,20 @@ export default function Home() {
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) ask(); }} />
               <Dictate what={mode === "chat" ? "your question" : "your report request"}
                 onPhrase={(said) => setPrompt((p) => appendSpoken(p, said))} />
+              {/* Building a report is where the blank box bites hardest: a question is one line,
+                  a report is a page of them. So in build mode the database says what it can show
+                  before anything is typed, and the one-line questions stay for chat. */}
+              {mode === "build" && !hideIdeas && !prompt.trim() && !readyMade && (
+                <ReportIdeas ideas={recommended} loading={recommending && !recommended.length}
+                  sourceName={chosenSource?.name ?? "this database"}
+                  onHide={() => setHideIdeas(true)}
+                  onPick={(idea) => {
+                    setPrompt(idea.prompt);
+                    setHideIdeas(true);
+                    document.getElementById("ask")?.focus();
+                  }} />
+              )}
+
               {/* Questions to try, against the box they fill: a blank box always has a way in. */}
               <div className="chip-row suggest-row">
                 <span className="muted small">Try</span>

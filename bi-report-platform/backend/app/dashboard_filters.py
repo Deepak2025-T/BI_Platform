@@ -143,8 +143,13 @@ def _apply_openpages(sql: str, source: DataSource, active: list[dict], values: d
     conditions, applied, skipped = [], [], []
     for f in active:
         target = (f.get("columns") or {}).get(widget_id) or {}
-        table, column = str(target.get("table", "")), str(target.get("column", ""))
-        if not column or table.lower() not in present:
+        # A missing field is read out of a saved report as None as often as "", and str(None) is
+        # the truthy word "None": taken for a field name it builds [Type].[None], and taken as an
+        # empty one it builds [Type].[], which is where "columnReference cannot be null" comes
+        # from. Neither is a filter anyone asked for, so both are simply not applied.
+        table = str(target.get("table") or "").strip()
+        column = str(target.get("column") or "").strip()
+        if not column or not table or table.lower() not in present:
             skipped.append(f["id"])
             continue
         ref = openpages.field_ref(source.op_type(table), column)
@@ -155,12 +160,22 @@ def _apply_openpages(sql: str, source: DataSource, active: list[dict], values: d
                 parts.append(f"{ref} >= {openpages.quote(_date(value['date_from']).isoformat())}")
             if value.get("date_to"):
                 parts.append(f"{ref} < {openpages.quote((_date(value['date_to']) + dt.timedelta(days=1)).isoformat())}")
-            conditions.append(" AND ".join(parts))
+            condition = " AND ".join(parts)
         else:
             # Filters offer the words people read; the SQL needs what OpenPages stores, which on
             # some installations is a code ("1" for "Planned").
             vals = [openpages_stored(source, source.op_type(table), column, str(v)) for v in value["values"]]
-            conditions.append(" OR ".join(f"{ref} = {openpages.quote(v)}" for v in vals))
+            quoted = [openpages.quote(v) for v in vals]
+            # One value is "=", several are "IN (...)" - the form the Query Service documents -
+            # rather than a chain of ORs that then has to be bracketed to mean what it says.
+            condition = (f"{ref} = {quoted[0]}" if len(quoted) == 1
+                         else f"{ref} IN ({', '.join(quoted)})" if quoted else "")
+        if not condition:
+            # Nothing to add: a filter that is on but says nothing filters nothing, and an empty
+            # WHERE is the one thing the Query Service will not forgive.
+            skipped.append(f["id"])
+            continue
+        conditions.append(condition)
         applied.append(f["id"])
     return openpages.add_conditions(sql, conditions), {}, applied, skipped
 

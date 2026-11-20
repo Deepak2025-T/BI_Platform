@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ..config import settings
 from ..connections import openpages
+from .. import dashboard_pages
 from ..prompt_clarify import apply_style
 from ..schemas import MAX_WIDGETS
 from ..datasources import DataSource, QueryFailed, describe, run_sql
@@ -90,8 +91,11 @@ _OUTLINE_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {"title": {"type": "string"}, "question": {"type": "string"},
-                               "chart": {"type": "string", "enum": CHART_TYPES}},
-                "required": ["title", "question", "chart"],
+                               "chart": {"type": "string", "enum": CHART_TYPES},
+                               # The tab this chart belongs on. Empty for a report of one page,
+                               # which is most of them.
+                               "section": {"type": "string"}},
+                "required": ["title", "question", "chart", "section"],
                 "additionalProperties": False,
             },
             # No "maxItems" here, however tempting: Claude's structured output refuses the whole
@@ -343,6 +347,12 @@ Start with the headline numbers as "kpi" charts, then the breakdowns.
 Do NOT write any SQL here. For each chart give only a short title, the one-line question it answers,
 and which chart shape fits. The queries are written separately.
 
+"section" is the tab the chart goes on. When the request asks for tabs, pages or sections - "a tab
+for risks", "1 tab. Overview", "split by module" - put every chart's tab name in its "section",
+spelled the same way each time, and keep the charts of one tab together and in the order asked
+for. When the request asks for no such thing, leave "section" empty on every chart: a report of
+one page is one page.
+
 {_sql_rules(source, prompt)}
 {params_text}
 {_chart_rules(wanted)}"""
@@ -380,10 +390,13 @@ and which chart shape fits. The queries are written separately.
     with ThreadPoolExecutor(max_workers=max(1, min(workers, len(items)))) as pool:
         results = list(pool.map(build, items))
 
-    widgets, failed = [], []
+    widgets, failed, sections = [], [], []
     for item, result in zip(items, results):
         if result.get("widget"):
             widgets.append(result["widget"])
+            # Kept beside the chart it belongs to, so a chart whose query failed takes its tab
+            # with it instead of shifting every later chart onto the wrong one.
+            sections.append(item.get("section", ""))
         else:
             failed.append({"title": item["title"] or item["question"], "error": result["error"]})
     if not widgets:
@@ -396,7 +409,10 @@ and which chart shape fits. The queries are written separately.
     # The look chosen before the build: a donut the planner could only express as a pie, bars on
     # their side, figures on the chart. Each one is set only where it means something.
     apply_style(widgets, parameters.get("style"))
-    return {"title": str(outline.get("title", "")).strip() or prompt[:80], "widgets": widgets, "failed": failed}
+    # A request that asked for tabs gets tabs, rather than every chart in one stack.
+    pages = dashboard_pages.pages_from_sections(widgets, sections)
+    return {"title": str(outline.get("title", "")).strip() or prompt[:80], "widgets": widgets,
+            "failed": failed, "pages": pages}
 
 
 def _outline_item(w: dict) -> dict:
@@ -407,7 +423,8 @@ def _outline_item(w: dict) -> dict:
         chart = chart.get("type")
     return {"title": str(w.get("title", "")).strip()[:120],
             "question": str(w.get("question", "")).strip()[:500],
-            "chart": chart if chart in CHART_TYPES else ""}
+            "chart": chart if chart in CHART_TYPES else "",
+            "section": str(w.get("section") or "").strip()[:60]}
 
 
 def _parameters_text(parameters: dict) -> str:

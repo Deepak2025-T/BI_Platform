@@ -574,6 +574,11 @@ export interface DashboardPage {
   color?: string;
   /** An icon's name (see components/Icon) shown before the tab's name. */
   icon?: string;
+  /**
+   * The tab's background. `color` tints the name and the underline; this fills the tab itself,
+   * which is what makes a row of tabs read as a row of folders rather than a row of words.
+   */
+  bg?: string;
 }
 
 /** The fonts a report can be set in. "" is the app's own, which is what every report starts as. */
@@ -669,6 +674,26 @@ export interface WidgetStyle {
   /** The tile's header band and card background. Text switches to white on dark colours. */
   headBg?: string;
   cardBg?: string;
+  /**
+   * The tile's own words: its title, its labels, its table text. Set, it wins over the automatic
+   * white-on-dark choice, which is why it is separate from the backgrounds above.
+   */
+  textColor?: string;
+  /**
+   * The writing inside the chart itself: legend, axis labels, slice labels.
+   *
+   * Separate from everything else on purpose. Unset, it is worked out from the card's background
+   * so the words can be read on it; set, it is that colour and nothing else changes it - the
+   * header colour never has, and now visibly does not.
+   */
+  legendColor?: string;
+  /**
+   * Where a tile narrower than the row sits in it: left (the default), centre, or right. Only a
+   * tile that does not fill its row can move, so this does nothing on a full-width one.
+   */
+  justify?: "left" | "center" | "right";
+  /** A heading tile's own text size, in px. Missing scales with the tile's font size. */
+  headingSize?: number;
 }
 
 export interface DashboardParameters {
@@ -719,6 +744,28 @@ export interface ClarifyResult {
   subject: { table: string; column: string; label: string; values: string[] } | null;
   /** Empty means the request says enough: build it as written. */
   questions: ClarifyQuestion[];
+}
+
+/** Where a recommendation came from, which is also how the panel groups them. */
+export type IdeaReason = "history" | "subject" | "breadth";
+
+/**
+ * A whole report worth building on the chosen database, suggested before anything is typed.
+ *
+ * Worked out from the connection's own tables and from this person's past requests on it, so no
+ * AI model is involved and the list arrives with the database rather than after a wait.
+ */
+export interface ReportIdea {
+  id: string;
+  title: string;
+  /** Why this one is being suggested, in the person's own terms. */
+  why: string;
+  reason: IdeaReason;
+  /** The request itself, ready to go in the box and be edited before sending. */
+  prompt: string;
+  /** Roughly how many charts it would build. 0 when it can't be told from the request. */
+  charts: number;
+  subject: string;
 }
 
 /** The chart shapes an AI-planned dashboard can use. */

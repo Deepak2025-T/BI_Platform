@@ -28,6 +28,10 @@ interface Props {
   config?: Pick<DashboardConfig, "typography">;
   /** Tables get the wrapping switch; nothing else has values long enough to need it. */
   isTable?: boolean;
+  /** A heading tile: it gets its own text size, and has no legend to colour. */
+  isHeading?: boolean;
+  /** A chart: it has a legend and axis labels, which are coloured separately from the tile. */
+  isChart?: boolean;
 }
 
 /**
@@ -37,7 +41,7 @@ interface Props {
  * open - so everything about how one tile is drawn lives here: its colours, its font, where its
  * heading sits, its spacing and its border.
  */
-export default function CardColors({ name, style, onChange, onApplyAll, config, isTable }: Props) {
+export default function CardColors({ name, style, onChange, onApplyAll, config, isTable, isHeading, isChart }: Props) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
@@ -59,7 +63,8 @@ export default function CardColors({ name, style, onChange, onApplyAll, config, 
       {open && (
         <div className="tile-menu-list card-colors" role="dialog" aria-label={`Look of ${name}`}>
           <CardColorFields style={style} onChange={onChange} />
-          <TileLookFields style={style} config={config ?? {}} onChange={onChange} isTable={isTable} />
+          <TileLookFields style={style} config={config ?? {}} onChange={onChange} isTable={isTable}
+            isHeading={isHeading} isChart={isChart} />
           <div className="row-wrap">
             {custom && <button type="button" className="link-btn" onClick={() => onChange(CLEARED_LOOK)}>Reset</button>}
             {onApplyAll && (

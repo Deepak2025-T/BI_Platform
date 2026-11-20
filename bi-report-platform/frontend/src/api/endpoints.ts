@@ -2,7 +2,7 @@ import { AI_WAIT, api } from "./client";
 import type {
   ChatResult, ClarifyResult, DashboardConfig, DashboardDataRequest, DashboardFilter, DrillResult, DashboardParameters, DataModelDetail, DataModelSummary, DataSourceInfo, QueryData, Widget, WidgetData,
   AIModel, AIModelInput, ColorPalette, PaletteInput, AIModelPublic, AIModelTestResult, AIProvider, AIProviderInfo, Category, CategoryInput, ConnectionInput, ConnectionTestResult, DataConnection, QueryParams, QueryResult, Report,
-  ReportConfig, ReportShare, ReportTemplate, PublicReport, Role, SchemaTables, TemplateInput, User,
+  ReportConfig, ReportIdea, ReportShare, ReportTemplate, PublicReport, Role, SchemaTables, TemplateInput, User,
 } from "./types";
 
 export const authApi = {
@@ -129,6 +129,13 @@ export const assistantApi = {
   /** Questions worth asking of one database, worked out from its columns. No AI model is used. */
   promptIdeas: (sourceId: number | null) =>
     api.get<{ ideas: string[] }>("/api/assistant/prompt-ideas", { params: { source_id: sourceId } })
+      .then((r) => r.data.ideas),
+  /**
+   * Whole reports worth building on one database: what it can answer, and what this person has
+   * asked of it before. No AI model is used, so it arrives with the database, not after a wait.
+   */
+  reportIdeas: (sourceId: number | null) =>
+    api.get<{ ideas: ReportIdea[] }>("/api/assistant/report-ideas", { params: { source_id: sourceId } })
       .then((r) => r.data.ideas),
   /**
    * The questions a request leaves open, before anything is built from it. No AI model is used,

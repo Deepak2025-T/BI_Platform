@@ -64,8 +64,14 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
   const base = (style.palette?.length ? style.palette.map(normalizeColor).filter(Boolean) : null) ?? CHART_COLORS;
   const colors = main ? [main, ...base.filter((c) => c.toUpperCase() !== main.toUpperCase())] : base;
   // Text and lines that read on the card's background.
+  //
+  // The chart's own writing - legend, axis labels, slice labels - follows the CARD's colour and
+  // nothing else, so that colouring a tile's header band leaves the chart exactly as it was.
+  // `legendColor` overrides it outright for anyone who wants the two chosen separately.
   const dark = isDark(style.cardBg);
-  const ink = dark ? "#D6E2EE" : "#4A5568", strong = dark ? "#FFFFFF" : "#1A2332";
+  const chosen = normalizeColor(style.legendColor);
+  const ink = chosen || (dark ? "#D6E2EE" : "#4A5568");
+  const strong = chosen || (dark ? "#FFFFFF" : "#1A2332");
   const gridLine = dark ? "rgba(255,255,255,.12)" : "#EDF2F7", axisLine = dark ? "rgba(255,255,255,.28)" : "#CFDCE8";
   const AXIS = { axisLabel: { color: ink }, axisLine: { lineStyle: { color: axisLine } }, axisTick: { show: false } };
 

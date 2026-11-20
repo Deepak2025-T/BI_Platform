@@ -68,6 +68,46 @@ def split_by_headings(widgets: list[dict], split_over: int = SPLIT_OVER) -> tupl
     return kept, out
 
 
+def pages_from_sections(widgets: list[dict], sections: list[str]) -> list[dict]:
+    """(pages) for a plan whose charts named the tab they belong on, and sets each widget's page.
+
+    This is the other way a report comes to have tabs. split_by_headings reads them off a
+    template's section headings; here the request itself asked for them ("a tab for risks, a tab
+    for controls") and the planner said which chart goes where, so the names are the person's own
+    words rather than anything worked out afterwards.
+
+    The widgets are reordered so that each tab's charts sit together: a report whose list is
+    interleaved reads correctly on screen, because each tab filters the list, but it exports and
+    prints in the order the list is in. Nothing happens unless at least two tabs were named and
+    every chart landed on one - a partial answer would leave charts scattered onto a tab they were
+    never meant for, which is worse than the one page they would otherwise share.
+    """
+    if len(widgets) != len(sections):
+        return []
+    named = [s.strip() for s in sections]
+    if not all(named):
+        return []
+    # Distinct tab names, in the order they were first asked for. Case and spacing are not a new
+    # tab: "Risk profile" and "risk profile" are one tab, named the way it was written first.
+    order: list[str] = []
+    seen: dict[str, str] = {}
+    for name in named:
+        key = " ".join(name.lower().split())
+        if key not in seen:
+            seen[key] = name[:60]
+            order.append(key)
+    if len(order) < 2:
+        return []
+
+    pages = [{"id": uuid.uuid4().hex[:8], "name": seen[key]} for key in order]
+    by_key = {key: pages[i]["id"] for i, key in enumerate(order)}
+    for widget, name in zip(widgets, named):
+        widget["page"] = by_key[" ".join(name.lower().split())]
+    rank = {page["id"]: i for i, page in enumerate(pages)}
+    widgets.sort(key=lambda w: rank[w["page"]])        # stable: the order within a tab is kept
+    return pages
+
+
 # The id the single implied page goes by when a report has no pages of its own. It matches
 # lib/pages.ts in the frontend, so the two agree about what "the first page" means.
 ONE_PAGE = "main"

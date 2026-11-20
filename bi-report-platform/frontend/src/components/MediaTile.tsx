@@ -23,10 +23,21 @@ export function safeLink(href: string | undefined): string | null {
 export type Logo = NonNullable<DashboardConfig["logo"]>;
 
 /** The report's logo, above its title. Shown to readers, and in the printed copy. */
+/**
+ * How big the logo above a report may be, in pixels of height.
+ *
+ * 36 is what it has always been. The ceiling is there because the logo sits in the report's title
+ * row: past about a hundred it stops being a mark on a report and starts being the report.
+ */
+export const LOGO_HEIGHT = { default: 36, min: 16, max: 120 };
+
+const logoHeight = (logo?: Logo) =>
+  Math.min(LOGO_HEIGHT.max, Math.max(LOGO_HEIGHT.min, logo?.height ?? LOGO_HEIGHT.default));
+
 export function LogoMark({ logo }: { logo?: Logo }) {
   if (!logo?.url) return null;
   const href = safeLink(logo.link);
-  const img = <img className="report-logo" src={logo.url} alt="" style={{ height: logo.height ?? 36 }} />;
+  const img = <img className="report-logo" src={logo.url} alt="" style={{ height: logoHeight(logo) }} />;
   return href ? <a href={href} target="_blank" rel="noopener noreferrer">{img}</a> : img;
 }
 
@@ -60,6 +71,19 @@ export function LogoPicker({ logo, onChange }: { logo?: Logo; onChange: (logo?: 
       <label className="btn btn-ghost btn-sm" htmlFor="report-logo">
         <Icon name="palette" size={14} />{busy ? "Uploading…" : logo?.url ? "Change logo" : "Add a logo"}
       </label>
+      {/* Height alone: the width follows it, so a logo can never be squashed out of shape. It is
+          written straight onto the report, which is where the printed and exported copies read
+          it from, so what is on screen is what comes out of them. */}
+      {logo?.url && (
+        <label className="logo-size">
+          <span className="muted small">Size</span>
+          <input type="range" min={LOGO_HEIGHT.min} max={LOGO_HEIGHT.max} step={2}
+            value={logo.height ?? LOGO_HEIGHT.default} aria-label="Logo height"
+            title={`${logo.height ?? LOGO_HEIGHT.default}px tall`}
+            onChange={(e) => onChange({ ...logo, height: Number(e.target.value) })} />
+          <span className="muted small">{logo.height ?? LOGO_HEIGHT.default}px</span>
+        </label>
+      )}
       {logo?.url && <button className="btn btn-ghost btn-sm" onClick={() => onChange(undefined)}>Remove logo</button>}
     </span>
   );

@@ -7,6 +7,15 @@ import Icon, { ICON_NAMES } from "./Icon";
 export const TAB_COLORS = ["#00B4D8", "#0D3B66", "#2A9D8F", "#1E7F4F", "#F5A623", "#EE7B30",
                            "#A63D40", "#6D597A", "#8A98A8"];
 
+/**
+ * Backgrounds a tab can be filled with.
+ *
+ * Pale ones first, because a row of tabs is read as a row and a strong fill on every one of them
+ * is a wall; the darker end is there for picking out the one tab that matters.
+ */
+export const TAB_BACKGROUNDS = ["#EDF2F7", "#E6F3F8", "#E3F5EA", "#FFF3DC", "#FBE7E7", "#EFE9F2",
+                                "#0D3B66", "#1E7F4F", "#8A5A00", "#A63D40"];
+
 /** Icons worth putting on a tab: the ones that mean something in a report. */
 export const TAB_ICONS = ["home", "grid", "chart", "trend", "reports", "database", "layers",
                           "users", "clock", "bolt", "spark", "question", "info", "check",
@@ -52,6 +61,12 @@ export default function PageTabSettings({ page, at, total, onChange, onMove, onR
 
       <SwatchRow label="Tab colour" colors={TAB_COLORS} value={page.color} noneLabel="The report's own"
         onChange={(color) => onChange({ color })} />
+
+      {/* The colour above draws the name and the underline; this fills the tab itself. They are
+          two rows rather than one control because a filled tab in a pale colour and a tinted tab
+          in a strong one are both things people ask for. */}
+      <SwatchRow label="Tab background" colors={TAB_BACKGROUNDS} value={page.bg} noneLabel="None"
+        onChange={(bg) => onChange({ bg })} />
 
       <fieldset className="group">
         <legend>Symbol</legend>

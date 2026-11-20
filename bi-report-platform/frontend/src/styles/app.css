@@ -1369,3 +1369,80 @@ body.printing .page-print-head:first-child { break-before: auto; }
 }
 .tab-settings .tab-icon.on { border-color: var(--accent); background: var(--accent-soft); color: var(--navy); }
 .tab-settings .btn, .card-colors .btn { text-align: center; }
+
+/* ---------- What kind of report? The suggestions under the box on the Build tab ----------
+   A grid of cards rather than a row of chips: each one carries a title, the reason it is being
+   suggested and roughly how big it is, which is more than a chip can hold and exactly what makes
+   the difference between picking one and reading all six. */
+.idea-panel { margin: 10px 0 2px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--row); }
+.idea-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.idea-head h3 { margin: 0 0 2px; font-size: 14.5px; }
+.idea-head p { margin: 0; max-width: 62ch; }
+.idea-grid { display: grid; gap: 10px; margin-top: 12px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.idea-card {
+  display: flex; flex-direction: column; gap: 3px; min-height: 104px;
+  padding: 12px; text-align: left; cursor: pointer;
+  border: 1px solid var(--border-strong); border-left: 3px solid var(--border-strong);
+  border-radius: 10px; background: var(--surface); color: inherit;
+}
+.idea-card:hover { border-color: var(--accent); border-left-color: var(--accent); box-shadow: 0 2px 10px rgba(13, 59, 102, .10); }
+.idea-icon { color: var(--accent); }
+.idea-title { font-weight: 650; line-height: 1.25; }
+/* The reason, which is the part doing the persuading, so it gets room for two lines and then
+   stops rather than pushing the cards out of line with each other. */
+.idea-why { color: var(--fg2); font-size: 12.5px; line-height: 1.3; }
+.idea-count { margin-top: auto; color: var(--fg2); font-size: 11.5px; }
+/* Their own past requests read as theirs: a warmer edge, so the familiar title is recognisable
+   as something they wrote before they have finished reading it. */
+.idea-card.is-history { border-left-color: var(--teal); }
+.idea-card.is-history .idea-icon { color: var(--teal); }
+.idea-card.is-breadth { border-left-color: var(--navy); }
+.idea-card.is-breadth .idea-icon { color: var(--navy); }
+@media (max-width: 640px) { .idea-grid { grid-template-columns: 1fr; } }
+
+/* ===== Tile text colour, heading size, and where a tile sits in its row (lib/tileLook) ===== */
+
+/* A tile told what colour its words are keeps that colour whatever is behind them. The automatic
+   white-on-dark is only there to keep an unset tile readable, so a choice has to beat it - which
+   is why these name the same places .dark-card does. */
+.widget.has-fg, .widget.has-fg .h2, .widget.has-fg .text-tile-title, .widget.has-fg .text-tile-body,
+.widget.has-fg .muted, .widget.has-fg .kpi-label, .widget.has-fg .kpi-value,
+.widget.has-fg .result-table th, .widget.has-fg .result-table td { color: var(--tile-fg); }
+
+/* A heading tile's own size, which is the whole of what a heading tile is. */
+.widget.has-heading-size .text-tile-title, .widget.has-heading-size input.text-tile-title {
+  font-size: var(--tile-heading);
+  line-height: 1.2;
+}
+
+/* Side to side within the 12-column grid. A tile keeps its width and moves across the columns it
+   does not fill; a full-width one has nowhere to go, so it has no rule here. Below the grid's
+   breakpoint every tile is full width already, which is why this only applies above it. */
+@media (min-width: 901px) {
+  .widget.size-quarter.justify-center { grid-column: 5 / span 3; }
+  .widget.size-quarter.justify-right { grid-column: 10 / span 3; }
+  .widget.size-third.justify-center, .widget.w-kpi.justify-center { grid-column: 5 / span 4; }
+  .widget.size-third.justify-right, .widget.w-kpi.justify-right { grid-column: 9 / span 4; }
+  .widget.size-half.justify-center { grid-column: 4 / span 6; }
+  .widget.size-half.justify-right { grid-column: 7 / span 6; }
+  .widget.size-twothird.justify-center { grid-column: 3 / span 8; }
+  .widget.size-twothird.justify-right { grid-column: 5 / span 8; }
+  /* A tile at its own default width, which is half the row for a chart. */
+  .widget.justify-center:not([class*="size-"]):not(.w-kpi):not(.w-table) { grid-column: 4 / span 6; }
+  .widget.justify-right:not([class*="size-"]):not(.w-kpi):not(.w-table) { grid-column: 7 / span 6; }
+}
+
+/* ===== A tab filled with a colour of its own (components/PageTabSettings) ===== */
+.page-tab.has-tab-bg > button:first-child {
+  background: var(--tab-bg);
+  color: var(--tab-fg);
+  border-radius: 10px 10px 0 0;
+}
+/* The count badge sits on the fill, so it has to read on it rather than on the page. */
+.page-tab.has-tab-bg .page-tab-count { background: rgba(255, 255, 255, .28); color: inherit; }
+.page-tab.has-tab-bg:not(.on) > button:first-child { opacity: .72; }
+.page-tab.has-tab-bg.on > button:first-child { opacity: 1; }
+
+/* The logo's size, beside the button that put it there. */
+.logo-size { display: inline-flex; align-items: center; gap: 6px; }
+.logo-size input[type="range"] { width: 92px; accent-color: var(--accent); }

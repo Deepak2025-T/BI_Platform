@@ -1,8 +1,8 @@
 import type { DashboardConfig, ReportFont, ReportTypography, WidgetStyle } from "../api/types";
 import { SwatchRow } from "./Swatches";
 import {
-  ALIGNMENTS, BORDER_COLORS, BORDER_WIDTHS, FONTS, FONT_SIZES, PADDINGS, RADII, V_ALIGNMENTS,
-  typographyLabel,
+  ALIGNMENTS, BORDER_COLORS, BORDER_WIDTHS, FONTS, FONT_SIZES, HEADING_SIZES, JUSTIFIES, PADDINGS,
+  RADII, TEXT_COLORS, V_ALIGNMENTS, typographyLabel,
 } from "../lib/tileLook";
 import { Seg } from "./Controls";
 
@@ -78,13 +78,17 @@ export function ReportLookFields({ typography, onChange }: {
  * The colours of the header band and the card itself are set by CardColorFields, which was here
  * first and is shown alongside this rather than folded into it.
  */
-export function TileLookFields({ style, config, onChange, isTable }: {
+export function TileLookFields({ style, config, onChange, isTable, isHeading, isChart }: {
   style: WidgetStyle;
   /** The report this tile is on, so each control can say what it would otherwise inherit. */
   config: Pick<DashboardConfig, "typography">;
   onChange: (patch: Partial<WidgetStyle>) => void;
   /** Tables get the wrapping switch; nothing else has values long enough to need it. */
   isTable?: boolean;
+  /** Heading tiles get their own text size: a heading is the one tile that is only its words. */
+  isHeading?: boolean;
+  /** Charts get the legend colour; there is no legend on a heading or a picture. */
+  isChart?: boolean;
 }) {
   return (
     <>
@@ -95,6 +99,11 @@ export function TileLookFields({ style, config, onChange, isTable }: {
         <Inherited label="Text size" value={style.fontSize} inherit={`The report's (${config.typography?.fontSize ?? 14}px)`}
           options={FONT_SIZES.map(([px, l]) => [px, `${l} · ${px}px`] as [number, string])}
           onChange={(fontSize) => onChange({ fontSize })} />
+        {isHeading && (
+          <Inherited label="Heading size" value={style.headingSize} inherit="Default (19px)"
+            options={HEADING_SIZES.map(([px, l]) => [px, `${l} · ${px}px`] as [number, string])}
+            onChange={(headingSize) => onChange({ headingSize })} />
+        )}
         <Inherited label="Padding" value={style.padding} inherit="Default (18px)"
           options={PADDINGS.map(([px, l]) => [px, `${l} · ${px}px`] as [number, string])}
           onChange={(padding) => onChange({ padding })} />
@@ -109,6 +118,16 @@ export function TileLookFields({ style, config, onChange, isTable }: {
       {style.borderWidth !== 0 && (
         <SwatchRow label="Border colour" colors={BORDER_COLORS} value={style.border} noneLabel="Default line"
           onChange={(border) => onChange({ border })} />
+      )}
+
+      <SwatchRow label="Text colour" colors={TEXT_COLORS} value={style.textColor}
+        noneLabel="Automatic" onChange={(textColor) => onChange({ textColor })} />
+
+      {/* The chart's own writing is a separate choice from the tile's: a card can be dark with a
+          pale legend, and colouring the header band must leave the legend alone. */}
+      {isChart && (
+        <SwatchRow label="Legend and axis colour" colors={TEXT_COLORS} value={style.legendColor}
+          noneLabel="Automatic" onChange={(legendColor) => onChange({ legendColor })} />
       )}
 
       <div className="form-grid">
@@ -128,6 +147,15 @@ export function TileLookFields({ style, config, onChange, isTable }: {
             ))}
           </div>
           <span className="hint">Shows when the heading band is taller than its words.</span>
+        </div>
+        <div className="field">Tile in its row
+          <div className="chip-row tight" role="group" aria-label="Where the tile sits in its row">
+            {JUSTIFIES.map(([k, l]) => (
+              <Seg key={k} on={(style.justify ?? "left") === k}
+                onClick={() => onChange({ justify: k === "left" ? undefined : k })}>{l}</Seg>
+            ))}
+          </div>
+          <span className="hint">For a tile narrower than the row. A full-width tile cannot move.</span>
         </div>
       </div>
 

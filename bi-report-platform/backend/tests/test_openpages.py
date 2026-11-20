@@ -15,7 +15,8 @@ from app.connections import openpages
 from app.datasources import QueryFailed
 from app.openpages_templates import count_by, total
 from app.routers import templates as templates_router
-from app.connections.openpages import UnsafeOpenPagesSQL, add_conditions, check_sql, query_types
+from app.connections.openpages import (UnsafeOpenPagesSQL, add_conditions, check_sql, has_or,
+                                        query_types)
 
 BASIC = "Basic " + base64.b64encode(b"admin:op-pass").decode()
 ISSUES = [("Server patching late", "Open"), ("Vendor review missing", "Open"), ("Badge access", "Closed")]
@@ -164,12 +165,45 @@ def test_joined_fields_with_the_same_name_get_their_type():
 
 
 def test_filter_conditions_join_the_where():
+    """No brackets that are not needed. The Query Service's grammar is small, and a predicate in
+    brackets it did not ask for comes back as "columnReference cannot be null" - which is what a
+    whole report of filtered charts failed with."""
     c = ["[SOXIssue].[OPSS-Iss:Status] = 'O''Neil'"]
     assert add_conditions("SELECT [Name] FROM [SOXIssue]", c) == \
-        "SELECT [Name] FROM [SOXIssue] WHERE ([SOXIssue].[OPSS-Iss:Status] = 'O''Neil')"
+        "SELECT [Name] FROM [SOXIssue] WHERE [SOXIssue].[OPSS-Iss:Status] = 'O''Neil'"
     sql = "SELECT [Name], COUNT([Name]) FROM [SOXIssue] WHERE [Name] = 'a' OR [Name] = 'b' GROUP BY [Name]"
+    # The query's own OR keeps its brackets: without them, ANDing a filter onto it would quietly
+    # return different rows.
     assert add_conditions(sql, c) == ("SELECT [Name], COUNT([Name]) FROM [SOXIssue] WHERE "
-                                      "([SOXIssue].[OPSS-Iss:Status] = 'O''Neil') AND ([Name] = 'a' OR [Name] = 'b') GROUP BY [Name]")
+                                      "([Name] = 'a' OR [Name] = 'b') AND [SOXIssue].[OPSS-Iss:Status] = 'O''Neil' "
+                                      "GROUP BY [Name]")
+
+
+def test_a_plain_where_is_left_unbracketed_when_a_filter_is_added():
+    sql = "SELECT [Name] FROM [SOXIssue] WHERE [SOXIssue].[OPSS-Iss:Status] = 'Open'"
+    assert add_conditions(sql, ["[SOXIssue].[OPSS-Iss:Priority] IN ('High', 'Low')"]) == (
+        "SELECT [Name] FROM [SOXIssue] WHERE [SOXIssue].[OPSS-Iss:Status] = 'Open' "
+        "AND [SOXIssue].[OPSS-Iss:Priority] IN ('High', 'Low')")
+
+
+def test_a_condition_of_its_own_with_an_or_is_bracketed():
+    sql = "SELECT [Name] FROM [SOXIssue]"
+    assert add_conditions(sql, ["[A].[B] = 'a' OR [A].[B] = 'b'", "[A].[C] = 'c'"]) == (
+        "SELECT [Name] FROM [SOXIssue] WHERE ([A].[B] = 'a' OR [A].[B] = 'b') AND [A].[C] = 'c'")
+
+
+def test_an_empty_condition_never_reaches_the_query():
+    """An empty WHERE is the one thing the Query Service will not forgive."""
+    sql = "SELECT [Name] FROM [SOXIssue]"
+    assert add_conditions(sql, ["", "   "]) == sql
+    assert add_conditions(sql, ["", "[A].[B] = 'c'"]) == "SELECT [Name] FROM [SOXIssue] WHERE [A].[B] = 'c'"
+
+
+def test_or_inside_brackets_or_quotes_is_not_a_top_level_or():
+    assert not has_or("[A].[B] IN ('a', 'b')")
+    assert not has_or("[A].[B] = 'OR'")
+    assert not has_or("[A].[Or Something] = 'x'")
+    assert has_or("[A].[B] = 'a' OR [A].[B] = 'b'")
 
 
 def test_api_url_is_normalized():
@@ -296,7 +330,8 @@ def test_dashboard_runs_openpages_sql_with_filters(client, manager, op_connectio
                        json={"filters": {f["id"]: {"values": ["Closed"]}}, "refresh": True}).json()
     by_id = {w["id"]: w for w in data["widgets"]}
     assert by_id[w1]["rows"] == [["Closed", 1]] and by_id[w1]["filtered"] == [f["id"]]
-    assert "WHERE ([SOXIssue].[OPSS-Iss:Status] = 'Closed') GROUP BY" in FakeOpenPages.queries[-2]
+    # Plainly, with no brackets of its own: see test_filter_conditions_join_the_where.
+    assert "WHERE [SOXIssue].[OPSS-Iss:Status] = 'Closed' GROUP BY" in FakeOpenPages.queries[-2]
     client.delete(f"/api/reports/{report['id']}", headers=manager)
 
 

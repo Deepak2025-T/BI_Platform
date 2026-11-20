@@ -199,8 +199,11 @@ def test_thinning_keeps_recent_hourly_then_daily(client, user, dashboard):
         db.commit()
         thin(db, report, now)
         db.commit()
+        # Only the ones this test put there: saving a report also keeps what it ran, so the
+        # report arrives with a snapshot of its own that has nothing to do with thinning.
         kept = sorted(now - (s.created_at if s.created_at.tzinfo else s.created_at.replace(tzinfo=dt.timezone.utc))
-                      for s in db.query(ReportSnapshot).filter(ReportSnapshot.report_id == report.id))
+                      for s in db.query(ReportSnapshot).filter(ReportSnapshot.report_id == report.id,
+                                                               ReportSnapshot.trigger == "schedule"))
     assert len([a for a in kept if a < dt.timedelta(days=1)]) == 12  # the last day: all of them
     three_days = [a for a in kept if dt.timedelta(days=2) < a < dt.timedelta(days=4)]
     twelve_days = [a for a in kept if dt.timedelta(days=11) < a < dt.timedelta(days=13)]
