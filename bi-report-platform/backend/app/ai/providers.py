@@ -5,6 +5,8 @@ Talks to the AI providers. Every call asks for a JSON answer that matches a sche
 - anthropic: the Claude API, through the official anthropic SDK
 - openai_compatible: any server with the /v1/chat/completions API, e.g. LM Studio, vLLM,
   llama.cpp server, LocalAI, or a hosted service
+- nvidia: NVIDIA's hosted API (build.nvidia.com), the same API with an NVIDIA key. Its reasoning models
+  (Nemotron) get room for the answer and thinking turned off, so questions come back quickly.
 """
 
 import json
@@ -24,7 +26,12 @@ PROVIDERS = {
                   "default_base_url": ""},
     "openai_compatible": {"label": "OpenAI-compatible server", "needs_base_url": True, "needs_key": False,
                           "default_base_url": "http://localhost:1234/v1"},
+    "nvidia": {"label": "NVIDIA API (build.nvidia.com)", "needs_base_url": True, "needs_key": True,
+               "default_base_url": "https://integrate.api.nvidia.com/v1"},
 }
+
+# Offered as choices on the form; "Find models" lists the rest of NVIDIA's catalogue.
+NVIDIA_MODELS = ["nvidia/nemotron-3-ultra-550b-a55b"]
 
 # Current Claude models, offered as choices on the form.
 CLAUDE_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"]
@@ -40,6 +47,10 @@ TIMEOUT = float(settings.ai_timeout_seconds)
 
 # Connecting is fast even when answering isn't, so a refused connection is reported straight away.
 HTTP_TIMEOUT = httpx.Timeout(TIMEOUT, connect=10.0)
+
+# Very large hosted NVIDIA models get at least 3 minutes, and room for the whole answer.
+NVIDIA_TIMEOUT = httpx.Timeout(max(TIMEOUT, 180.0), connect=10.0)
+NVIDIA_MAX_TOKENS = 8192
 
 # Keeps a local Ollama model in memory between calls, so only the first call pays the load time.
 OLLAMA_KEEP_ALIVE = settings.ollama_keep_alive
@@ -85,8 +96,14 @@ def _base(url: str) -> str:
     return url.strip().rstrip("/")
 
 
+def _strip_thinking(text: str) -> str:
+    """Removes a reasoning model's <think>...</think> part (an unfinished one runs to the end)."""
+    return re.sub(r"<think>.*?(</think>|$)", "", text or "", flags=re.DOTALL).strip()
+
+
 def _parse_json(text: str) -> dict:
-    """Reads the JSON object from a reply, allowing for code fences or extra words around it."""
+    """Reads the JSON object from a reply, allowing for code fences, thinking or extra words around it."""
+    text = _strip_thinking(text)
     try:
         return json.loads(text)
     except json.JSONDecodeError:
@@ -105,8 +122,8 @@ def complete_json(spec: ModelSpec, system: str, user: str, schema: dict) -> dict
         return _claude(spec, system, user, schema)
     if spec.provider == "ollama":
         return _ollama(spec, system, user, schema)
-    if spec.provider == "openai_compatible":
-        return _openai_compatible(spec, system, user, schema)
+    if spec.provider in ("openai_compatible", "nvidia"):
+        return _openai_compatible(spec, system, user, schema, nvidia=spec.provider == "nvidia")
     raise AIError(f"Unknown provider: {spec.provider}")
 
 
@@ -127,7 +144,7 @@ def discover(provider: str, base_url: str, api_key: str) -> list[str]:
             res = httpx.get(f"{_base(base_url)}/api/tags", timeout=10)
             res.raise_for_status()
             return sorted(m["name"] for m in res.json().get("models", []))
-        if provider == "openai_compatible":
+        if provider in ("openai_compatible", "nvidia"):
             headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
             res = httpx.get(f"{_base(base_url)}/models", headers=headers, timeout=10)
             res.raise_for_status()
@@ -206,19 +223,33 @@ def _ollama(spec: ModelSpec, system: str, user: str, schema: dict) -> dict:
 
 # ---------- OpenAI-compatible ----------
 
-def _openai_compatible(spec: ModelSpec, system: str, user: str, schema: dict) -> dict:
+def _openai_compatible(spec: ModelSpec, system: str, user: str, schema: dict, nvidia: bool = False) -> dict:
     # Servers differ in which response_format options they support, so the schema goes in the prompt.
     system = _with_schema(system, schema)
     body = {"model": spec.model, "temperature": 0,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    timeout = HTTP_TIMEOUT
+    if nvidia:
+        # Reasoning models think before they answer: leave room for the answer, and turn thinking off so
+        # questions come back quickly (the app checks the SQL it gets anyway).
+        body.update(max_tokens=NVIDIA_MAX_TOKENS, chat_template_kwargs={"enable_thinking": False})
+        timeout = NVIDIA_TIMEOUT
     headers = {"Authorization": f"Bearer {spec.api_key}"} if spec.api_key else {}
+    url = f"{_base(spec.base_url)}/chat/completions"
     try:
-        res = httpx.post(f"{_base(spec.base_url)}/chat/completions", json=body, headers=headers,
-                         timeout=HTTP_TIMEOUT)
+        res = httpx.post(url, json=body, headers=headers, timeout=timeout)
+        if nvidia and res.status_code == 400 and "chat_template_kwargs" in res.text:
+            body.pop("chat_template_kwargs")  # a model without the thinking switch
+            res = httpx.post(url, json=body, headers=headers, timeout=timeout)
         if res.status_code in (401, 403):
             raise AIError("The server rejected the API key.")
         res.raise_for_status()
-        return _parse_json(res.json()["choices"][0]["message"]["content"] or "")
+        choice = res.json()["choices"][0]
+        content = _strip_thinking(choice["message"].get("content") or "")
+        if not content and (choice["message"].get("reasoning_content") or choice.get("finish_reason") == "length"):
+            raise AIError("The model used up its answer length while thinking and gave no answer. Try again, "
+                          "or choose a smaller model.")
+        return _parse_json(content)
     except AIError:
         raise
     except (httpx.HTTPError, KeyError, IndexError, ValueError) as err:

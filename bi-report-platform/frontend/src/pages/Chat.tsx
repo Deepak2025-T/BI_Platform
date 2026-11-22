@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { type ChatSummary, type SavedMessage, chatsApi } from "../api/chats";
 import { errorMessage } from "../api/client";
 import { aiModelsApi, assistantApi, dataModelsApi } from "../api/endpoints";
-import type { AIModelPublic, ChartType, ChatResult, DataModelSummary, DataSourceInfo, Widget } from "../api/types";
+import type { AIModelPublic, ChartType, ChatResult, DataModelSummary, DataSourceInfo, SuggestionRequest, Widget } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import DataChart from "../components/DataChart";
 import Dictate from "../components/Dictate";
@@ -12,7 +12,9 @@ import PalettePicker from "../components/PalettePicker";
 import Icon from "../components/Icon";
 import AddToReport from "../components/AddToReport";
 import ResultTable from "../components/ResultTable";
+import { QuickActions, SuggestionChips } from "../components/Suggestions";
 import { useToast } from "../components/Toast";
+import { downloadCsv, shownUnder, useSuggestions } from "../lib/suggestions";
 import { rememberModel, rememberedModel } from "../lib/aiModels";
 import { bySolution, rememberModel as rememberDataModel, rememberedModel as rememberedDataModel } from "../lib/dataModel";
 import { appendSpoken } from "../lib/dictation";
@@ -41,7 +43,8 @@ export default function Chat() {
   const { isManager } = useAuth();
   const routeId = useParams().id;
   const chatId = routeId ? Number(routeId) : null;
-  const start = location.state as { source?: string; model?: string; question?: string;
+  // `question` is asked as soon as the pickers are ready; `draft` only fills the box.
+  const start = location.state as { source?: string; model?: string; question?: string; draft?: string;
                                     dataModel?: string | null } | null;
 
   const [sources, setSources] = useState<DataSourceInfo[] | null>(null);
@@ -57,7 +60,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState("");
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(start?.draft ?? "");
   const [pinned, setPinned] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
   const tempId = useRef(-1);
@@ -66,6 +69,7 @@ export default function Chat() {
   const openChat = useRef(chatId);
   openChat.current = chatId;
   const startedWith = useRef<string | null>(null);
+  const shownChat = useRef<number | null | undefined>(undefined); // undefined: nothing shown yet
   const bottom = useRef<HTMLDivElement>(null);
 
   const refreshList = useCallback(() => { chatsApi.list().then(setChats).catch(() => setChats([])); }, []);
@@ -97,11 +101,22 @@ export default function Chat() {
 
   // Open a saved chat, or clear the page for a new one.
   useEffect(() => {
+    // The chat this ran for last time. The page is only cleared when moving from a saved chat to a
+    // new one: clearing on every run would also wipe a question just sent from the home page,
+    // because React runs this twice on the first render in development (StrictMode), after the
+    // question below has already been asked.
+    const previous = shownChat.current;
+    shownChat.current = chatId;
     setPinned([]);
     setOpenError("");
     if (chatId !== null && createdId.current === chatId) return;
     createdId.current = null;
-    if (chatId === null) { setMessages([]); setSourceName(""); startedChat.current = null; return; }
+    if (chatId === null) {
+      if (previous !== undefined && previous !== null) {
+        setMessages([]); setSourceName(""); startedChat.current = null;
+      }
+      return;
+    }
     setOpening(true);
     chatsApi.get(chatId).then((c) => {
       setMessages(c.messages.map(toMessage));
@@ -206,6 +221,30 @@ export default function Chat() {
                ...(palette?.length ? { style: { palette } } : {}) };
     });
 
+  // Suggestions: starters for an empty chat, follow-ups under the newest answer. Each is fetched
+  // once (lib/suggestions), and nothing shown or asked in this chat is suggested again.
+  const modelSent = model ? Number(model) : null;
+  const asked = messages.map((m) => m.question);
+  const followKeys = messages.filter((m) => m.id > 0).map((m) => `followup:${m.id}`);
+  const starterKey = !opening && !openError && messages.length === 0 && source && models !== null && (!!model || models.length === 0)
+    ? `starter:${source}:${dataModelSent ?? ""}:${modelSent ?? ""}` : null;
+  const starters = useSuggestions(starterKey, () => ({
+    kind: "starter", source_id: sourceIdOf(source), data_model: dataModelSent, model_id: modelSent }));
+  const latest = [...messages].reverse().find((m) => m.status === "done" && m.result && m.id > 0);
+  const followupRequest = (m: Message) => (): SuggestionRequest => {
+    const r = m.result!;
+    const base = { kind: "followup" as const, source_id: sourceIdOf(source), data_model: dataModelSent,
+                   model_id: modelSent, question: m.question, answer: r.reply,
+                   asked, previous: shownUnder([...followKeys, ...(starterKey ? [starterKey] : [])]) };
+    return r.kind === "result"
+      ? { ...base, title: r.title, sql: r.sql, columns: r.columns, rows: r.rows.slice(0, 5), row_count: r.row_count }
+      : base;
+  };
+  const fillInput = (text: string) => {
+    setInput(text);
+    requestAnimationFrame(() => document.getElementById("chat-input")?.focus());
+  };
+
   return (
     <div className="chat-layout">
       <ChatHistory chats={chats} current={chatId} onChanged={refreshList}
@@ -277,9 +316,17 @@ export default function Chat() {
           {!opening && !openError && messages.length === 0 && (
             <div className="chat-empty stack-sm">
               <div className="strong">Ask about {shownSourceName || "your data"}</div>
-              <div className="chip-row">
-                {EXAMPLES.map((q) => <button key={q} className="chip-btn" onClick={() => send(q)} disabled={!model}>{q}</button>)}
-              </div>
+              {!starters.dismissed && (
+                <SuggestionChips title="Questions to start with" items={starters.data?.suggestions ?? []}
+                  loading={starters.loading} error={starters.error} origin={starters.data?.origin}
+                  notice={starters.data?.notice} pickHint="fills the box" disabled={!model}
+                  onPick={(s) => fillInput(s.text)} onRefresh={starters.refresh} onDismiss={starters.dismiss} />
+              )}
+              {(starters.dismissed || (!starters.loading && !starters.data?.suggestions.length)) && (
+                <div className="chip-row">
+                  {EXAMPLES.map((q) => <button key={q} className="chip-btn" onClick={() => fillInput(q)} disabled={!model}>{q}</button>)}
+                </div>
+              )}
             </div>
           )}
 
@@ -305,7 +352,18 @@ export default function Chat() {
                   onPin={() => setPinned((p) => (p.includes(m.id) ? p.filter((x) => x !== m.id) : [...p, m.id]))}
                   onSave={() => { setPinned([m.id]); setSaving(true); }}
                   palette={palette}
-                  onRetype={(type) => updateResult(m.id, (r) => ({ chart: retype(r.chart, type, r.columns, r.rows) }))} />
+                  onRetype={(type) => updateResult(m.id, (r) => ({ chart: retype(r.chart, type, r.columns, r.rows) }))}
+                  followup={m === latest ? {
+                    suggestKey: `followup:${m.id}`, build: followupRequest(m), disabled: busy || !model,
+                    onAsk: send,
+                    onAction: (id, title) => {
+                      if (id === "compare_period") send(`Compare ${title} with the previous period`);
+                      else if (id === "build_report") {
+                        navigate("/", { state: { mode: "build", source,
+                          prompt: `Build a report around this question: ${m.question}` } });
+                      }
+                    },
+                  } : undefined} />
               )}
             </div>
           ))}
@@ -406,14 +464,57 @@ function ChatHistory({ chats, current, onChanged, onDeleted }: {
   );
 }
 
-function Answer({ result, pinned, palette, onPin, onSave, onRetype }: {
-  result: ChatResult; pinned: boolean; palette?: string[]; onPin: () => void; onSave: () => void; onRetype: (t: keyof typeof CHART_LABELS) => void;
+interface FollowUpProps {
+  suggestKey: string;
+  build: () => SuggestionRequest;
+  disabled: boolean;
+  /** Asks a suggestion straight away, as if it had been typed. */
+  onAsk: (text: string) => void;
+  /** Quick actions the page handles; the answer handles its own (rows, SQL, chart type, export). */
+  onAction: (id: string, title: string) => void;
+}
+
+/** "Suggested follow-up questions" and the quick actions that apply, under the newest answer. */
+function FollowUps({ suggestKey, build, disabled, onAsk, onAction, pressed }: FollowUpProps & {
+  onAction: (id: string) => void; pressed: string[];
 }) {
-  const [show, setShow] = useState<"" | "table" | "sql" | "tries">("");
+  const s = useSuggestions(suggestKey, build);
+  if (s.dismissed) return null;
+  return (
+    <div className="chat-followups">
+      <SuggestionChips title="Suggested follow-up questions" items={s.data?.suggestions ?? []}
+        loading={s.loading} error={s.error} origin={s.data?.origin} notice={s.data?.notice}
+        disabled={disabled} pickHint="asks it" onPick={(x) => onAsk(x.text)}
+        onRefresh={s.refresh} onDismiss={s.dismiss} />
+      <QuickActions actions={s.data?.actions ?? []} onAction={onAction} pressed={pressed} />
+    </div>
+  );
+}
+
+function Answer({ result, pinned, palette, onPin, onSave, onRetype, followup }: {
+  result: ChatResult; pinned: boolean; palette?: string[]; onPin: () => void; onSave: () => void; onRetype: (t: keyof typeof CHART_LABELS) => void;
+  followup?: FollowUpProps;
+}) {
+  const [show, setShow] = useState<"" | "table" | "sql" | "tries" | "charts">("");
   const failedTries = result.attempts.filter((a) => !a.ok).length;
   if (result.kind === "reply") {
-    return <div className="chat-answer card"><p className="chat-reply">{result.reply}</p></div>;
+    return (
+      <div className="chat-answer card">
+        <p className="chat-reply">{result.reply}</p>
+        {followup && <FollowUps {...followup} onAction={(id) => followup.onAction(id, "")} pressed={[]} />}
+      </div>
+    );
   }
+  const quick = (id: string) => {
+    if (id === "view_rows") toggle("table");
+    else if (id === "view_sql") toggle("sql");
+    else if (id === "change_chart") toggle("charts");
+    else if (id === "export_csv") downloadCsv(result.title, result.columns, result.rows);
+    else if (id === "add_to_report") onSave();
+    else followup?.onAction(id, result.title);
+  };
+  const pressed = [show === "table" && "view_rows", show === "sql" && "view_sql", show === "charts" && "change_chart"]
+    .filter(Boolean) as string[];
   const toggle = (v: typeof show) => setShow((s) => (s === v ? "" : v));
   return (
     <div className={"chat-answer card stack-sm" + (pinned ? " pinned" : "")}>
@@ -445,6 +546,18 @@ function Answer({ result, pinned, palette, onPin, onSave, onRetype }: {
       {show === "tries" && (
         <ul className="tries">{result.attempts.map((a, i) => <li key={i} className={"note " + (a.ok ? "note-ok" : "note-bad")}>{a.message}</li>)}</ul>
       )}
+      {show === "charts" && (
+        <div className="chip-row" role="group" aria-label="Chart type">
+          {Object.entries(CHART_LABELS).map(([k, l]) => {
+            const no = cannotDraw(k as ChartType, result.columns, result.rows);
+            return no ? null : (
+              <button key={k} type="button" className={"chip-btn" + (result.chart.type === k ? " on" : "")}
+                aria-pressed={result.chart.type === k} onClick={() => onRetype(k as keyof typeof CHART_LABELS)}>{l}</button>
+            );
+          })}
+        </div>
+      )}
+      {followup && <FollowUps {...followup} onAction={quick} pressed={pressed} />}
     </div>
   );
 }

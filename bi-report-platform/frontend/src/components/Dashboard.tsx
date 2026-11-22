@@ -33,6 +33,7 @@ import Icon from "./Icon";
 import Modal from "./Modal";
 import PalettePicker from "./PalettePicker";
 import PublishDialog from "./PublishDialog";
+import ReportInsights from "./ReportInsights";
 import ShareDialog from "./ShareDialog";
 import RefreshSchedule from "./RefreshSchedule";
 import TableChanges from "./TableChanges";
@@ -898,6 +899,12 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
             <button className="btn btn-ghost" onClick={addMedia}><Icon name="plus" size={16} />Add a picture or link</button>
             <span className="muted small">Drag tiles by their <Icon name="grip" size={14} /> handle to rearrange them, and by the bottom-right corner to resize them.</span>
           </div>
+        )}
+
+        {!shared && !bare && config.widgets.some((w) => w.kind !== "text" && w.kind !== "media" && w.sql) && (
+          <ReportInsights report={{ ...report, config }} title={title} editable={editable} canEdit={canEdit}
+            exporting={exporting} onExport={exportFile}
+            onAdded={(widget, d) => { setWidgets([...config.widgets, widget]); setData((m) => ({ ...m, [widget.id]: d })); }} />
         )}
 
         {editable && (

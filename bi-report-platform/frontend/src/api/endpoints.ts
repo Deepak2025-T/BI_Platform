@@ -2,7 +2,7 @@ import { AI_WAIT, api } from "./client";
 import type {
   ChatResult, ClarifyResult, DashboardConfig, DashboardDataRequest, DashboardFilter, DrillResult, DashboardParameters, DataModelDetail, DataModelSummary, DataSourceInfo, QueryData, Widget, WidgetData,
   AIModel, AIModelInput, ColorPalette, PaletteInput, AIModelPublic, AIModelTestResult, AIProvider, AIProviderInfo, Category, CategoryInput, ConnectionInput, ConnectionTestResult, DataConnection, QueryParams, QueryResult, Report,
-  ReportConfig, ReportIdea, ReportShare, ReportTemplate, PublicReport, Role, SchemaTables, TemplateInput, User,
+  ReportConfig, ReportIdea, SuggestionRequest, SuggestionResult, ReportShare, ReportTemplate, PublicReport, Role, SchemaTables, TemplateInput, User,
 } from "./types";
 
 export const authApi = {
@@ -137,6 +137,17 @@ export const assistantApi = {
   reportIdeas: (sourceId: number | null) =>
     api.get<{ ideas: ReportIdea[] }>("/api/assistant/report-ideas", { params: { source_id: sourceId } })
       .then((r) => r.data.ideas),
+  /**
+   * What to ask next, for an empty chat, a chat answer or a report, with the quick actions that
+   * apply there. Written by the AI model when one is given, checked against the real schema, and
+   * worked out from the columns when there is no model or it fails. Never runs a query.
+   */
+  suggestions: (body: SuggestionRequest) =>
+    api.post<SuggestionResult>("/api/assistant/suggestions", body, { timeout: AI_WAIT }).then((r) => r.data),
+  /** An executive summary of a dashboard, from the numbers it last showed. Needs an AI model. */
+  summary: (reportId: number, modelId: number) =>
+    api.post<{ summary: string; highlights: string[] }>(`/api/reports/${reportId}/summary`, { model_id: modelId },
+      { timeout: AI_WAIT }).then((r) => r.data),
   /**
    * The questions a request leaves open, before anything is built from it. No AI model is used,
    * so this comes back at once and costs nothing; an empty list means build it as written.

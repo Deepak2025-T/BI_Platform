@@ -25,6 +25,8 @@ def _answer(system: str, user: str) -> dict:
 
 
 class FakeModelServer(BaseHTTPRequestHandler):
+    nvidia_requests: list[dict] = []
+
     def _send(self, body: dict, code: int = 200):
         data = json.dumps(body).encode()
         self.send_response(code)
@@ -38,6 +40,8 @@ class FakeModelServer(BaseHTTPRequestHandler):
             self._send({"models": [{"name": "qwen2.5-coder:14b"}, {"name": "llama3.1:8b"}]})
         elif self.path == "/v1/models":
             self._send({"data": [{"id": "local-model"}]})
+        elif self.path == "/nv/v1/models":
+            self._send({"data": [{"id": "nvidia/nemotron-3-ultra-550b-a55b"}, {"id": "meta/llama-3.3-70b-instruct"}]})
         else:
             self._send({}, 404)
 
@@ -49,6 +53,15 @@ class FakeModelServer(BaseHTTPRequestHandler):
                 self._send({"error": "model not found"}, 404)
                 return
             self._send({"message": {"role": "assistant", "content": json.dumps(_answer(system, user))}})
+        elif self.path == "/nv/v1/chat/completions":
+            # NVIDIA: room for the answer, thinking off; a reasoning model may still show its thinking first.
+            FakeModelServer.nvidia_requests.append(body)
+            if body["model"] == "thinking-only":
+                self._send({"choices": [{"finish_reason": "length",
+                                         "message": {"role": "assistant", "content": None, "reasoning_content": "Hmm {"}}]})
+                return
+            text = "<think>The user wants {gross}.</think>\n" + json.dumps(_answer(system, user))
+            self._send({"choices": [{"message": {"role": "assistant", "content": text}}]})
         elif self.path == "/v1/chat/completions":
             # Wrapped in a code fence, as some local models do.
             text = "Sure:\n```json\n" + json.dumps(_answer(system, user)) + "\n```"
@@ -221,3 +234,33 @@ def test_claude_request_shape(monkeypatch, model, uses_fallback):
     assert call["plain"] is (not uses_fallback)
     if uses_fallback:
         assert call["fallbacks"] == "default" and call["betas"] == ["server-side-fallback-2026-07-01"]
+
+
+def test_nvidia_api(client, manager, user, fake_server, fake_run_query):
+    base = f"{fake_server}/nv/v1"
+    providers = {p["id"]: p for p in client.get("/api/ai-models/providers", headers=manager).json()}
+    assert providers["nvidia"]["default_base_url"] == "https://integrate.api.nvidia.com/v1"
+    assert providers["nvidia"]["needs_key"] and "nvidia/nemotron-3-ultra-550b-a55b" in providers["nvidia"]["suggested_models"]
+    assert client.post("/api/ai-models", headers=manager, json={
+        "name": "No key", "provider": "nvidia", "model": "x", "base_url": base}).status_code == 422
+    found = client.post("/api/ai-models/discover", headers=manager, json={"provider": "nvidia", "base_url": base,
+                                                                          "api_key": "nvapi-test"}).json()
+    assert "nvidia/nemotron-3-ultra-550b-a55b" in found
+
+    m = client.post("/api/ai-models", headers=manager, json={
+        "name": f"Nemotron {uuid.uuid4().hex[:6]}", "provider": "nvidia", "model": "nvidia/nemotron-3-ultra-550b-a55b",
+        "base_url": base, "api_key": "nvapi-test"}).json()
+    assert "nvapi-test" not in json.dumps(m)
+    assert client.post(f"/api/ai-models/{m['id']}/test", headers=manager).json()["ok"] is True
+    sent = FakeModelServer.nvidia_requests[-1]
+    assert sent["max_tokens"] == 8192 and sent["chat_template_kwargs"] == {"enable_thinking": False}
+    body = client.post("/api/query/generate", headers=user, json={"prompt": "gross sales Q4", "model_id": m["id"]}).json()
+    assert body["params"]["measure"] == "gross"  # read past the <think> part
+    client.delete(f"/api/ai-models/{m['id']}", headers=manager)
+
+    thinker = client.post("/api/ai-models", headers=manager, json={
+        "name": f"Thinker {uuid.uuid4().hex[:6]}", "provider": "nvidia", "model": "thinking-only",
+        "base_url": base, "api_key": "nvapi-test"}).json()
+    res = client.post(f"/api/ai-models/{thinker['id']}/test", headers=manager).json()
+    assert res["ok"] is False and "while thinking" in res["message"]
+    client.delete(f"/api/ai-models/{thinker['id']}", headers=manager)

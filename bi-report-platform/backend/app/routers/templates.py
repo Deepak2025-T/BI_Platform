@@ -223,12 +223,22 @@ def build_dashboard(template_id: int, body: BuildIn, db: Session = Depends(get_d
             if built and built["columns"]:
                 filters.append(built)
             continue
-        table = f"openpages.{f.get('type', '')}".lower() if source.is_openpages else str(f.get("table", "")).lower()
-        reading = [w for w in charts if table in dashboard_filters.query_tables(w["sql"], source)]
+        # "types" lets one filter cover several named object types (a taxonomy field that KRIs, risks
+        # and losses share, say); each chart is filtered on the first of them it reads.
+        if source.is_openpages:
+            tables = [f"openpages.{t}".lower() for t in (f.get("types") or [f.get("type", "")])]
+        else:
+            tables = [str(f.get("table", "")).lower()]
+        reading = {}
+        for w in charts:
+            read = dashboard_filters.query_tables(w["sql"], source)
+            table = next((t for t in tables if t in read), None)
+            if table:
+                reading[w["id"]] = table
         # The field may be known by more than one name here too, so each is tried until one is a
         # real column: make_filter drops a column the table doesn't have, leaving nothing to filter.
         for column in [f.get("field", "")] + list(f.get("alt_fields") or []):
-            picks = {w["id"]: {"table": table, "column": column} for w in reading}
+            picks = {wid: {"table": table, "column": column} for wid, table in reading.items()}
             if not picks:
                 break
             built = dashboard_filters.make_filter(source, f.get("label", "Filter"), f.get("kind", "category"),

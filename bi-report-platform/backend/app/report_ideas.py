@@ -57,6 +57,8 @@ class Idea:
     # Roughly how many charts it builds, so a one-chart idea doesn't look like a full report.
     charts: int = 0
     subject: str = ""
+    # The headline numbers it would open with, so the card says what it measures.
+    kpis: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -383,6 +385,36 @@ def _charts_in(prompt: str) -> int:
     return sum(numbers)
 
 
+def _scorecards(source: DataSource, report_prompts: list[str]) -> list[Idea]:
+    """KPI scorecards: the period-over-period numbers people track, for each table with a date
+    and an amount. Skipped when a scorecard on that table has been built already."""
+    out = []
+    for table in list(source.tables)[:8]:
+        columns = table_columns(source, table)
+        number = _pick(columns, _NUMBER_TYPES, _MEASURE_WORDS)
+        date = _pick(columns, _DATE_TYPES, ("date", "created", "posted", "order", "invoice"))
+        if not (number and date):
+            continue
+        group = _pick(columns, ("char", "text", "string", "enum"), _GROUP_WORDS, avoid=_FREE_TEXT)
+        thing, num, bare = _label(table.rpartition(".")[2]), _label(number), table.rpartition(".")[2]
+        if any("scorecard" in p.lower() and thing in p.lower() for p in report_prompts):
+            continue
+        kpis = (f"total {num} this month", f"total {num} last month", "the change from last month",
+                f"total {num} year to date", f"how many {thing} this month")
+        charts = [f"monthly {num} this year against last year"]
+        if group:
+            charts.append(f"total {num} by {_label(group)}, this month against last month")
+            charts.append(f"the top 5 {_label(group)} by {num} year to date")
+        where = f" on the {source.name} connection" if source.name else ""
+        prompt = (f"Build a {thing} KPI scorecard{where}. Use [{bare}], dated by {_label(date)}. "
+                  f"KPI cards for {_and_list(kpis)} (as a percentage). Then charts for {_and_list(charts)}.")
+        out.append(Idea(id=f"kpi-{thing.replace(' ', '-')}", title=f"{thing.capitalize()} KPI scorecard",
+                        why="Common KPIs: this month against last, year to date and the trend",
+                        reason="kpi", prompt=prompt, charts=len(kpis) + len(charts), subject=thing,
+                        kpis=kpis[:4]))
+    return out
+
+
 def recommend(db: Session, user: User, source: DataSource, limit: int = MAX_IDEAS) -> list[dict]:
     """Reports worth building on this connection, best first.
 
@@ -397,6 +429,8 @@ def recommend(db: Session, user: User, source: DataSource, limit: int = MAX_IDEA
         and len(r.prompt or "") >= MIN_PAST_LENGTH]
 
     ideas = _from_history(report_prompts)
+    scorecards = [] if source.is_openpages else _scorecards(source, report_prompts)[:1]
+    room = limit - len(scorecards)
 
     scored = []
     for recipe, types in _recipes_for(source):
@@ -409,7 +443,7 @@ def recommend(db: Session, user: User, source: DataSource, limit: int = MAX_IDEA
     scored.sort(key=lambda s: -s[0])
 
     for rank, hits, built, recipe, types in scored:
-        if len(ideas) >= limit:
+        if len(ideas) >= room:
             break
         if hits and not built:
             why = f"You asked about {recipe.subject}s {hits} times but have no report on them" \
@@ -421,7 +455,12 @@ def recommend(db: Session, user: User, source: DataSource, limit: int = MAX_IDEA
             why = f"{_and_list([f'[{t}]' for t in types])} is shared on this connection"
         ideas.append(Idea(id=f"subject-{recipe.subject.replace(' ', '-')}", title=recipe.title,
                           why=why, reason="subject", prompt=_request(recipe, source, types),
-                          charts=len(recipe.kpis) + len(recipe.charts), subject=recipe.subject))
+                          charts=len(recipe.kpis) + len(recipe.charts), subject=recipe.subject,
+                          kpis=tuple(recipe.kpis[:4])))
+
+    # The common KPIs - this month against last, year to date, the trend - come right after the
+    # subjects, so a connection with dated numbers always offers a scorecard.
+    ideas.extend(scorecards)
 
     # One idea that crosses subjects, because the question people ask of a whole connection is
     # rarely about one object type. Only offered when there is enough on the connection for it to

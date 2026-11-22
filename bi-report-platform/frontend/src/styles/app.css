@@ -1446,3 +1446,52 @@ body.printing .page-print-head:first-child { break-before: auto; }
 /* The logo's size, beside the button that put it there. */
 .logo-size { display: inline-flex; align-items: center; gap: 6px; }
 .logo-size input[type="range"] { width: 92px; accent-color: var(--accent); }
+
+/* ===== Suggestions and quick actions (components/Suggestions.tsx) ===== */
+.sugg { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border);
+        border-radius: var(--radius); background: linear-gradient(180deg, var(--accent-soft), var(--surface) 70%); }
+.sugg-head { display: flex; align-items: center; gap: 6px; min-height: 26px; }
+.sugg-spark { color: var(--accent); flex: none; }
+.sugg-title { font-weight: 650; font-size: 13px; color: var(--navy); }
+.sugg-origin { font-size: 11.5px; color: var(--fg2); background: var(--row); border-radius: 999px; padding: 1px 8px; cursor: help; }
+.sugg-chips, .qa-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.sugg-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 12px;
+             border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface);
+             color: var(--fg); font-size: 13px; line-height: 1.3; text-align: left; cursor: pointer;
+             transition: border-color .12s, background .12s; }
+.sugg-chip:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.sugg-chip:disabled { opacity: .55; cursor: default; }
+.sugg-chip .sugg-ico { color: var(--accent); flex: none; }
+.sugg-chip.is-chart { border-style: dashed; border-color: var(--accent); }
+.sugg-chip.is-recent .sugg-ico { color: var(--teal); }
+.sugg-error { display: flex; align-items: center; gap: 10px; color: var(--bad); }
+.sugg-skel { display: inline-block; width: 150px; height: 32px; border-radius: 999px;
+             background: linear-gradient(90deg, var(--row) 25%, var(--surface) 50%, var(--row) 75%);
+             background-size: 200% 100%; animation: sugg-shimmer 1.2s linear infinite; }
+.sugg-skel.w2 { width: 220px; }
+@keyframes sugg-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.qa { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.qa-title { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 650;
+            text-transform: uppercase; letter-spacing: .04em; color: var(--fg2); }
+.qa-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px;
+          border: 1px solid var(--accent); border-radius: 8px; background: var(--surface); color: var(--accent);
+          font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.qa-btn:hover:not(:disabled), .qa-btn.on { background: var(--accent); color: #FFFFFF; }
+.qa-btn:disabled { opacity: .55; cursor: default; }
+.spinner.sm { width: 12px; height: 12px; border-width: 2px; }
+.chat-followups { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.report-insights { display: flex; flex-direction: column; gap: 10px; }
+.summary-text { margin: 0; line-height: 1.55; }
+.summary-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.idea-kpis { display: flex; flex-wrap: wrap; gap: 4px; }
+.idea-kpi { font-size: 11px; color: var(--navy); background: var(--accent-soft); border-radius: 999px; padding: 1px 7px; }
+.idea-card.is-kpi { border-left-color: var(--accent); }
+@media (max-width: 700px) {
+  .sugg-chips, .qa-row { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin;
+                         -webkit-overflow-scrolling: touch; }
+  .sugg-chip, .qa-btn { flex: 0 0 auto; }
+  .sugg-chip { max-width: 78vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sugg-chip span { overflow: hidden; text-overflow: ellipsis; }
+  .qa { flex-wrap: nowrap; flex-direction: column; align-items: stretch; }
+}
+@media (prefers-reduced-motion: reduce) { .sugg-skel { animation: none; } }

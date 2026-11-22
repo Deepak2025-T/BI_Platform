@@ -24,6 +24,13 @@ export const PROVIDER_INFO: Record<AIProvider, {
     modelHint: "The model name the server uses",
     keyHint: "Only if the server asks for one. Stored encrypted and never shown again.",
   },
+  nvidia: {
+    short: "NV", color: "#76B900", title: "NVIDIA API (build.nvidia.com)",
+    blurb: "NVIDIA-hosted models such as Nemotron. Needs an API key from build.nvidia.com; usage counts against that account.",
+    baseUrlHint: "https://integrate.api.nvidia.com/v1 for NVIDIA's hosted API (or your own NIM server's /v1 address)",
+    modelHint: "e.g. nvidia/nemotron-3-ultra-550b-a55b. Find models lists NVIDIA's catalogue.",
+    keyHint: "Starts with nvapi-. Stored encrypted and never shown again.",
+  },
 };
 
 /** The model chosen in the Ask box, passed to the question page. */

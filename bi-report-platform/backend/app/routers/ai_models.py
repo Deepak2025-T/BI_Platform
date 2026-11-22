@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from ..ai.providers import CLAUDE_MODELS, PROVIDERS, AIError, ModelSpec, discover, ping
+from ..ai.providers import CLAUDE_MODELS, NVIDIA_MODELS, PROVIDERS, AIError, ModelSpec, discover, ping
 from ..connections import crypto
 from ..database import get_db
 from ..deps import get_current_user, require_manager
@@ -80,7 +80,7 @@ def saved_key(db: Session, model_id: int | None, given: str | None) -> str:
 def providers():
     return [AIProviderInfo(id=k, label=v["label"], needs_base_url=v["needs_base_url"], needs_key=v["needs_key"],
                            default_base_url=v["default_base_url"],
-                           suggested_models=CLAUDE_MODELS if k == "anthropic" else [])
+                           suggested_models={"anthropic": CLAUDE_MODELS, "nvidia": NVIDIA_MODELS}.get(k, []))
             for k, v in PROVIDERS.items()]
 
 

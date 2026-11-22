@@ -18,10 +18,11 @@ from ..models import AIModel, Report, User
 from ..prompt_clarify import clarify
 from ..prompt_ideas import ideas_for
 from ..report_ideas import recommend
+from .. import suggestions
 from ..excel_export import dashboard_workbook
 from ..ppt_export import dashboard_deck
 from ..schemas import (PROMPT_MAX, AddWidgetsIn, ChatIn, ClarifyIn, DashboardDataIn, DashboardIn, DrillIn,
-                       FilterMapIn, ReportOut, SaveDashboardIn, SourceOut, WidgetIn)
+                       FilterMapIn, ReportOut, SaveDashboardIn, SourceOut, SuggestIn, SummaryIn, WidgetIn)
 from ..refresh import (RefreshFailed, as_utc, keep_results, refresh_report, saved_data, snapshot_body)
 from ..report_data import active_filters, run_widgets
 from ..datasources import check_query
@@ -84,6 +85,49 @@ def report_ideas(source_id: int | None = None, db: Session = Depends(get_db),
     Worked out from the object types or columns the connection shares and from this person's own
     past requests on it. No AI model is used, so it comes back at once and costs nothing."""
     return {"ideas": recommend(db, user, _source(db, source_id))}
+
+
+@router.post("/api/assistant/suggestions")
+def suggest(body: SuggestIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """What to ask next: starter questions for an empty chat, follow-ups to an answer, or more
+    insights to explore around a report - with the quick actions that apply there.
+
+    The AI model writes them when one is given and answers; every suggestion is checked against
+    the source's real tables and columns and against what was already shown or asked. Without a
+    model, or when it fails, they are worked out from the columns. Never runs a query."""
+    report, can_edit = None, False
+    if body.kind == "report":
+        if body.report_id is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Say which report to suggest insights for.")
+        report, source = _dashboard(db, body.report_id, user)
+        source = _source(db, report.config.get("source_id"), report.config.get("data_model"))
+        can_edit = user.role == "manager" or report.owner_id == user.id
+    else:
+        source = _source(db, body.source_id, body.data_model)
+    spec, notice = None, ""
+    if body.model_id is not None:
+        try:
+            _, spec = _model(db, body.model_id)
+        except HTTPException as err:
+            notice = f"{err.detail} These suggestions come from the columns."
+    return suggestions.suggest(db, user, source, body.kind, body.model_dump(), spec,
+                               report=report, can_edit=can_edit, model_notice=notice)
+
+
+@router.post("/api/reports/{report_id}/summary")
+def report_summary(report_id: int, body: SummaryIn, db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    """An executive summary of a dashboard, written by the AI model from the numbers it last
+    showed. No query runs; a report with nothing saved yet asks to be opened or refreshed first."""
+    report, _ = _dashboard(db, report_id, user)
+    _, spec = _model(db, body.model_id)
+    ctx = suggestions.report_context(db, report)
+    try:
+        return suggestions.executive_summary(spec, ctx)
+    except AIError as err:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"The AI model couldn't be used: {err}")
+    except ValueError as err:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(err))
 
 
 @router.post("/api/assistant/clarify")

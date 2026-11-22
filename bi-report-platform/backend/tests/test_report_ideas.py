@@ -86,6 +86,19 @@ def test_a_recommendation_names_columns_the_table_really_has(source):
     assert "full name" not in orders["prompt"], "a free-text column makes a useless grouping"
 
 
+def test_a_table_with_a_date_and_an_amount_gets_a_kpi_scorecard(source):
+    """The common KPIs - this month against last, year to date, the trend - on real columns."""
+    _, source_id = source
+    ideas = _recommend(source_id)
+    card = next(i for i in ideas if i["reason"] == "kpi")
+    assert card["title"] == "Orders KPI scorecard" and "[orders]" in card["prompt"]
+    assert "revenue" in card["prompt"] and "order date" in card["prompt"] and card["kpis"]
+    # People has no amount and no date, so it gets no scorecard.
+    assert not any(i["reason"] == "kpi" and "people" in i["title"].lower() for i in ideas)
+    subject = next(i for i in ideas if i["reason"] == "subject")
+    assert subject["kpis"], "a subject card says what it measures"
+
+
 def test_an_openpages_connection_is_only_asked_about_what_it_shares():
     """A suggestion about vendors on a connection with no vendors is noise, and worse, it would
     fail every chart in it."""

@@ -11,6 +11,7 @@ import DomainTiles from "../components/DomainTiles";
 import FlowDiagram, { type FlowStep } from "../components/FlowDiagram";
 import Icon from "../components/Icon";
 import ReportIdeas from "../components/ReportIdeas";
+import { SuggestionChips } from "../components/Suggestions";
 import TemplateForm from "../components/TemplateForm";
 import { useToast } from "../components/Toast";
 import { type AskModel, rememberModel, rememberedModel } from "../lib/aiModels";
@@ -21,6 +22,7 @@ import { useCountUp, useReveal } from "../lib/motion";
 import { TEMPLATE_CATEGORIES } from "../lib/report";
 import { rememberSource, rememberedSource, sourceIdOf, sourceValue } from "../lib/sources";
 import { type BuildRequest, useBuildJob } from "../lib/buildJob";
+import { useSuggestions } from "../lib/suggestions";
 
 /**
  * Shown until the chosen database suggests its own, and if it has nothing to suggest.
@@ -92,8 +94,6 @@ export default function Home() {
   const [params, setParams] = useState({ date_from: "", date_to: "", filters: "" });
   // Chart shapes to hold the model to; empty lets it pick whatever fits each chart.
   const [charts, setCharts] = useState<PlannedChart[]>([]);
-  // Questions this database can answer, from its own columns.
-  const [ideas, setIdeas] = useState<string[]>([]);
   // Whole reports worth building on it, from what it holds and what this person asked for before.
   const [recommended, setRecommended] = useState<ReportIdea[]>([]);
   const [recommending, setRecommending] = useState(false);
@@ -115,6 +115,11 @@ export default function Home() {
   const [more, setMore] = useState(false);
   // How many suggested questions are on screen; the rest are one click away.
   const [shownIdeas, setShownIdeas] = useState(IDEAS_SHOWN);
+  // Questions this database can answer: the same grounded starters chat offers (a mix of basic,
+  // analytical and advanced questions, this person's own recent ones first), worked out from the
+  // columns without a model so they arrive with the database. Fetched once per database.
+  const starters = useSuggestions(sourceChoice ? `home-starter:${sourceChoice}` : null,
+    () => ({ kind: "starter", source_id: sourceIdOf(sourceChoice), limit: 8 }));
   const [tplSection, tplShown] = useReveal<HTMLElement>();
   const [recentSection, recentShown] = useReveal<HTMLElement>();
 
@@ -146,15 +151,6 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  // Every database suggests its own questions, so the chips are never about someone else's data.
-  useEffect(() => {
-    let current = true;
-    assistantApi.promptIdeas(sourceIdOf(sourceChoice))
-      .then((list) => { if (current) { setIdeas(list); setShownIdeas(IDEAS_SHOWN); } })
-      .catch(() => { if (current) setIdeas([]); });
-    return () => { current = false; };
-  }, [sourceChoice]);
-
   // ...and its own reports worth building. A failure here is silent on purpose: suggestions are
   // an offer, and an error about an offer nobody asked for is worse than no offer.
   useEffect(() => {
@@ -172,8 +168,8 @@ export default function Home() {
   // the one in flight rather than quietly replacing it.
   const buildRunning = !!buildJob && !buildJob.result && !buildJob.error;
   const recent = reports.slice(0, RECENT_SHOWN);
-  // The database's own questions when it has any, the general ones when it hasn't.
-  const suggestions = ideas.length ? ideas : SUGGESTIONS;
+  // The general questions, for when the database has none of its own (or they were hidden).
+  const plainIdeas = starters.dismissed || (!starters.loading && !starters.data?.suggestions.length);
   // The templates the Template picker offers: all of them, or one category's.
   const inDomain = domain ? templates.filter((t) => t.category === domain) : templates;
 
@@ -388,17 +384,26 @@ export default function Home() {
               )}
 
               {/* Questions to try, against the box they fill: a blank box always has a way in. */}
-              <div className="chip-row suggest-row">
-                <span className="muted small">Try</span>
-                {suggestions.slice(0, shownIdeas).map((idea) => (
-                  <button key={idea} className="chip-btn" onClick={() => setPrompt(idea)}>{idea}</button>
-                ))}
-                {suggestions.length > shownIdeas && (
-                  <button className="link-btn small" onClick={() => setShownIdeas(suggestions.length)}>
-                    {suggestions.length - shownIdeas} more
-                  </button>
-                )}
-              </div>
+              {!starters.dismissed && (
+                <SuggestionChips title={`Questions to try on ${chosenSource?.name ?? "this database"}`}
+                  items={starters.data?.suggestions ?? []} loading={starters.loading} error={starters.error}
+                  origin={undefined} pickHint="fills the box"
+                  onPick={(x) => { setPrompt(x.text); document.getElementById("ask")?.focus(); }}
+                  onRefresh={starters.refresh} onDismiss={starters.dismiss} />
+              )}
+              {plainIdeas && (
+                <div className="chip-row suggest-row">
+                  <span className="muted small">Try</span>
+                  {SUGGESTIONS.slice(0, shownIdeas).map((idea) => (
+                    <button key={idea} className="chip-btn" onClick={() => setPrompt(idea)}>{idea}</button>
+                  ))}
+                  {SUGGESTIONS.length > shownIdeas && (
+                    <button className="link-btn small" onClick={() => setShownIdeas(SUGGESTIONS.length)}>
+                      {SUGGESTIONS.length - shownIdeas} more
+                    </button>
+                  )}
+                </div>
+              )}
 
               <div className="ask-foot">
                 <div className="row-wrap">

@@ -16,7 +16,9 @@ LONG_LABELS = {"Risks by category", "Management responses", "Root causes", "Issu
                "Controls by COSO component", "Why policies were revised", "Loss events by risk category",
                "Loss events by business line", "Loss impact by effect subcategory", "How losses were recovered",
                "Risks by residual rating", "Risks by inherent rating", "Findings by category",
-               "Audits by country", "Findings by business unit", "Action items by status"}
+               "Audits by country", "Findings by business unit", "Action items by status",
+               "KRIs by Level 2 taxonomy", "Risks by Level 2 taxonomy", "Incidents by theme",
+               "Root causes of issues", "Issue resolution status"}
 
 
 # A field a template asks for by name, or several names for the same thing. OpenPages installations
@@ -140,11 +142,26 @@ def _heading(title: str, text: str = "") -> dict:
             "chart": {"type": "table", "x": "", "y": []}}
 
 
-def _filter(label: str, type_name: str, field: Field, kind: str = "category") -> dict:
-    """A filter on one field. Several names mean the same field under different group names; the
-    build step keeps the one the charts turned out to use (see routers/templates)."""
+def _filter(label: str, types: str | list[str], field: Field, kind: str = "category") -> dict:
+    """A filter on one field. With several object types it filters every chart that reads one of
+    them. Several names mean the same field under different group names; the build step keeps the
+    one the charts turned out to use (see routers/templates)."""
+    types = [types] if isinstance(types, str) else types
     names = _names(field)
-    return {"label": label, "kind": kind, "type": type_name, "field": names[0], "alt_fields": names[1:]}
+    f = {"label": label, "kind": kind, "type": types[0], "field": names[0], "alt_fields": names[1:]}
+    if len(types) > 1:
+        f["types"] = types
+    return f
+
+
+def _styled(widgets: list[dict], style: dict, good_when_down: set[str] = frozenset()) -> list[dict]:
+    """Gives every chart the same style; number tiles named in good_when_down turn red when they go up."""
+    out = []
+    for w in widgets:
+        if w.get("kind") != "text":
+            w = {**w, "style": {**style, **w.get("style", {}), **({"goodWhen": "down"} if w["title"] in good_when_down else {})}}
+        out.append(w)
+    return out
 
 
 CTL, ISS, FND, AUD, RSK, KRI, POL, OBL = ("SOXControl", "SOXIssue", "Finding", "AuditProgram", "SOXRisk",
@@ -158,6 +175,10 @@ LOSS, LIMP, LREC, ACT, ENT = "LossEvent", "LossImpact", "LossRecovery", "ActionI
 # IAM-PlanItem-FG group rather than an OPSS one, because it is part of the Internal Audit solution
 # rather than the shared GRC model.
 API, APIF = "Audit Plan Item", "IAM-PlanItem-FG:"
+# The Equiti ORM dashboard's incidents, and the Basel risk taxonomy levels that KRIs, risks and loss
+# events share.
+INC = "Incident"
+L1, L2 = "OPSS-Shared-Basel:Risk Category", "OPSS-Shared-Basel:Risk Subcategory"
 
 # Public names for the builders above, used by openpages_modules.
 count_by, count_by_two, total, table_of, heading, filter_on = (_count_by, _count_by_two, _total, _list,
@@ -491,6 +512,132 @@ OPENPAGES_TEMPLATES = [
         "filters": [_filter("Action item status", ACT, "OPSS-ActItem:Status"),
                     _filter("Due", ACT, "OPSS-ActItem:Due Date", "date")],
     },
+    {
+        # The Equiti Group ORM "Consolidated Risk Dashboard": KRIs, RCSA and risk incidents. OpenPages
+        # calls Amber "Yellow". Monthly trends come from auto-refresh history (no date functions in
+        # OpenPages SQL), and sums of losses from the loss table (no SUM).
+        "name": "OpenPages: Equiti ORM dashboard",
+        "description": "Operational risk: KRI status and taxonomy, RCSA ratings and heat map, risk incidents and losses",
+        "color": "#00AFAB",
+        "prompt": "Equiti ORM consolidated risk dashboard: KRIs, risk register and control assessment, risk incidents",
+        "widgets": _styled([
+            _heading("KRI overview and status", "Key risk indicators by breach status and risk taxonomy. "
+                     "Amber is Yellow in OpenPages. Turn on auto-refresh to see changes and trends over time."),
+            _total(KRI, "Total KRIs tracked", size="third"),
+            _total(KRI, "KRIs in Red", f"[{KRI}].[OPSS-KRI-Shared:Breach Status] = 'Red'", size="third"),
+            _total(KRI, "KRIs in Amber", f"[{KRI}].[OPSS-KRI-Shared:Breach Status] = 'Yellow'", size="third"),
+            _count_by(KRI, "OPSS-KRI-Shared:Breach Status", "KRIs by indicator status", "pie", size="half"),
+            _count_by(KRI, "OPSS-KRI:Indicator Trend", "KRI trend", "pie", size="half"),
+            _list("KRIs by Level 1 taxonomy and status",
+                  f"SELECT [{KRI}].[{L1}], [{KRI}].[OPSS-KRI-Shared:Breach Status], COUNT([{KRI}].[Resource ID]) FROM [{KRI}] "
+                  f"WHERE [{KRI}].[{L1}] IS NOT NULL GROUP BY [{KRI}].[{L1}], [{KRI}].[OPSS-KRI-Shared:Breach Status]", size="half"),
+            _count_by(KRI, L2, "KRIs by Level 2 taxonomy", size="half"),
+            _list("KRI values against thresholds",
+                  f"SELECT [{KRI}].[Name], [{KRI}].[OPSS-KRI-Shared:Breach Status], [{KRI}].[OPSS-KRI:Value], "
+                  f"[{KRI}].[OPSS-KRI-Shared:Yellow Threshold], [{KRI}].[OPSS-KRI-Shared:Red Threshold], "
+                  f"[{KRI}].[OPSS-KRI:Indicator Trend], [{KRI}].[OPSS-KRI:Value Date] FROM [{KRI}]"),
+
+            _heading("Risk register and control assessment (RCSA)",
+                     "Inherent and residual ratings, the residual heat map (impact by likelihood) and controls."),
+            _total(RSK, "Total risks", size="third"),
+            _total(RSK, "Major risks", f"[{RSK}].[Eval-FG:Res Rating] = 'Major'", size="third"),
+            _total(RSK, "Significant risks", f"[{RSK}].[Eval-FG:Res Rating] = 'Significant'", size="third"),
+            _count_by(RSK, "OPSS-Risk-Qual:Inherent Risk Rating", "Inherent risk rating", size="half"),
+            _count_by(RSK, "OPSS-Risk-Qual:Residual Risk Rating", "Residual risk rating", size="half"),
+            _list("Residual risk heat map (impact by likelihood)",
+                  f"SELECT [{RSK}].[OPSS-Risk-Qual:Residual Impact], [{RSK}].[OPSS-Risk-Qual:Residual Likelihood], "
+                  f"COUNT([{RSK}].[Resource ID]) FROM [{RSK}] WHERE [{RSK}].[OPSS-Risk-Qual:Residual Impact] IS NOT NULL "
+                  f"AND [{RSK}].[OPSS-Risk-Qual:Residual Likelihood] IS NOT NULL "
+                  f"GROUP BY [{RSK}].[OPSS-Risk-Qual:Residual Impact], [{RSK}].[OPSS-Risk-Qual:Residual Likelihood]", size="half"),
+            _count_by(RSK, L2, "Risks by Level 2 taxonomy", size="half"),
+            _count_by(CTL, "OPSS-Ctl:Control Method", "Controls by method", "pie", size="half"),
+            _list("Risks by business entity",
+                  f"SELECT [{ENT}].[Name], [{RSK}].[Name], [{RSK}].[OPSS-Risk-Qual:Residual Risk Rating], "
+                  f"[{RSK}].[OPSS-Risk:Status] FROM [{ENT}] JOIN [{RSK}] ON PARENT([{ENT}])", size="half"),
+
+            _heading("Risk incidents overview", "Open and major incidents by theme and rating, and the losses behind them. "
+                     "Download Excel to total the losses."),
+            _total(INC, "Open incidents", f"[{INC}].[OPSS-Inc:Closed Date] IS NULL", size="third"),
+            _total(INC, "Major incidents", f"[{INC}].[OPSS-Inc:Criticality] IN ('Critical', 'High')", size="third"),
+            _total(LOSS, "Loss events", size="third"),
+            _count_by(INC, "OPSS-Inc:Category", "Incidents by theme", size="third"),
+            _count_by(INC, "OPSS-Inc:Criticality", "Incidents by rating", "pie", size="third"),
+            _count_by(INC, "OPSS-Inc:Severity", "Incidents by severity", size="third"),
+            _list("Top major incidents",
+                  f"SELECT [{INC}].[Name], [{INC}].[Description], [{INC}].[OPSS-Inc:Category], [{INC}].[OPSS-Inc:Criticality], "
+                  f"[{INC}].[OPSS-Inc:Occurrence Date], [{INC}].[OPSS-Inc:Loss Amount], [{INC}].[OPSS-Inc:Exec_Status], "
+                  f"[{INC}].[OPSS-Inc:Closed Date] FROM [{INC}] ORDER BY [{INC}].[OPSS-Inc:Loss Amount] DESC"),
+            _list("Loss events and financial impact",
+                  f"SELECT [{LOSS}].[Name], [{LOSS}].[{L1}], [{LOSS}].[OPSS-LossEv:Gross Loss], [{LOSS}].[OPSS-LossEv:Net Loss], "
+                  f"[{LOSS}].[OPSS-LossEv:Status], [{LOSS}].[OPSS-LossEv:Occurrence Date] FROM [{LOSS}] "
+                  f"ORDER BY [{LOSS}].[OPSS-LossEv:Net Loss] DESC"),
+        ], {"color": "#00AFAB"}, good_when_down={"KRIs in Red", "KRIs in Amber", "Major risks", "Significant risks",
+                                                  "Open incidents", "Major incidents", "Loss events"}),
+        "filters": [_filter("Level 1 taxonomy", [KRI, RSK, LOSS], L1),
+                    _filter("Level 2 taxonomy", [KRI, RSK, LOSS], L2),
+                    _filter("KRI status", KRI, "OPSS-KRI-Shared:Breach Status"),
+                    _filter("Residual risk rating", RSK, "OPSS-Risk-Qual:Residual Risk Rating"),
+                    _filter("Incident rating", INC, "OPSS-Inc:Criticality"),
+                    _filter("Created", [KRI, RSK, CTL, INC, LOSS], "Creation Date", "date")],
+    },
+    {
+        # One page for leadership across the GRC programme. Issues use the OPSS-Issue field group, which is the
+        # one filled in on most installations (OPSS-Iss is often left "Not Determined").
+        "name": "OpenPages: GRC executive overview",
+        "description": "One page for leadership: open issues and findings, weaknesses, controls, KRIs, audits and policies",
+        "color": "#0D3B66",
+        "prompt": "Give leadership a one-page view of where the GRC programme needs attention",
+        "widgets": _styled([
+            _heading("At a glance", "The numbers that need attention. Turn on auto-refresh to see what changed since "
+                     "the last refresh on each of them."),
+            *[{**w, "style": {"headBg": "#0D3B66"}} for w in [
+                _total(ISS, "Open issues", f"[{ISS}].[OPSS-Issue:Status] IN ('New', 'Open')"),
+                _total(ISS, "High-priority open issues", f"[{ISS}].[OPSS-Issue:Priority] IN ('Critical', 'High') "
+                                                         f"AND [{ISS}].[OPSS-Issue:Status] IN ('New', 'Open')"),
+                _total(ISS, "Material weaknesses", f"[{ISS}].[OPSS-Issue:Conclusion] = 'Material Weakness'"),
+                _total(FND, "Open audit findings", f"[{FND}].[OPSS-Finding:Status] = 'Open'"),
+                _total(CTL, "Ineffective controls", f"[{CTL}].[OPSS-Ctl:Design Effectiveness] = 'Ineffective' "
+                                                    f"OR [{CTL}].[OPSS-Ctl:Operating Effectiveness] = 'Ineffective'"),
+                _total(KRI, "KRIs in Amber or Red", f"[{KRI}].[OPSS-KRI-Shared:Breach Status] IN ('Red', 'Yellow')"),
+                _total(AUD, "Audits in progress", f"[{AUD}].[OPSS-Aud:Status] IN ('In Progress', 'In Review')"),
+                _total(POL, "Policies in revision", f"[{POL}].[OPSS-Pol:Approval Status] = 'In Revision'"),
+            ]],
+
+            _heading("Where attention is needed"),
+            _count_by(ISS, "OPSS-Issue:Priority", "Issues by priority", "pie", size="third"),
+            _count_by(FND, "OPSS-Finding:Priority", "Open findings by priority", where=f"[{FND}].[OPSS-Finding:Status] = 'Open'",
+                      size="third"),
+            _count_by(KRI, "OPSS-KRI-Shared:Breach Status", "KRI breach status", "pie", size="third"),
+            _count_by(ISS, "OPSS-Issue:Resolution Status", "Issue resolution status", size="half"),
+            _count_by(ISS, "OPSS-Issue:Root Cause Type", "Root causes of issues", size="half"),
+            _count_by(CTL, "OPSS-Ctl:Operating Effectiveness", "Control operating effectiveness", "pie", size="third"),
+            _count_by(AUD, "OPSS-Aud:Status", "Audit programme status", size="third"),
+            _count_by(RSK, "OPSS-Risk-Qual:Inherent Risk Rating", "Inherent risk rating", size="third"),
+
+            _heading("To follow up"),
+            _list("Open material weaknesses",
+                  f"SELECT [{ISS}].[Name], [{ISS}].[OPSS-Issue:Issue Type], [{ISS}].[OPSS-Issue:Priority], "
+                  f"[{ISS}].[OPSS-Issue:Resolution Status] FROM [{ISS}] WHERE [{ISS}].[OPSS-Issue:Conclusion] = 'Material Weakness' "
+                  f"AND [{ISS}].[OPSS-Issue:Status] IN ('New', 'Open')", size="half"),
+            _list("High-priority open findings",
+                  f"SELECT [{FND}].[Name], [{FND}].[OPSS-Finding:Impact], [{FND}].[OPSS-Finding:MgmtRespStat] FROM [{FND}] "
+                  f"WHERE [{FND}].[OPSS-Finding:Status] = 'Open' AND [{FND}].[OPSS-Finding:Priority] = 'High'", size="half"),
+            _list("Ineffective controls",
+                  f"SELECT [{CTL}].[Name], [{CTL}].[OPSS-Ctl:Design Effectiveness], [{CTL}].[OPSS-Ctl:Operating Effectiveness] "
+                  f"FROM [{CTL}] WHERE [{CTL}].[OPSS-Ctl:Design Effectiveness] = 'Ineffective' "
+                  f"OR [{CTL}].[OPSS-Ctl:Operating Effectiveness] = 'Ineffective'", size="half"),
+            _list("KRIs outside appetite",
+                  f"SELECT [{KRI}].[Name], [{KRI}].[OPSS-KRI-Shared:Breach Status], [{KRI}].[OPSS-KRI:Value], "
+                  f"[{KRI}].[OPSS-KRI-Shared:Yellow Threshold], [{KRI}].[OPSS-KRI-Shared:Red Threshold], "
+                  f"[{KRI}].[OPSS-KRI:Indicator Trend] FROM [{KRI}] "
+                  f"WHERE [{KRI}].[OPSS-KRI-Shared:Breach Status] IN ('Red', 'Yellow')", size="half"),
+        ], {"color": "#00B4D8"}, good_when_down={"Open issues", "High-priority open issues", "Material weaknesses",
+                                                  "Open audit findings", "Ineffective controls", "KRIs in Amber or Red",
+                                                  "Policies in revision"}),
+        "filters": [_filter("Issue priority", ISS, "OPSS-Issue:Priority"),
+                    _filter("Risk category", [KRI, RSK, ISS], L1),
+                    _filter("Created", [ISS, FND, CTL, KRI, AUD, POL, RSK], "Creation Date", "date")],
+    },
 ]
 
 
@@ -510,6 +657,9 @@ TEMPLATE_MODULES = {
     "OpenPages: Compliance findings": "PCM",
     "OpenPages: Audit plan item overview": "IAM",
     "OpenPages: Action item monitoring dashboard": "ORM",
+    "OpenPages: Equiti ORM dashboard": "ORM",
+    # Leadership's view across every solution, so it sits in no one module's folder.
+    "OpenPages: GRC executive overview": "",
 }
 
 

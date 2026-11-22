@@ -674,3 +674,72 @@ def test_a_multi_value_enum_is_read_rather_than_left_empty():
     ]}}]}
     assert _rows(payload) == [{"OPSS-Rsk:Domain": "Compliance, Operational", "OPSS-Risk:Status": "Open",
                                "Count_Resource ID": 172, "Empty": None}]
+
+def test_equiti_orm_template(client, user):
+    t = _template(client, user, "OpenPages: Equiti ORM dashboard")
+    assert (t["category"], t["module"]) == ("GRC", "ORM")
+    widgets = t["layout"]["widgets"]
+    assert [w["title"] for w in widgets if w.get("kind") == "text"] == [
+        "KRI overview and status", "Risk register and control assessment (RCSA)", "Risk incidents overview"]
+    assert len(widgets) <= 30 and all(" AS " not in w["sql"].upper() for w in widgets)
+    level1 = next(f for f in t["layout"]["filters"] if f["label"] == "Level 1 taxonomy")
+    assert level1["types"] == ["KeyRiskIndicator", "SOXRisk", "LossEvent"]
+
+
+def test_grc_executive_overview_template(client, user):
+    t = _template(client, user, "OpenPages: GRC executive overview")
+    assert t["category"] == "GRC"
+    widgets = t["layout"]["widgets"]
+    assert [w["title"] for w in widgets if w.get("kind") == "text"] == ["At a glance", "Where attention is needed", "To follow up"]
+    kpis = [w for w in widgets if w.get("chart", {}).get("type") == "kpi"]
+    assert len(kpis) == 8 and all(w["style"]["headBg"] == "#0D3B66" for w in kpis)
+    assert all(" AS " not in w["sql"].upper() for w in widgets)
+    assert all("[OPSS-Iss:" not in w["sql"] for w in widgets)  # issues use the OPSS-Issue fields
+
+
+def test_builtin_dashboard_templates_stay_one_row_each(client, manager):
+    """Starting again keeps one row per built-in dashboard template and brings its layout up to date."""
+    from app.database import SessionLocal
+    from app.models import ReportTemplate
+    from app.openpages_templates import template_rows
+    from app.routers.templates import ensure_builtin_templates
+    name = "OpenPages: Equiti ORM dashboard"
+    current = next(t for t in template_rows() if t["name"] == name)["layout"]
+    with SessionLocal() as db:
+        row = db.query(ReportTemplate).filter(ReportTemplate.name == name).one()
+        row.layout = {"kind": "dashboard", "source_type": "openpages", "widgets": [], "filters": []}
+        db.commit()
+        ensure_builtin_templates(db)
+        ensure_builtin_templates(db)
+        rows = db.query(ReportTemplate).filter(ReportTemplate.name == name).all()
+        assert len(rows) == 1 and rows[0].layout == current
+
+
+def test_template_filter_across_object_types(client, manager, op_server):
+    from app.database import SessionLocal
+    from app.models import ReportTemplate
+    c = client.post("/api/connections", headers=manager, json={
+        "name": f"OP multi {uuid.uuid4().hex[:6]}", "db_type": "openpages", "host": op_server + "/grc/api",
+        "username": "admin", "password": "op-pass", "options": {"auth_type": "basic"}}).json()
+    client.put(f"/api/connections/{c['id']}", headers=manager, json={"allowed_tables": ["openpages.SOXIssue", "openpages.Finding"]})
+    widgets = [
+        {"title": "Issues", "sql": "SELECT COUNT([SOXIssue].[Resource ID]) FROM [SOXIssue]", "chart": {"type": "kpi", "x": "", "y": []}},
+        {"title": "Findings", "sql": "SELECT [Finding].[Name] FROM [Finding]", "chart": {"type": "table", "x": "", "y": []}},
+    ]
+    with SessionLocal() as db:
+        t = ReportTemplate(name=f"Multi {uuid.uuid4().hex[:6]}", prompt="test", color="#00AFAB", visibility="shared",
+                           is_builtin=False, layout={"kind": "dashboard", "source_type": "openpages", "widgets": widgets,
+                                                     "filters": [{"label": "Created", "kind": "date", "type": "SOXIssue",
+                                                                  "types": ["SOXIssue", "Finding"], "field": "Creation Date"}]})
+        db.add(t)
+        db.commit()
+        tid = t.id
+    res = client.post(f"/api/templates/{tid}/build", headers=manager, json={"source_id": c["id"]})
+    assert res.status_code == 201, res.text
+    report = res.json()["report"]
+    created = report["config"]["filters"][0]
+    tables = {v["table"] for v in created["columns"].values()}
+    assert len(created["columns"]) == 2 and tables == {"openpages.soxissue", "openpages.finding"}
+    client.delete(f"/api/reports/{report['id']}", headers=manager)
+    client.delete(f"/api/templates/{tid}", headers=manager)
+    client.delete(f"/api/connections/{c['id']}", headers=manager)

@@ -259,7 +259,7 @@ export interface ConnectionTestResult {
   schemas: SchemaTables[];
 }
 
-export type AIProvider = "ollama" | "anthropic" | "openai_compatible";
+export type AIProvider = "ollama" | "anthropic" | "openai_compatible" | "nvidia";
 
 /** An AI model as managers see it. The API key is never sent back. */
 export interface AIModel {
@@ -747,7 +747,7 @@ export interface ClarifyResult {
 }
 
 /** Where a recommendation came from, which is also how the panel groups them. */
-export type IdeaReason = "history" | "subject" | "breadth";
+export type IdeaReason = "history" | "subject" | "breadth" | "kpi";
 
 /**
  * A whole report worth building on the chosen database, suggested before anything is typed.
@@ -766,6 +766,54 @@ export interface ReportIdea {
   /** Roughly how many charts it would build. 0 when it can't be told from the request. */
   charts: number;
   subject: string;
+  /** The headline numbers it would open with. Empty for a past request offered back. */
+  kpis?: string[];
+}
+
+/** Where suggestions are for: an empty chat, a chat answer, or a report. */
+export type SuggestionPlace = "starter" | "followup" | "report";
+
+/** One suggested next step. Checked against the source's real tables and columns. */
+export interface Suggestion {
+  id: string;
+  text: string;
+  category: "basic" | "analytical" | "advanced" | "recent";
+  /** "question" asks it in chat; "chart" adds it to a report as a chart by asking. */
+  kind: "question" | "chart";
+}
+
+/** Something the app can do right where the suggestion appears. Only listed when it applies. */
+export interface QuickAction {
+  id: string;
+  label: string;
+}
+
+export interface SuggestionResult {
+  suggestions: Suggestion[];
+  actions: QuickAction[];
+  /** "ai" when the model wrote them, "fallback" when they come from the columns. */
+  origin: "ai" | "fallback";
+  /** Why the model's suggestions aren't shown, when they aren't. */
+  notice: string;
+}
+
+export interface SuggestionRequest {
+  kind: SuggestionPlace;
+  source_id?: number | null;
+  data_model?: string | null;
+  model_id?: number | null;
+  question?: string;
+  answer?: string;
+  title?: string;
+  sql?: string;
+  columns?: string[];
+  rows?: Cell[][];
+  row_count?: number;
+  previous?: string[];
+  asked?: string[];
+  report_id?: number;
+  limit?: number;
+  refresh?: boolean;
 }
 
 /** The chart shapes an AI-planned dashboard can use. */
@@ -777,6 +825,8 @@ export interface DashboardConfig {
   source_id: number | null;
   source_name: string;
   widgets: Widget[];
+  /** The OpenPages data model the report was planned against, when one was chosen. */
+  data_model?: string | null;
   /** A logo above the title, shown to viewers and in the printed and exported copies. */
   logo?: { url: string; height?: number; link?: string };
   parameters?: DashboardParameters;

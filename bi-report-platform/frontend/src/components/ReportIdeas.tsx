@@ -16,6 +16,8 @@ const LOOKS: Record<IdeaReason, { icon: string; group: string }> = {
   history: { icon: "clock", group: "You built this before" },
   subject: { icon: "grid", group: "What this database holds" },
   breadth: { icon: "layers", group: "Everything at once" },
+  // The period-over-period numbers people track whatever the subject.
+  kpi: { icon: "trend", group: "Common KPIs" },
 };
 
 interface Props {
@@ -63,6 +65,11 @@ export default function ReportIdeas({ ideas, sourceName, onPick, loading, onHide
               <span className="idea-icon" aria-hidden="true"><Icon name={look.icon} size={16} /></span>
               <span className="idea-title">{idea.title}</span>
               <span className="idea-why">{idea.why}</span>
+              {!!idea.kpis?.length && (
+                <span className="idea-kpis" aria-label="Headline numbers">
+                  {idea.kpis.slice(0, 3).map((k) => <span key={k} className="idea-kpi">{k}</span>)}
+                </span>
+              )}
               {idea.charts > 0 && (
                 <span className="idea-count">
                   about {idea.charts} {idea.charts === 1 ? "chart" : "charts"}

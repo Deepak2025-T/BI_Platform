@@ -378,7 +378,7 @@ class ConnectionTestOut(BaseModel):
     schemas: list[SchemaTables] = []
 
 
-AIProvider = Literal["ollama", "anthropic", "openai_compatible"]
+AIProvider = Literal["ollama", "anthropic", "openai_compatible", "nvidia"]
 
 
 class AIModelDraft(BaseModel):
@@ -610,3 +610,31 @@ class FilterMapIn(BaseModel):
     kind: Literal["date", "category"]
     id: str | None = Field(default=None, max_length=40)  # set to map an existing filter again
     widgets: list[Widget] = Field(max_length=MAX_WIDGETS)
+
+
+class SuggestIn(BaseModel):
+    """The context for suggestions (see suggestions.py). Only `kind` is needed; the rest makes
+    them better. Nothing in here is ever run as SQL: `sql` is read for the tables it names."""
+    kind: Literal["starter", "followup", "report"] = "followup"
+    source_id: int | None = None
+    data_model: str | None = Field(default=None, max_length=120)
+    # Leave out for suggestions worked out from the columns alone, which come back at once.
+    model_id: int | None = None
+    question: str = Field(default="", max_length=PROMPT_MAX)
+    answer: str = Field(default="", max_length=8000)
+    title: str = Field(default="", max_length=300)
+    sql: str = Field(default="", max_length=40000)
+    columns: list[str] = Field(default_factory=list, max_length=100)
+    rows: list[list] = Field(default_factory=list, max_length=50)
+    row_count: int = 0
+    # Suggestions already on screen, and questions already asked: neither is suggested again.
+    previous: list[str] = Field(default_factory=list, max_length=200)
+    asked: list[str] = Field(default_factory=list, max_length=100)
+    # kind "report": the report to explore. Its charts and saved numbers are read here.
+    report_id: int | None = None
+    limit: int = Field(default=6, ge=1, le=10)
+    refresh: bool = False
+
+
+class SummaryIn(BaseModel):
+    model_id: int
