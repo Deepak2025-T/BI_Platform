@@ -34,7 +34,7 @@ die() { printf '\nStopped: %s\n' "$1" >&2; exit 1; }
 
 # ---------------------------------------------------------------- packages
 
-say "Packages"
+say "Packages  (setup-from-git.sh rev 2)"
 apt-get update -qq
 # python3-venv for the API, nginx to serve it, unixodbc because
 # pyodbc links against it, acl so files the deploy writes stay readable by the service.
@@ -47,14 +47,17 @@ apt-get install -y --no-install-recommends \
 # NodeSource already contains npm and declares a conflict with Ubuntu's separate npm package, so on
 # such a machine 'apt install nodejs npm' can never be satisfied - apt reports held broken packages
 # and the whole install fails. So install Node only when it is genuinely missing.
-if ! command -v node >/dev/null 2>&1; then
-    apt-get install -y --no-install-recommends nodejs npm
-elif ! command -v npm >/dev/null 2>&1; then
-    # Node is here but npm is not: the NodeSource package, installed without its bundled npm.
-    apt-get install -y --reinstall nodejs || true
+if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+    echo "  node $(node -v) and npm $(npm -v) are already here"
+else
+    # Non-fatal: if apt cannot work this out, the message below says what to do, rather than the
+    # run dying inside apt's dependency report with everything after this step untouched.
+    apt-get install -y --no-install-recommends nodejs npm || true
+    if ! command -v npm >/dev/null 2>&1; then
+        apt-get install -y --reinstall nodejs || true
+    fi
 fi
-command -v npm >/dev/null 2>&1 || die "npm is missing and apt cannot supply it next to this nodejs. Install Node 20 from https://deb.nodesource.com/ and run this again."
-echo "  node $(node -v), npm $(npm -v)"
+command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 || die "node and npm are needed to build the frontend, and apt on this machine cannot supply them together. Install Node 20 from https://deb.nodesource.com/ (its package carries its own npm), then run this again."
 
 # ---------------------------------------------------------------- users and directories
 
