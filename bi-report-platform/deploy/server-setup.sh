@@ -78,6 +78,12 @@ install -m 644 "$APP_DIR/deploy/reportai-api.service" /etc/systemd/system/report
 systemctl daemon-reload
 systemctl enable reportai-api
 
+say "The reportai command"
+# One command for start/stop/status/logs, so nobody has to remember the unit name or that systemd
+# reports success before the API can actually answer anything.
+install -m 755 "$APP_DIR/deploy/reportai" /usr/local/bin/reportai
+echo "  installed /usr/local/bin/reportai - try: reportai status"
+
 say "nginx"
 if [ ! -f /etc/nginx/sites-available/reportai ]; then
   install -m 644 "$APP_DIR/deploy/nginx-reportai.conf" /etc/nginx/sites-available/reportai
@@ -108,4 +114,6 @@ Done. What is left to do by hand:
   2. Put the CI deploy key's public half in /home/$DEPLOY_USER/.ssh/authorized_keys.
   3. Set server_name in /etc/nginx/sites-available/reportai, then: certbot --nginx -d your.host
   4. Push to the deploy branch, or run the workflow by hand.
+
+Day to day: reportai start | stop | restart | status | logs | url
 DONE

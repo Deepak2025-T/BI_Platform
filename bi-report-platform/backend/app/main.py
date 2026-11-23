@@ -1,8 +1,11 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import SessionLocal, schema_missing_message
@@ -63,3 +66,43 @@ app.include_router(admin.router)
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+# ---------- The built frontend, when one has been built ----------
+#
+# With a web server in front of this (nginx serving frontend/dist), none of the below is reached.
+# With nothing in front, the API serves the app itself: one process on one port, and the browser
+# calls /api on the origin it was loaded from - so there is no proxy to configure and no CORS to
+# get wrong. Useful on a server without nginx, and for a quick look at a real build.
+#
+# This is registered last on purpose. Routes match in the order they were added, so every /api
+# route above is matched before the catch-all below ever sees the request.
+
+FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+
+def _serves_frontend() -> bool:
+    return (FRONTEND_DIR / "index.html").is_file()
+
+
+if _serves_frontend():
+    if (FRONTEND_DIR / "assets").is_dir():
+        # Content-hashed filenames, so the browser may keep them.
+        app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def spa(path: str):
+        """Anything that is not the API is the single-page app.
+
+        A file that exists is served as itself (the logo, the icon); anything else is index.html,
+        because /reports/114 is a route inside the app and only the browser knows that. index.html
+        itself is never cached, or a browser would go on loading yesterday's bundle after a deploy.
+        """
+        if path.startswith("api/"):
+            # A mistyped API path is a 404, not a page: answering with HTML would have the client
+            # trying to read a document as JSON.
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No such endpoint.")
+        candidate = (FRONTEND_DIR / path).resolve()
+        if path and candidate.is_relative_to(FRONTEND_DIR) and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIR / "index.html", headers={"Cache-Control": "no-cache"})
