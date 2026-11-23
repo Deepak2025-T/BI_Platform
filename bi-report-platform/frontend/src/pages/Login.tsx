@@ -1,8 +1,18 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import Brand from "../components/Brand";
+import { PRODUCT_NAME } from "../components/Brand";
+import Icon from "../components/Icon";
+import { AuthArt, TimusWordmark } from "../components/Timus";
 import { errorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+
+/** What the product does, in the order somebody does it. Shown beside the sign-in card. */
+const STEPS = [
+  { icon: "database", label: "Connect data" },
+  { icon: "chat", label: "Ask a question" },
+  { icon: "spark", label: "AI builds it" },
+  { icon: "reports", label: "Publish & share" },
+];
 
 export default function Login() {
   const { user, login } = useAuth();
@@ -35,16 +45,47 @@ export default function Login() {
   return (
     <div className="login">
       <aside className="login-side">
-        <Brand sub={null} />
-        <div>
-          <h1 className="login-headline">Ask a question. Get a report you can trust.</h1>
-          <p className="login-copy">Every number shows the query and table it came from.</p>
+        {/* The company's own shapes, cropped by the panel: the brand arrives before the form does. */}
+        <span className="login-blob one" aria-hidden="true" />
+        <span className="login-blob two" aria-hidden="true" />
+
+        <div className="login-side-top">
+          <TimusWordmark size={38} onDark />
+        </div>
+
+        <AuthArt className="login-art" />
+
+        <div className="login-side-foot">
+          <h1 className="login-headline">Business Intelligence</h1>
+          <ol className="login-steps">
+            {STEPS.map((s, i) => (
+              <li key={s.label}>
+                <span className="login-step-ico">
+                  <Icon name={s.icon} size={20} />
+                  <b className="login-step-no">{i + 1}</b>
+                </span>
+                <span className="login-step-label">{s.label}</span>
+              </li>
+            ))}
+          </ol>
         </div>
       </aside>
 
       <section className="login-main">
-        <form className="login-form" onSubmit={onSubmit} noValidate>
-          <h2 className="h1">Sign in</h2>
+        <form className="login-card" onSubmit={onSubmit} noValidate>
+          <div className="login-card-head">
+            <TimusWordmark size={46} />
+            <div className="login-card-product">
+              <div className="strong">{PRODUCT_NAME}</div>
+              <div className="muted small">Business Intelligence</div>
+            </div>
+          </div>
+
+          <div>
+            <h2 className="h1">Sign in</h2>
+            <p className="muted small">Use your account to open {PRODUCT_NAME}.</p>
+          </div>
+
           {error && <div className="alert alert-error" role="alert">{error}</div>}
 
           <label className="field">
@@ -58,16 +99,19 @@ export default function Login() {
             <div className="pw-wrap">
               <input type={showPw ? "text" : "password"} autoComplete="current-password" required
                 value={password} onChange={(e) => setPassword(e.target.value)} />
-              <button type="button" className="pw-toggle" onClick={() => setShowPw((s) => !s)}>
-                {showPw ? "Hide" : "Show"}
+              {/* An eye rather than the words, so the control takes the same room in every language
+                  and never crowds a long password. */}
+              <button type="button" className="pw-toggle icon" onClick={() => setShowPw((s) => !s)}
+                aria-label={showPw ? "Hide password" : "Show password"} title={showPw ? "Hide password" : "Show password"}>
+                <Icon name={showPw ? "eye-off" : "eye"} size={18} />
               </button>
             </div>
           </label>
 
-          <button className="btn btn-primary btn-lg" type="submit" disabled={busy || !email || !password}>
+          <button className="btn btn-primary btn-lg btn-block" type="submit" disabled={busy || !email || !password}>
             {busy ? "Signing in…" : "Sign in"}
           </button>
-          <p className="muted small">Forgot your password? Ask a manager to reset it.</p>
+          <p className="muted small c">Forgot your password? Ask a manager to reset it.</p>
 
           {import.meta.env.DEV && (
             <div className="demo-box">
@@ -81,6 +125,8 @@ export default function Login() {
             </div>
           )}
         </form>
+
+        <p className="login-foot muted small">© {new Date().getFullYear()} Timus Consulting Services</p>
       </section>
     </div>
   );

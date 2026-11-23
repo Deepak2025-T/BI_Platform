@@ -2,16 +2,18 @@
 :root {
   --bg: #F0F4F8;
   --surface: #FFFFFF;
-  --sidebar: #0D1B2A;
+  --sidebar: #15100D;      /* the company's near-black */
   --navy: #0D3B66;
   --fg: #1A2332;
   --fg2: #4A5568;
   --border: #DCE5EE;
   --border-strong: #CFDCE8;
   --row: #EDF2F7;
-  --teal: #00B4D8;          /* charts and highlights */
-  --accent: #00779E;        /* buttons: passes contrast with white text */
-  --accent-soft: #E6F3F8;
+  --brand: #E2600C;         /* the company orange, as the logo tile uses it */
+  --brand-soft: #FDBA8C;
+  --teal: #EA7317;          /* chrome highlights */
+  --accent: #C2410C;        /* buttons: passes contrast with white text */
+  --accent-soft: #FDF0E7;
   --ok: #1E5B3A; --ok-bg: #E6F4EC;
   --bad: #8A2A1F; --bad-bg: #FDECEC;
   --warn-bg: #FFF8E8; --warn-border: #F2C46D;
@@ -89,7 +91,7 @@ p { margin: 0; max-width: 80ch; }
 .btn-lg { height: 44px; padding: 0 20px; }
 .btn-sm { height: 32px; padding: 0 12px; font-size: 12.5px; border-radius: 8px; }
 .btn-primary { background: var(--accent); color: #FFFFFF; }
-.btn-primary:hover:not(:disabled) { background: #00668A; }
+.btn-primary:hover:not(:disabled) { background: #9A3412; }
 .btn-ghost { background: var(--surface); border-color: var(--border-strong); color: var(--fg); }
 .btn-ghost:hover:not(:disabled) { background: #F4F7FA; }
 .link-btn { background: none; border: 0; padding: 6px 0; color: var(--accent); font-weight: 600; cursor: pointer; text-align: left; }
@@ -128,18 +130,77 @@ textarea { height: auto; padding: 10px; }
 .note-ok { background: #E8F6EE; color: var(--ok); }
 .code { margin: 8px 0 0; background: var(--sidebar); color: #D7E3EE; border-radius: 10px; padding: 14px; font-family: var(--mono); font-size: 12.5px; overflow-x: auto; white-space: pre; }
 
+/* ===== The company logo ===== */
+.timus-logo { display: flex; align-items: center; gap: 11px; }
+.timus-words { line-height: 1.1; }
+.timus-name { font-size: 20px; font-weight: 800; letter-spacing: .06em; color: var(--navy); }
+.timus-sub { font-size: 10.5px; font-weight: 700; letter-spacing: .02em; color: #1D4ED8; }
+.timus-tag { display: inline-block; margin-top: 3px; padding: 1px 6px; border-radius: 4px;
+  background: var(--brand); color: #FFFFFF; font-size: 8.5px; font-weight: 700; letter-spacing: .02em; }
+/* On the dark panel both inks go white; the tile keeps its own colour and carries the brand. */
+.timus-logo.on-dark .timus-name, .timus-logo.on-dark .timus-sub { color: #FFFFFF; }
+.timus-logo.on-dark .timus-sub { opacity: .72; font-weight: 600; }
+
 /* ===== Login ===== */
 .login { min-height: 100vh; display: flex; flex-wrap: wrap; }
-.login-side { flex: 1 1 380px; background: var(--sidebar); color: #C9D6E3; padding: 40px; display: flex; flex-direction: column; justify-content: space-between; gap: 40px; }
-.login-side .brand { border: 0; }
-.login-headline { color: #FFFFFF; font-size: 38px; line-height: 1.12; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 14px; max-width: 14ch; }
-.login-copy { color: #8FA3B8; font-size: 15px; }
-.login-main { flex: 1 1 420px; display: grid; place-items: center; padding: 40px 24px; background: var(--surface); }
-.login-form { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 18px; }
+
+/* The brand side: near-black, with the company's own shapes cropped by the panel edge. */
+.login-side { position: relative; overflow: hidden; flex: 1 1 420px;
+  background: radial-gradient(120% 90% at 10% 0%, #241a15 0%, #15100d 45%, #0B0908 100%);
+  color: #C8C2BC; padding: 40px; display: flex; flex-direction: column; gap: 28px; }
+.login-blob { position: absolute; background: var(--brand); border-radius: 50% 50% 50% 8%; opacity: .92; }
+.login-blob.one { width: 300px; height: 190px; top: -96px; left: 36%; transform: rotate(16deg); }
+.login-blob.two { width: 150px; height: 330px; top: 60px; right: -46px; border-radius: 50%;
+  transform: rotate(-18deg); opacity: .85; }
+.login-side-top, .login-side-foot { position: relative; }
+.login-art { position: relative; width: min(420px, 100%); margin: auto; display: block; }
+.login-headline { color: #FFFFFF; font-size: 40px; line-height: 1.08; font-weight: 300;
+  letter-spacing: -0.01em; margin: 0 0 20px; max-width: 12ch; }
+/* A short rule under the headline rather than a full-width one: it reads as the brand's
+   underline, not as a divider cutting the panel in half. */
+.login-headline::after { content: ""; display: block; width: 72px; height: 4px; border-radius: 2px;
+  margin-top: 14px; background: var(--brand); }
+
+/* The four steps, numbered the way the screens come. */
+.login-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 20px; }
+.login-steps li { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 92px; }
+.login-step-ico { position: relative; display: grid; place-items: center; width: 48px; height: 48px;
+  border-radius: 13px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1);
+  color: var(--brand-soft); }
+.login-step-no { position: absolute; top: -7px; right: -7px; width: 19px; height: 19px; border-radius: 50%;
+  background: var(--brand); color: #FFFFFF; font-size: 10.5px; font-weight: 700; display: grid; place-items: center; }
+.login-step-label { font-size: 11.5px; text-align: center; color: #D9D2CC; }
+/* The dashes between the steps, drawn by the gaps rather than by extra elements. */
+.login-steps li + li .login-step-ico::before { content: ""; position: absolute; top: 50%;
+  right: calc(100% + 8px); width: 48px; border-top: 2px dashed rgba(226,96,12,.55); }
+@media (max-width: 1100px) { .login-steps li + li .login-step-ico::before { display: none; } }
+
+/* The form side: the light wash the brand uses behind its sign-in. */
+.login-main { flex: 1 1 460px; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 18px; padding: 40px 24px;
+  background: linear-gradient(140deg, #FFF8F3 0%, #FFFFFF 42%, #FDEADC 100%); }
+.login-card { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 16px;
+  background: var(--surface); border-radius: 16px; padding: 30px 28px;
+  box-shadow: 0 18px 50px rgba(60, 30, 10, .12); }
+.login-card-head { display: flex; align-items: center; gap: 14px; }
+.login-card-product { padding-left: 14px; border-left: 1px solid var(--border); }
+.login-foot { position: relative; }
+.c { text-align: center; }
+.btn-block { width: 100%; }
+
 .pw-wrap { position: relative; display: flex; }
 .pw-wrap input { flex: 1; padding-right: 64px; }
 .pw-toggle { position: absolute; right: 4px; top: 4px; height: 32px; border: 0; background: transparent; color: var(--accent); font-weight: 600; cursor: pointer; padding: 0 10px; }
+.pw-toggle.icon { display: grid; place-items: center; width: 34px; padding: 0; color: var(--fg2); }
+.pw-toggle.icon:hover { color: var(--accent); }
 .demo-box { border: 1px dashed var(--border-strong); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 2px; }
+
+/* On a phone the picture is the first thing to go: the form is what somebody came for. */
+@media (max-width: 860px) {
+  .login-side { gap: 20px; padding: 28px; }
+  .login-art { display: none; }
+  .login-headline { font-size: 28px; margin-bottom: 10px; }
+}
 
 /* ===== Home ===== */
 .ask-box { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 1px 2px rgba(13,27,42,.06); }
@@ -192,7 +253,9 @@ button.tpl-main { cursor: pointer; }
 @media (min-width: 1180px) {
   .table.fixed { table-layout: fixed; }
   .table.fixed td { overflow-wrap: anywhere; }
-  .w-status { width: 120px; } .w-owner { width: 150px; } .w-date { width: 130px; } .w-actions { width: 230px; }
+  /* The date is held on one line now that the status has its own heading rather than a column,
+     so it needs the room "Nov 20, 10:54 PM" actually takes. */
+  .w-status { width: 120px; } .w-owner { width: 150px; } .w-date { width: 155px; } .w-actions { width: 230px; }
 }
 .report-link { color: var(--fg); text-decoration: none; }
 .report-link:hover { color: var(--accent); text-decoration: underline; }
@@ -602,42 +665,6 @@ body.printing .viewer-body { padding: 0; }
   to   { transform: translateX(-50%) translateY(18px) scale(1.07); }
 }
 
-/* --- The question -> model -> database -> result picture --- */
-.flow-wrap {
-  background: linear-gradient(180deg, var(--surface), #FAFCFE);
-  border: 1px solid var(--border); border-radius: 14px;
-  padding: 14px 10px 6px; overflow: hidden;
-}
-.flow { display: block; width: 100%; height: auto; max-height: 190px; }
-.flow-rail { stroke: var(--border-strong); stroke-width: 2; }
-.flow-pulse {
-  stroke: var(--teal); stroke-width: 2; stroke-linecap: round;
-  stroke-dasharray: 6 10; stroke-dashoffset: 0; opacity: .5;
-  animation: rail-flow 1.6s linear infinite; animation-delay: var(--d, 0s);
-}
-@keyframes rail-flow { to { stroke-dashoffset: -32; } }
-.flow-dot { fill: var(--accent); opacity: 0; animation: dot-run 2.6s ease-in-out infinite; animation-delay: var(--d, 0s); }
-@keyframes dot-run {
-  0%        { transform: translateX(0);          opacity: 0; }
-  12%, 78%  {                                    opacity: 1; }
-  100%      { transform: translateX(var(--run)); opacity: 0; }
-}
-.flow.on .flow-pulse { opacity: .95; animation-duration: .9s; }
-.flow.on .flow-dot { animation-duration: 1.5s; }
-.flow-link.dim .flow-pulse, .flow-link.dim .flow-dot { opacity: 0; animation: none; }
-
-.flow-badge { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.5; transition: stroke .2s, fill .2s; }
-.flow-icon { color: var(--accent); transition: color .2s; }
-.flow-label { fill: var(--fg); font-size: 12.5px; font-weight: 650; }
-.flow-sub { fill: var(--fg2); font-size: 11px; }
-.flow-halo { fill: none; stroke: var(--teal); stroke-width: 2; opacity: 0; transform-origin: center; transform-box: fill-box; }
-.flow.on .flow-halo { animation: halo 2.6s ease-out infinite; animation-delay: var(--d, 0s); }
-@keyframes halo {
-  0%   { opacity: .45; transform: scale(1); }
-  70%  { opacity: 0;   transform: scale(1.5); }
-  100% { opacity: 0;   transform: scale(1.5); }
-}
-.flow.on .flow-badge { stroke: var(--teal); }
 .flow-node.dim .flow-badge { fill: #F4F7FA; stroke: var(--border); }
 .flow-node.dim .flow-icon { color: #9FB2C4; }
 .flow-node.dim .flow-label { fill: var(--fg2); }
@@ -657,7 +684,7 @@ body.printing .viewer-body { padding: 0; }
 
 /* --- Ask box, warmed up once the question can actually run --- */
 .ask-box { transition: border-color .2s, box-shadow .2s; }
-.ask-box.ready { border-color: var(--teal); box-shadow: 0 6px 22px rgba(0, 119, 158, .12); }
+.ask-box.ready { border-color: var(--teal); box-shadow: 0 6px 22px rgba(194, 65, 12, .14); }
 .btn-go .go-arrow { transition: transform .18s ease; }
 .btn-go:hover:not(:disabled) .go-arrow { transform: translateX(3px); }
 .chip-btn { transition: border-color .15s, transform .15s, background .15s; }
@@ -1050,7 +1077,7 @@ a.media-body:hover .media-img, a.media-body:hover .media-icon { opacity: .85; }
 .share-copy .btn { flex: none; }
 
 /* ---------------------------------------------------------------------------
-   OptimusBI: the brand mark, the build-progress ring and pill, the folded-away
+   ReportsAI: the brand mark, the build-progress ring and pill, the folded-away
    build options, and the template hierarchy (domain tiles and module folders).
    --------------------------------------------------------------------------- */
 
@@ -1495,3 +1522,64 @@ body.printing .page-print-head:first-child { break-before: auto; }
   .qa { flex-wrap: nowrap; flex-direction: column; align-items: stretch; }
 }
 @media (prefers-reduced-motion: reduce) { .sugg-skel { animation: none; } }
+
+/* ===== The four ways in, under the hero heading (pages/Home) =====
+   What stood here was a diagram of question -> model -> database -> answer: it described the
+   controls below it and did nothing. These start the work. */
+.start-row { display: grid; gap: 10px; grid-template-columns: repeat(4, 1fr); }
+.start-card {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  padding: 12px 14px; cursor: pointer; text-align: left;
+  background: var(--surface); color: inherit;
+  border: 1px solid var(--border); border-radius: 12px;
+  transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+.start-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(13, 59, 102, .08); }
+/* The one that matches what the box is set to do, so the page says which mode you are in. */
+.start-card.on { border-color: var(--accent); background: var(--accent-soft); }
+.start-icon { color: var(--accent); margin-bottom: 2px; }
+.start-label { font-weight: 650; line-height: 1.2; }
+.start-hint { color: var(--fg2); font-size: 12px; line-height: 1.3; }
+@media (max-width: 860px) { .start-row { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .start-row { grid-template-columns: 1fr; } }
+
+/* ===== Reports, by category and then by status (pages/MyReports) =====
+   A hundred and thirty-five reports in one flat list is a scroll, not an index. The category is
+   the first level and opens on a click, the status is the second, and a report's request is
+   trimmed to two lines so a row is a row. */
+.cat-group-head {
+  width: 100%; text-align: left; background: none; cursor: pointer; font: inherit; color: inherit;
+}
+.cat-group-head:hover { background: var(--row); }
+.cat-group:not(.open) .cat-group-head { border-bottom: 0; }
+.cat-caret { color: var(--fg2); transition: transform .15s; flex: 0 0 auto; }
+.cat-group:not(.open) .cat-caret { transform: rotate(-90deg); }
+.cat-group-head .h2 { display: block; }
+.block { display: block; }
+
+/* What is in a category, before it is opened. */
+.rep-tally { display: flex; gap: 10px; align-items: center; white-space: nowrap; }
+.rep-tally-pub { color: var(--ok); font-weight: 650; }
+
+/* The second level: published first, then drafts. */
+.cat-group-body { display: flex; flex-direction: column; }
+.rep-level + .rep-level { border-top: 1px solid var(--border); }
+.rep-level-head {
+  display: flex; align-items: center; gap: 8px; margin: 0;
+  padding: 8px 18px; font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em;
+  background: var(--row); color: var(--fg2);
+  border-left: 3px solid transparent;
+}
+.rep-level-head.is-published { border-left-color: var(--ok); color: var(--ok); background: var(--ok-bg); }
+.rep-level-head.is-draft { border-left-color: var(--border-strong); }
+.rep-level-count {
+  min-width: 20px; padding: 0 6px; border-radius: 99px;
+  background: var(--surface); color: var(--fg2);
+  font-size: 11px; font-weight: 700; text-align: center; letter-spacing: 0;
+}
+/* The request a report was built from can run to a page; two lines of it name the report. */
+.rep-prompt {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; margin-top: 2px;
+}

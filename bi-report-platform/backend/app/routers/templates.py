@@ -10,7 +10,8 @@ from ..database import get_db
 from ..datasources import QueryFailed, SourceError, get_source, run_sql
 from ..erp_templates import template_rows as erp_template_rows
 from ..openpages_modules import MODULES, module_template_rows
-from ..openpages_templates import template_rows as openpages_template_rows
+from ..openpages_templates import (WANTED_CHARTS, count_by,
+                                   template_rows as openpages_template_rows)
 from ..sql_guard import UnsafeSQL
 from ..deps import get_current_user
 from ..ai.colors import apply_color_rules, color_rules_from_prompt, normalize_hex
@@ -158,6 +159,78 @@ def first_that_runs(source, template_widget: dict, widget: dict) -> str:
     return failure
 
 
+# A field with more values than this is a list of names or references, not a category: a chart of
+# it is a thousand bars one record high.
+MAX_ENUM_VALUES = 30
+
+
+def top_up_charts(source, widgets: list[dict], wanted: int = WANTED_CHARTS) -> list[dict]:
+    """Brings a built dashboard up to `wanted` charts using the fields this installation has.
+
+    A template is written against the standard model, and a chart whose field is filed elsewhere
+    here is dropped - so the same template is twelve charts on one server and six on another. The
+    object types are the reliable part, and their field lists can be read: every enum field on a
+    type the dashboard already reads is a breakdown this installation can certainly answer.
+
+    Charts are added, never replaced, and only on object types the dashboard already reads, so a
+    topped-up report is the template's own subject told at its full length. Each one is run before
+    it is kept, exactly like a chart the template asked for, and anything that fails is simply not
+    added rather than reported as a failure of the template.
+    """
+    charts = [w for w in widgets if w.get("kind", "chart") == "chart"
+              and (w.get("chart") or {}).get("type") != "table"]
+    if len(charts) >= wanted or not getattr(source, "is_openpages", False):
+        return widgets
+    # Already drawn, so never offered twice; and the types in the order the dashboard leans on them.
+    drawn = {str((w.get("chart") or {}).get("x", "")).lower() for w in charts}
+    order: list[str] = []
+    for w in charts:
+        for table in dashboard_filters.query_tables(w.get("sql", ""), source):
+            name = source.op_type(table)
+            if name not in order:
+                order.append(name)
+
+    extra: list[dict] = []
+    for type_name in order:
+        if len(charts) + len(extra) >= wanted:
+            break
+        try:
+            fields = source.client.type_fields(type_name)
+        except Exception:                      # the type's definition can't be read: leave it be
+            continue
+        for f in fields:
+            if len(charts) + len(extra) >= wanted:
+                break
+            name = str(f.get("name") or "")
+            values = f.get("values") or []
+            if not name or name.lower() in drawn or not 2 <= len(values) <= MAX_ENUM_VALUES:
+                continue
+            widget = {k: v for k, v in count_by(type_name, name, f"By {_field_label(name)}",
+                                                "pie" if len(extra) < 2 else "bar",
+                                                size="third", skip_nulls=False).items()
+                      if k in ("title", "question", "sql", "chart", "size", "style")}
+            widget["id"] = uuid.uuid4().hex[:8]
+            try:
+                run_sql(source, widget["sql"])
+            except Exception:                  # not every field can be grouped; just skip it
+                continue
+            drawn.add(name.lower())
+            extra.append(widget)
+    if not extra:
+        return widgets
+    # In before the closing table, so "and here are the records" stays the end of the report.
+    at = next((i for i in range(len(widgets) - 1, -1, -1)
+               if (widgets[i].get("chart") or {}).get("type") == "table"
+               and widgets[i].get("kind", "chart") == "chart"), len(widgets))
+    return widgets[:at] + extra + widgets[at:]
+
+
+def _field_label(field: str) -> str:
+    """"OPSS-Iss:Root Cause Type" as someone would say it: "root cause type"."""
+    bare = field.split(":", 1)[-1].strip()
+    return bare[:1].lower() + bare[1:] if bare else field
+
+
 @router.post("/{template_id}/build", status_code=201)
 def build_dashboard(template_id: int, body: BuildIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Builds a draft dashboard from a dashboard template on the chosen connection. Every chart's query
@@ -192,6 +265,10 @@ def build_dashboard(template_id: int, body: BuildIn, db: Session = Depends(get_d
             skipped.append({"title": w.get("title", ""), "reason": reason})
         else:
             widgets.append(widget)
+    # Up to a full dashboard on this installation's own fields, where the template fell short of
+    # one because its field names are filed elsewhere here.
+    if source.is_openpages:
+        widgets = top_up_charts(source, widgets)
     # The template's palette is copied onto each chart, so the report keeps these colours even if
     # the template is later changed. Colour rules in the template's prompt are read the same way.
     palette = [c for c in (normalize_hex(x) for x in (layout.get("chartPalette") or [])) if c][:24]

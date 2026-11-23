@@ -165,11 +165,16 @@ def _apply_openpages(sql: str, source: DataSource, active: list[dict], values: d
             # Filters offer the words people read; the SQL needs what OpenPages stores, which on
             # some installations is a code ("1" for "Planned").
             vals = [openpages_stored(source, source.op_type(table), column, str(v)) for v in value["values"]]
-            quoted = [openpages.quote(v) for v in vals]
-            # One value is "=", several are "IN (...)" - the form the Query Service documents -
-            # rather than a chain of ORs that then has to be bracketed to mean what it says.
-            condition = (f"{ref} = {quoted[0]}" if len(quoted) == 1
-                         else f"{ref} IN ({', '.join(quoted)})" if quoted else "")
+            if openpages.is_path_field(column):
+                # The business entity filter. A path names a branch of the hierarchy, and what
+                # people mean by it is that branch and everything under it.
+                condition = " OR ".join(openpages.under(ref, v) for v in vals)
+            else:
+                quoted = [openpages.quote(v) for v in vals]
+                # One value is "=", several are "IN (...)" - the form the Query Service documents -
+                # rather than a chain of ORs that then has to be bracketed to mean what it says.
+                condition = (f"{ref} = {quoted[0]}" if len(quoted) == 1
+                             else f"{ref} IN ({', '.join(quoted)})" if quoted else "")
         if not condition:
             # Nothing to add: a filter that is on but says nothing filters nothing, and an empty
             # WHERE is the one thing the Query Service will not forgive.

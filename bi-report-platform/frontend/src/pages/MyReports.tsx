@@ -19,7 +19,21 @@ interface Group {
   category: CategoryRef | null;
   description?: string;
   reports: Report[];
+  /** The same reports split the way people look for them: what is published, then what is still a draft. */
+  published: Report[];
+  drafts: Report[];
 }
+
+/**
+ * How many reports a page can show open before it stops being a list and becomes a scroll.
+ *
+ * Past this, categories arrive closed and are opened one at a time: with a hundred and thirty-five
+ * reports the useful first screen is the set of categories, not the first twelve rows of one.
+ */
+const OPEN_BELOW = 30;
+
+/** Newest first, so a category opens on what somebody touched last. */
+const byNewest = (a: Report, b: Report) => b.updated_at.localeCompare(a.updated_at);
 
 export default function MyReports() {
   const { user, isManager } = useAuth();
@@ -53,14 +67,32 @@ export default function MyReports() {
   const groups = useMemo<Group[]>(() => {
     const q = search.trim().toLowerCase();
     const matching = (reports ?? []).filter((r) => !q || r.title.toLowerCase().includes(q) || r.prompt.toLowerCase().includes(q));
-    const inGroup = (id: number | null) => matching.filter((r) => (r.category?.id ?? null) === id);
+    const inGroup = (id: number | null): Group => {
+      const mine = matching.filter((r) => (r.category?.id ?? null) === id).sort(byNewest);
+      return {
+        key: id === null ? "none" : String(id), category: null, reports: mine,
+        published: mine.filter((r) => r.status === "published"),
+        drafts: mine.filter((r) => r.status !== "published"),
+      };
+    };
     const all: Group[] = [
-      ...categories.map((c) => ({ key: String(c.id), category: c, description: c.description, reports: inGroup(c.id) })),
-      { key: "none", category: null, reports: inGroup(null) },
+      ...categories.map((c) => ({ ...inGroup(c.id), key: String(c.id), category: c, description: c.description })),
+      inGroup(null),
     ];
     if (filter === "all") return all.filter((g) => g.reports.length > 0);
     return all.filter((g) => g.key === String(filter));
   }, [reports, categories, filter, search]);
+
+  // Which categories are open. Closing one is remembered by key, so opening a second doesn't
+  // shut the first and a search doesn't undo what someone has just arranged.
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
+  const shown = groups.reduce((n, g) => n + g.reports.length, 0);
+  // Searching or picking one category means someone is looking for something, so everything they
+  // are shown is open. Otherwise a short page opens whole and a long one opens its first category.
+  const openByDefault = (at: number) =>
+    !!search.trim() || filter !== "all" || shown <= OPEN_BELOW || at === 0;
+  const isOpen = (g: Group, at: number) => opened[g.key] ?? openByDefault(at);
+  const toggle = (g: Group, at: number) => setOpened((o) => ({ ...o, [g.key]: !isOpen(g, at) }));
 
   // If the selected category is deleted, go back to all reports.
   useEffect(() => {
@@ -121,47 +153,84 @@ export default function MyReports() {
           <div className="card muted">No reports yet. Ask a question on the home page to build one.</div>
         ) : groups.every((g) => g.reports.length === 0) ? (
           <div className="card muted">{search ? "No reports match your search." : "No reports in this category yet. Pick it when you publish a report."}</div>
-        ) : groups.map((g) => (
-          <section key={g.key} className="card flush cat-group" aria-label={g.category?.name ?? "No category"}
-            style={{ ["--cat-color" as string]: g.category?.color ?? "var(--border-strong)" }}>
-            <div className="cat-group-head">
-              <span className="cat-dot lg" style={{ background: g.category?.color ?? "transparent" }} aria-hidden="true" />
-              <div className="grow">
-                <h2 className="h2">{g.category?.name ?? "No category"}</h2>
-                {g.description && <div className="muted small">{g.description}</div>}
+        ) : groups.map((g, at) => {
+          const open = isOpen(g, at);
+          /** One level of the category: its published reports, then its drafts. */
+          const level = (label: string, list: Report[], tone: string) => list.length > 0 && (
+            <div className="rep-level" key={label}>
+              <h3 className={"rep-level-head " + tone}>
+                {label}<span className="rep-level-count">{list.length}</span>
+              </h3>
+              <div className="table-scroll">
+                <table className="table fixed">
+                  <colgroup><col /><col className="w-owner" /><col className="w-date" /><col className="w-actions" /></colgroup>
+                  <thead>
+                    <tr>
+                      <th scope="col">Report</th><th scope="col">Owner</th><th scope="col">Updated</th>
+                      <th scope="col"><span className="sr-only">Actions</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {list.map((r) => {
+                      const canEdit = isManager || r.owner_id === user?.id;
+                      return (
+                        <tr key={r.id}>
+                          <td>
+                            <Link to={`/reports/${r.id}`} className="report-link strong">{r.title}</Link>
+                            {/* The request a report was built from runs to a page of its own on the
+                                long ones. Two lines of it says which report this is; the rest is on
+                                the report itself, and in the tooltip for anyone who wants it here. */}
+                            {r.prompt && <div className="muted small rep-prompt" title={r.prompt}>{r.prompt}</div>}
+                            {r.refresh_every !== "off" && (
+                              <div className="muted small refresh-note" title="Auto-refresh">↻ {scheduleLabel(r)}</div>
+                            )}
+                          </td>
+                          <td className="muted">{r.owner_name}</td>
+                          <td className="muted nowrap">{shortDate(r.updated_at)}</td>
+                          <td className="r nowrap">
+                            <Link className="btn btn-ghost btn-sm" to={`/reports/${r.id}`}>Open</Link>{" "}
+                            {canEdit && <Link className="btn btn-ghost btn-sm" to={`/reports/${r.id}/edit`}>Edit</Link>}{" "}
+                            <button className="btn btn-ghost btn-sm" onClick={() => duplicate(r)}>Duplicate</button>{" "}
+                            {canEdit && <button className="btn btn-ghost btn-sm" onClick={() => remove(r)}>Delete</button>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <span className="muted small">{g.reports.length} report{g.reports.length === 1 ? "" : "s"}</span>
             </div>
-            <div className="table-scroll">
-              <table className="table fixed">
-                <colgroup><col /><col className="w-status" /><col className="w-owner" /><col className="w-date" /><col className="w-actions" /></colgroup>
-                <thead><tr><th scope="col">Report</th><th scope="col">Status</th><th scope="col">Owner</th><th scope="col">Updated</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
-                <tbody>
-                  {g.reports.map((r) => {
-                    const canEdit = isManager || r.owner_id === user?.id;
-                    return (
-                      <tr key={r.id}>
-                        <td><Link to={`/reports/${r.id}`} className="report-link strong">{r.title}</Link><div className="muted small">{r.prompt}</div></td>
-                        <td>
-                          <span className={"badge " + (r.status === "published" ? "badge-ok" : "badge-draft")}>{r.status === "published" ? "Published" : "Draft"}</span>
-                          {r.refresh_every !== "off" && <div className="muted small refresh-note" title="Auto-refresh">↻ {scheduleLabel(r)}</div>}
-                        </td>
-                        <td>{r.owner_name}</td>
-                        <td className="muted">{shortDate(r.updated_at)}</td>
-                        <td className="r nowrap">
-                          <Link className="btn btn-ghost btn-sm" to={`/reports/${r.id}`}>Open</Link>{" "}
-                          {canEdit && <Link className="btn btn-ghost btn-sm" to={`/reports/${r.id}/edit`}>Edit</Link>}{" "}
-                          <button className="btn btn-ghost btn-sm" onClick={() => duplicate(r)}>Duplicate</button>{" "}
-                          {canEdit && <button className="btn btn-ghost btn-sm" onClick={() => remove(r)}>Delete</button>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        ))}
+          );
+
+          return (
+            <section key={g.key} className={"card flush cat-group" + (open ? " open" : "")}
+              aria-label={g.category?.name ?? "No category"}
+              style={{ ["--cat-color" as string]: g.category?.color ?? "var(--border-strong)" }}>
+              {/* The whole header is the control: with a hundred reports the first useful screen
+                  is the set of categories, and one click opens the one you came for. */}
+              <button type="button" className="cat-group-head" aria-expanded={open} onClick={() => toggle(g, at)}>
+                {/* One chevron, turned rather than swapped, so opening a category is a movement
+                    and not a different symbol appearing. */}
+                <Icon name="down" size={15} className="cat-caret" />
+                <span className="cat-dot lg" style={{ background: g.category?.color ?? "transparent" }} aria-hidden="true" />
+                <span className="grow">
+                  <span className="h2">{g.category?.name ?? "No category"}</span>
+                  {g.description && <span className="muted small block">{g.description}</span>}
+                </span>
+                <span className="rep-tally muted small">
+                  {g.published.length > 0 && <span className="rep-tally-pub">{g.published.length} published</span>}
+                  {g.drafts.length > 0 && <span>{g.drafts.length} draft{g.drafts.length === 1 ? "" : "s"}</span>}
+                </span>
+              </button>
+              {open && (
+                <div className="cat-group-body">
+                  {level("Published", g.published, "is-published")}
+                  {level("Drafts", g.drafts, "is-draft")}
+                </div>
+              )}
+            </section>
+          );
+        })}
       </div>
 
       {managing && <CategoryManager categories={categories} onClose={() => setManaging(false)} onChange={categoriesChanged} />}

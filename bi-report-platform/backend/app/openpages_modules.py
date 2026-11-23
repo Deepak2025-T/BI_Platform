@@ -22,7 +22,7 @@ never alongside a JOIN. Totals are therefore counts, and amounts appear in lists
 """
 
 from .openpages_templates import (COUNT, ENT, Field, count_by, count_by_two, field_pairs, filter_on, heading,
-                                  summary_table, table_of, total)
+                                  normalise, summary_table, table_of, total, with_entity_filter)
 
 # ---------- object types, from the shipped object models and solution profiles ----------
 
@@ -620,7 +620,11 @@ ORM_SINGLE_OVERVIEW = {
     "prompt": "Give me a single operational risk overview: total risks, controls, business processes, "
               "business entities, loss events, KRIs, issues and action items, with open issues, "
               "overdue actions, major residual risks and red breach KRIs, then a breakdown of each",
-    "widgets": ORM_OVERVIEW_KPIS + ORM_OVERVIEW_BODY,
+    # The one page closes the way every other dashboard does: the records behind the charts, with
+    # the entity each one hangs under. It was the only template that ended on a chart.
+    "widgets": ORM_OVERVIEW_KPIS + ORM_OVERVIEW_BODY + [
+        summary(RSK, "Risk summary", ["Name", "Location", DOMAIN[RSK], INHERENT, RESIDUAL, RSK_STATUS],
+                "Every risk with its entity, domain, ratings and status")],
     "filters": [ROOT_FILTER,
                 filter_on("Residual rating", RSK, RESIDUAL),
                 filter_on("Breach status", KRI, "OPSS-KRI-Shared:Breach Status"),
@@ -1983,9 +1987,17 @@ MODULE_LABELS = {
 
 
 def module_template_rows() -> list[dict]:
-    """The module reports as rows for report_templates."""
+    """The module reports as rows for report_templates.
+
+    They go through the same tidy-up as the shorter templates (openpages_templates.normalise): a
+    full dashboard where the fields allow it, the summary table last, and a business entity filter
+    on every one. These already satisfied all three by hand - running them through it is what
+    keeps that true of the next one somebody writes.
+    """
     return [{"name": r["name"], "description": r["description"], "color": r["color"], "prompt": r["prompt"],
              "category": "GRC", "module": r["module"],
-             "layout": {"kind": "dashboard", "source_type": "openpages", "widgets": r["widgets"],
-                        "filters": r["filters"], **({"theme": r["theme"]} if r.get("theme") else {})}}
+             "layout": {"kind": "dashboard", "source_type": "openpages",
+                        "widgets": normalise(r["widgets"]),
+                        "filters": with_entity_filter(r["filters"]),
+                        **({"theme": r["theme"]} if r.get("theme") else {})}}
             for r in MODULE_REPORTS]

@@ -608,6 +608,30 @@ def quote(value: str) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
+# The system field every object carries holding the entity path it hangs under, as "/Bank/Risk/AML".
+PATH_FIELD = "Location"
+
+
+def is_path_field(field: str) -> bool:
+    """Whether a field holds an entity path rather than a value to match outright."""
+    return str(field or "").strip().lower() == PATH_FIELD.lower()
+
+
+def under(ref: str, path: str) -> str:
+    """A condition matching a branch of the entity hierarchy and everything underneath it.
+
+    [Location] holds a path, so "=" asks for one node and nothing below it: picking a division
+    counted the division alone and left its departments, its risks and its controls out, which
+    reads on screen as a filtered report that has lost its data. Everything under a branch shares
+    its path as a prefix, so LIKE is what "this part of the organisation" means.
+
+    A branch whose name is the start of a sibling's ("/Vendors" and "/Vendors Inc") would take
+    that sibling with it. Excluding it would mean matching "/Vendors/%" instead, which drops the
+    records that hang on the branch itself - much the commoner case, and much the worse loss.
+    """
+    return f"{ref} LIKE {quote(path.rstrip('/') + '%')}"
+
+
 def field_ref(type_name: str, field: str) -> str:
     return f"[{type_name.replace(']', ']]')}].[{field.replace(']', ']]')}]"
 

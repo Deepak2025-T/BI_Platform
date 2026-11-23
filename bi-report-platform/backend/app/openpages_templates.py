@@ -10,6 +10,8 @@ OpenPages SQL has no AS, so counts come back as "Count_Resource ID". COUNT works
 only, so charts that count never JOIN; lists may.
 """
 
+import re
+
 COUNT = "Count_Resource ID"
 # Bar charts whose values are long phrases.
 LONG_LABELS = {"Risks by category", "Management responses", "Root causes", "Issues by type", "Resolution status",
@@ -667,6 +669,146 @@ def template_rows() -> list[dict]:
     """The templates as rows for report_templates (layout holds the dashboard)."""
     return [{"name": t["name"], "description": t["description"], "color": t["color"], "prompt": t["prompt"],
              "category": "GRC", "module": TEMPLATE_MODULES.get(t["name"], ""),
-             "layout": {"kind": "dashboard", "source_type": "openpages", "widgets": t["widgets"],
-                        "filters": t["filters"]}}
+             "layout": {"kind": "dashboard", "source_type": "openpages",
+                        "widgets": normalise(t["widgets"]),
+                        "filters": with_entity_filter(t["filters"])}}
             for t in OPENPAGES_TEMPLATES]
+
+
+# ---------------------------------------------------------------------------
+# One shape for every template: twelve charts, then the summary table
+# ---------------------------------------------------------------------------
+
+# What a template is brought up to. Twelve is three rows of four, or two of six, and it is where a
+# dashboard stops being a handful of charts and starts answering a subject.
+WANTED_CHARTS = 12
+
+# The filter every OpenPages template carries, on the system field every object has. "*" is
+# resolved per chart against that chart's own object type when the dashboard is built.
+ENTITY_FILTER = {"label": "Business entity", "kind": "category", "type": "*", "field": "Location"}
+
+# Fields no one wants counted. Every record has its own name and its own dates, so a chart of them
+# is one bar per record; amounts and scores are quantities, not categories; the rest are plumbing.
+_NOT_A_CATEGORY = re.compile(
+    r"(^|[:\s])(name|description|location|resource id|created by|creation date|last modif\w*|"
+    r"comments?|notes?|details?|summary|url|link|email|address|phone|identifier|guid|uuid)$", re.I)
+#
+# Matched on whole words: "Overdue" is a yes/no worth charting, while "Due" on its own is a date
+# and would draw one bar per day.
+_QUANTITY = re.compile(
+    r"\b(amount|amounts|cost|costs|effort|value|values|score|scores|count|number|percent|"
+    r"total|totals|days|hours|rate|weight|date|dates|due|start|end|deadline|version|"
+    r"revenue|budget|loss|exposure)\b", re.I)
+
+_FIELD_REF = re.compile(r"\[(?P<type>[^\]]+)\]\.\[(?P<field>[^\]]+)\]")
+
+
+def _label(field: str) -> str:
+    """"OPSS-Iss:Root Cause Type" as someone would say it: "root cause type"."""
+    bare = field.split(":", 1)[-1].strip()
+    return bare[:1].lower() + bare[1:] if bare else field
+
+
+def _is_chart(w: dict) -> bool:
+    return w.get("kind", "chart") == "chart" and (w.get("chart") or {}).get("type") != "table"
+
+
+def _is_table(w: dict) -> bool:
+    return w.get("kind", "chart") == "chart" and (w.get("chart") or {}).get("type") == "table"
+
+
+def _charted(widgets: list[dict]) -> set[str]:
+    """The fields the template already has a chart of, so nothing is suggested twice."""
+    out = set()
+    for w in widgets:
+        if not _is_chart(w):
+            continue
+        for name in [(w.get("chart") or {}).get("x", "")] + list(w.get("alt_x") or []):
+            if name:
+                out.add(name.lower())
+    return out
+
+
+def _candidates(widgets: list[dict]) -> list[tuple[str, str]]:
+    """(object type, field) pairs worth charting, in the order the template itself mentions them.
+
+    Only fields the template already names somewhere - in a summary table's columns or in a
+    query - are used. A field invented here would be dropped on every installation that spells it
+    differently, which is how a template ends up shorter than it promised rather than fuller.
+    """
+    out: list[tuple[str, str]] = []
+    seen = set()
+
+    def offer(type_name: str, field: str):
+        key = (type_name.lower(), field.lower())
+        if key in seen or _NOT_A_CATEGORY.search(field) or _QUANTITY.search(field):
+            return
+        seen.add(key)
+        out.append((type_name, field))
+
+    for w in widgets:
+        pick = w.get("pick_fields") or {}
+        for names in pick.get("fields") or []:
+            # Each entry is the names one installation or another files the field under; they are
+            # kept together so the chart can fall back the same way the table does.
+            if names and names[0]:
+                offer(pick.get("type", ""), names[0])
+        for sql in [w.get("sql", "")] + list(w.get("alt_sql") or []):
+            for m in _FIELD_REF.finditer(sql or ""):
+                offer(m.group("type"), m.group("field"))
+    return [(t, f) for t, f in out if t]
+
+
+def pad_charts(widgets: list[dict], wanted: int = WANTED_CHARTS) -> list[dict]:
+    """Brings a template up to `wanted` charts using fields it already names.
+
+    A template with more than that is left exactly as it is: the big module dashboards are long on
+    purpose, and cutting one down to a round number would throw away the part someone wrote.
+    """
+    charts = [w for w in widgets if _is_chart(w)]
+    if len(charts) >= wanted:
+        return widgets
+    already = _charted(widgets)
+    extra = []
+    for type_name, field in _candidates(widgets):
+        if len(charts) + len(extra) >= wanted:
+            break
+        if field.lower() in already:
+            continue
+        already.add(field.lower())
+        # Pies for the first few, then bars: a pie of twenty values is unreadable, and the fields
+        # a template names first are the ones with few values.
+        shape = "pie" if len(extra) < 2 else "bar"
+        extra.append(_count_by(type_name, field, f"By {_label(field)}", shape, size="third",
+                               skip_nulls=False))
+    if not extra:
+        return widgets
+    # In before the closing table, so the summary still reads as the end of the report.
+    at = next((i for i in range(len(widgets) - 1, -1, -1) if _is_table(widgets[i])), len(widgets))
+    return widgets[:at] + extra + widgets[at:]
+
+
+def table_last(widgets: list[dict]) -> list[dict]:
+    """Moves the summary table to the end, where a report's "and here are the records" belongs."""
+    tables = [i for i, w in enumerate(widgets) if _is_table(w)]
+    if not tables or tables[-1] == len(widgets) - 1:
+        return widgets
+    at = tables[-1]
+    return widgets[:at] + widgets[at + 1:] + [widgets[at]]
+
+
+def normalise(widgets: list[dict]) -> list[dict]:
+    """One shape for every template: twelve charts where the fields allow it, summary table last."""
+    return table_last(pad_charts(list(widgets)))
+
+
+def with_entity_filter(filters: list[dict] | None) -> list[dict]:
+    """Every OpenPages template filters by business entity, whatever else it offers.
+
+    [Location] is on every object type, so this one filter narrows a whole dashboard to a branch
+    of the organisation - which is the question people ask of a GRC report before any other.
+    """
+    out = list(filters or [])
+    if not any(f.get("field") == ENTITY_FILTER["field"] for f in out):
+        out.insert(0, dict(ENTITY_FILTER))
+    return out

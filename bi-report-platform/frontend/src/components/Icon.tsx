@@ -34,6 +34,8 @@ const PATHS: Record<string, string> = {
   download: "M12 3v12M7 10l5 5 5-5M5 21h14",
   refresh: "M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5",
   x: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20M15 9l-6 6M9 9l6 6",
+  eye: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6",
+  "eye-off": "M3 3l18 18M10.6 10.6a3 3 0 0 0 4.2 4.2M9.4 5.2A9.6 9.6 0 0 1 12 5c6.4 0 10 7 10 7a18 18 0 0 1-3.2 4.1M6.3 6.4A18 18 0 0 0 2 12s3.6 7 10 7c1.6 0 3-.3 4.3-.8",
   mic: "M12 15a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v7a3 3 0 0 0 3 3M5 11a7 7 0 0 0 14 0M12 18v4M9 22h6",
   // A microphone with a line through it: the browser has no speech recognition, or it is blocked.
   "mic-off": "M9 5a3 3 0 0 1 6 0v5M15 14.5A3 3 0 0 1 9 12v-1M5 11a7 7 0 0 0 10.9 5.8M19 11v1M12 18v4M9 22h6M3 3l18 18",

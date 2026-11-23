@@ -1,0 +1,36 @@
+# The API, run by systemd. Install to /etc/systemd/system/reportai-api.service.
+#
+# One worker, deliberately: scheduled report refreshes run inside this process
+# (SCHEDULER_ENABLED), so a second worker would refresh every scheduled report twice. The work is
+# almost all waiting on a database or a model, which one asyncio worker handles; if you ever do
+# need more, set SCHEDULER_ENABLED=false here and run the scheduler as its own unit.
+[Unit]
+Description=ReportsAI API
+Documentation=https://github.com/Deepak2025-T/BI_Platform
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=reportai
+Group=reportai
+WorkingDirectory=/opt/ReportAI/backend
+EnvironmentFile=/opt/ReportAI/backend/.env
+ExecStart=/opt/ReportAI/.venv/bin/uvicorn app.main:app \
+  --host 127.0.0.1 --port 8000 --workers 1 \
+  --timeout-keep-alive 65 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=always
+RestartSec=3
+KillSignal=SIGINT
+# A dashboard build can be working for 25 minutes; never kill one mid-flight on a restart.
+TimeoutStopSec=120
+
+# Hardening: the service needs its own tree and the upload store, nothing else on the disk.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/ReportAI /var/lib/reportai
+
+[Install]
+WantedBy=multi-user.target

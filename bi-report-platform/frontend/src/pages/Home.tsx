@@ -8,7 +8,7 @@ import CategoryBadge from "../components/CategoryBadge";
 import ClarifyDialog from "../components/ClarifyDialog";
 import Dictate from "../components/Dictate";
 import DomainTiles from "../components/DomainTiles";
-import FlowDiagram, { type FlowStep } from "../components/FlowDiagram";
+import { PRODUCT_NAME } from "../components/Brand";
 import Icon from "../components/Icon";
 import ReportIdeas from "../components/ReportIdeas";
 import { SuggestionChips } from "../components/Suggestions";
@@ -55,6 +55,20 @@ const CHARTS: [PlannedChart, string][] = [
 const RECENT_SHOWN = 4;
 
 type Mode = "chat" | "build";
+
+/**
+ * The four ways in, shown where the question → model → database → answer picture used to be.
+ *
+ * That picture described the controls underneath it rather than doing anything, and it was the
+ * first thing on the page. These start the work instead: two of them choose what kind of answer
+ * you want, one opens the ready-made dashboards, and one goes to what you have already.
+ */
+const STARTS: { id: Mode | "template" | "reports"; icon: string; label: string; hint: string }[] = [
+  { id: "build", icon: "grid", label: "Build a report", hint: "A page of charts from a sentence" },
+  { id: "chat", icon: "chat", label: "Ask one question", hint: "An answer, with the query behind it" },
+  { id: "template", icon: "template", label: "Start from a template", hint: "Ready-made dashboards" },
+  { id: "reports", icon: "reports", label: "Open what I built", hint: "Your reports and their data" },
+];
 
 /** One animated number in the strip under the hero. */
 function Stat({ icon, value, label }: { icon: string; value: number; label: string }) {
@@ -227,27 +241,6 @@ export default function Home() {
 
   const ready = (!!readyMade || prompt.trim().length >= 3) && !needsModel && !building && !checking && !buildRunning;
 
-  // The diagram mirrors the choices above it, so the picture is never out of date.
-  const words = prompt.trim() ? prompt.trim().split(/\s+/).length : 0;
-  const steps: FlowStep[] = [
-    { icon: "question", label: "Your question", sub: words ? `${words} word${words === 1 ? "" : "s"}` : "Waiting for you" },
-    {
-      icon: "spark",
-      label: "AI model",
-      sub: classic || readyMade ? "Not used" : chosenModel?.name ?? "None picked",
-      dim: classic || !!readyMade || !chosenModel,
-    },
-    { icon: "database", label: "Database", sub: classic ? "Sample sales data" : chosenSource?.name ?? "Sample sales data" },
-    mode === "chat"
-      ? { icon: "chat", label: "Answer", sub: "Query and rows shown" }
-      : {
-          icon: "grid", label: "Dashboard",
-          sub: readyMade ? `${(readyMade.layout.widgets ?? []).filter((w) => w.kind !== "text").length} ready-made charts`
-            : classic ? "Standard sales report"
-            : charts.length ? `4 to 6 charts, ${charts.length === 1 ? CHARTS.find(([c]) => c === charts[0])?.[1].toLowerCase() : "chosen shapes"}`
-            : "4 to 6 charts",
-        },
-  ];
 
   /** Builds a ready-made dashboard template on the chosen database, then opens it. */
   async function buildTemplate(t: ReportTemplate) {
@@ -328,11 +321,42 @@ export default function Home() {
         <div className="hero">
           <div className="hero-glow" aria-hidden="true" />
           <div className="stack">
-            <h1 className="display rise">What do you want to know, {user?.full_name.split(" ")[0]}?</h1>
-            <p className="muted lead rise rise-1">Ask in plain English. You'll see how the question was understood before anything is built.</p>
+            <h1 className="display rise">
+              {mode === "build"
+                ? <>What report should {PRODUCT_NAME} build, {user?.full_name.split(" ")[0]}?</>
+                : <>What do you want to ask, {user?.full_name.split(" ")[0]}?</>}
+            </h1>
+            <p className="muted lead rise rise-1">
+              {mode === "build"
+                ? "Describe it in a sentence — the charts, the tabs, the colours. Anything it leaves open you'll be asked about before it is built."
+                : "Ask in plain English. You'll see the query and the rows behind every answer."}
+            </p>
 
-            <div className="flow-wrap rise rise-2">
-              <FlowDiagram steps={steps} live={ready} />
+            {/* Four ways in, instead of a picture of how the tool works. Each one sets something
+                up and puts the cursor where the next word goes; the picture only described what
+                the controls below already say. */}
+            <div className="start-row rise rise-2" role="group" aria-label={`Ways to start with ${PRODUCT_NAME}`}>
+              {STARTS.map((s) => (
+                <button key={s.id} type="button"
+                  className={"start-card" + (s.id === mode ? " on" : "")}
+                  onClick={() => {
+                    if (s.id === "build" || s.id === "chat") {
+                      setMode(s.id);
+                      if (s.id === "chat") setTemplate(null);
+                      setTimeout(() => document.getElementById("ask")?.focus(), 0);
+                    } else if (s.id === "template") {
+                      setMode("build");
+                      setMore(true);
+                      setTimeout(() => document.getElementById("tpl-domain")?.focus(), 0);
+                    } else {
+                      navigate("/reports");
+                    }
+                  }}>
+                  <span className="start-icon" aria-hidden="true"><Icon name={s.icon} size={18} /></span>
+                  <span className="start-label">{s.label}</span>
+                  <span className="start-hint">{s.hint}</span>
+                </button>
+              ))}
             </div>
 
             <div className="stat-strip rise rise-3">
@@ -447,7 +471,7 @@ export default function Home() {
                   {templates.length > 0 && (
                     <>
                       <label className="field">Start from
-                        <select value={domain} aria-label="Template category"
+                        <select id="tpl-domain" value={domain} aria-label="Template category"
                           onChange={(e) => { setDomain(e.target.value as TemplateCategory | ""); pick(null); }}>
                           <option value="">All categories</option>
                           {TEMPLATE_CATEGORIES.filter((c) => templates.some((t) => t.category === c))

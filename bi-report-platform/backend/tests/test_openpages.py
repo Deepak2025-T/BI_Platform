@@ -739,7 +739,10 @@ def test_template_filter_across_object_types(client, manager, op_server):
     report = res.json()["report"]
     created = report["config"]["filters"][0]
     tables = {v["table"] for v in created["columns"].values()}
-    assert len(created["columns"]) == 2 and tables == {"openpages.soxissue", "openpages.finding"}
+    # Both object types are filtered. The count is "at least", because a built dashboard may carry
+    # more charts than the template listed: a short template is topped up with breakdowns on this
+    # installation's own fields, and those read the same two types (templates.top_up_charts).
+    assert len(created["columns"]) >= 2 and tables == {"openpages.soxissue", "openpages.finding"}
     client.delete(f"/api/reports/{report['id']}", headers=manager)
     client.delete(f"/api/templates/{tid}", headers=manager)
     client.delete(f"/api/connections/{c['id']}", headers=manager)

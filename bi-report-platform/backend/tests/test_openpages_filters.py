@@ -127,3 +127,39 @@ def test_a_chart_error_carries_what_it_means(monkeypatch):
     assert out[0]["ok"] is False
     assert "columnReference cannot be null" in out[0]["error"], "the original is still there"
     assert "clear the filter" in out[0]["error"], "and now says what to do about it"
+
+
+# ---------- The business entity filter is a branch of a hierarchy, not one value ----------
+
+def test_a_business_entity_filter_takes_everything_under_the_branch(source):
+    """[Location] holds a path. "=" asks for one node and leaves out its departments, its risks
+    and its controls - a filtered report that has lost its data, which is what this looked like."""
+    f = _filter({"w1": {"table": "openpages.Audit Plan Item", "column": "Location"}})
+    sql, _, applied, _ = dashboard_filters.apply(
+        SQL, source, [f], {"f1": {"values": ["/Bank of the World/Operations Division"]}}, "w1")
+    assert ("WHERE [Audit Plan Item].[Location] LIKE '/Bank of the World/Operations Division%'"
+            in sql)
+    assert applied == ["f1"] and "WHERE (" not in sql
+
+
+def test_a_trailing_slash_does_not_become_two(source):
+    f = _filter({"w1": {"table": "openpages.Audit Plan Item", "column": "Location"}})
+    sql, _, _, _ = dashboard_filters.apply(SQL, source, [f], {"f1": {"values": ["/Axis Bank/"]}}, "w1")
+    assert "LIKE '/Axis Bank%'" in sql
+
+
+def test_two_branches_are_bracketed_because_they_are_an_or(source):
+    f = _filter({"w1": {"table": "openpages.Audit Plan Item", "column": "Location"}})
+    sql, _, applied, _ = dashboard_filters.apply(
+        SQL, source, [f], {"f1": {"values": ["/Axis Bank", "/CTB"]}}, "w1")
+    assert ("WHERE ([Audit Plan Item].[Location] LIKE '/Axis Bank%' "
+            "OR [Audit Plan Item].[Location] LIKE '/CTB%')") in sql
+    assert applied == ["f1"]
+
+
+def test_any_other_field_still_matches_outright(source):
+    """Only the path field is a branch. A status is a value, and "In Progress" must not drag in
+    "In Progress - On Hold"."""
+    sql, _, _, _ = dashboard_filters.apply(
+        SQL, source, [_filter(_mapped())], {"f1": {"values": ["High"]}}, "w1")
+    assert "= 'High'" in sql and "LIKE" not in sql
