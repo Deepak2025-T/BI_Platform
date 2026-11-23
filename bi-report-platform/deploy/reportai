@@ -25,17 +25,24 @@ bind() { grep -oP -- '--host \K[0-9.]+' "$UNIT" 2>/dev/null || echo 127.0.0.1; }
 
 # The address to open, worked out from what is actually configured rather than guessed.
 show_url() {
-    local p host ip
+    local p host ip web
     p=$(port)
     if [ -e "$NGINX_SITE" ]; then
-        host=$(grep -oP 'server_name \K[^;]+' "$NGINX_SITE" | head -1 | awk '{print $1}')
-        [ -n "$host" ] && echo "  http://$host/            (through nginx)"
+        # The port nginx serves this app on. It is deliberately not 80: another application owns
+        # 80 and 443 on this server, so this one has a port to itself.
+        web=$(grep -oP '^\s*listen\s+\K[0-9]+' "$NGINX_SITE" | head -1 || true)
+        host=$(grep -oP 'server_name \K[^;]+' "$NGINX_SITE" | head -1 | awk '{print $1}' || true)
+        # server_name _ matches anything, so it is not an address anyone can type - use the IP.
+        if [ -z "$host" ] || [ "$host" = "_" ]; then
+            host=$(ip -4 addr show scope global 2>/dev/null | grep -oP 'inet \K[\d.]+' | head -1 || true)
+        fi
+        [ -n "$web" ] && echo "  http://${host:-this-server}:$web/     (through nginx - open this)"
     fi
     if [ "$(bind)" = "0.0.0.0" ]; then
-        ip=$(ip -4 addr show scope global | grep -oP 'inet \K[\d.]+' | head -1)
+        ip=$(ip -4 addr show scope global 2>/dev/null | grep -oP 'inet \K[\d.]+' | head -1 || true)
         echo "  http://${ip:-this-server}:$p/     (straight to the API)"
     else
-        echo "  the API is bound to $(bind):$p, so only this machine can reach it directly"
+        echo "  the API itself is bound to $(bind):$p, so only this machine reaches it directly"
     fi
 }
 

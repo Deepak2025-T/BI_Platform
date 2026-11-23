@@ -26,6 +26,10 @@ DB_USER=reportai
 SERVICE_USER=reportai
 # Whoever will run deploys by hand. SUDO_USER is who typed sudo, which is almost always right.
 DEPLOY_USER=${DEPLOY_USER:-${SUDO_USER:-root}}
+# nginx serves this app on a port of its own. Not 80 or 443: this server already runs another
+# application on those, and anything that shares a port with it is one typo away from taking it
+# down. A separate port cannot touch it.
+NGINX_PORT=${NGINX_PORT:-8080}
 
 say() { printf '\n== %s\n' "$1"; }
 die() { printf '\nStopped: %s\n' "$1" >&2; exit 1; }
@@ -34,7 +38,7 @@ die() { printf '\nStopped: %s\n' "$1" >&2; exit 1; }
 
 # ---------------------------------------------------------------- packages
 
-say "Packages  (setup-from-git.sh rev 2)"
+say "Packages  (setup-from-git.sh rev 3)"
 apt-get update -qq
 # python3-venv for the API, nginx to serve it, unixodbc because
 # pyodbc links against it, acl so files the deploy writes stay readable by the service.
@@ -143,6 +147,10 @@ env_is_filled() {
     return 0
 }
 
+# The one address a fresh server has is its own IP, and two steps below need it: the origin the
+# browser will send, and the name nginx answers to. Empty on a host with no global address.
+HOST_IP=$(ip -4 addr show scope global 2>/dev/null | grep -oP 'inet \K[\d.]+' | head -1 || true)
+
 say "Secrets"
 if env_is_filled; then
     echo "  $ENV_FILE is already filled in - left exactly as it is"
@@ -152,7 +160,7 @@ else
 DATABASE_URL=postgresql+psycopg://$DB_USER:$DB_PASS@127.0.0.1:5432/$DB_NAME
 JWT_SECRET=$("$PY" -c "import secrets; print(secrets.token_urlsafe(48))")
 CONNECTIONS_KEY=$("$PY" -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
-CORS_ORIGINS=http://127.0.0.1
+CORS_ORIGINS=http://127.0.0.1:$NGINX_PORT${HOST_IP:+,http://$HOST_IP:$NGINX_PORT}
 SCHEDULER_ENABLED=true
 AI_TIMEOUT_SECONDS=300
 AI_DASHBOARD_MAX_SECONDS=1500
@@ -221,12 +229,34 @@ visudo -cf /etc/sudoers.d/reportai-deploy
 say "nginx"
 if [ ! -f /etc/nginx/sites-available/reportai ]; then
     install -m 644 "$PROJECT/deploy/nginx-reportai.conf" /etc/nginx/sites-available/reportai
-    echo "  installed - set server_name in /etc/nginx/sites-available/reportai"
+    echo "  installed /etc/nginx/sites-available/reportai"
 else
-    echo "  /etc/nginx/sites-available/reportai already exists - left as it is"
+    echo "  /etc/nginx/sites-available/reportai already exists - updating only its port"
 fi
+# The port is the one thing this script owns in that file, so it is set on every run while any
+# hand edits (a hostname, a certificate certbot added) are left alone.
+sed -i -E "s/^(\s*listen\s+)(\[::\]:)?[0-9]+;/\1\2$NGINX_PORT;/" /etc/nginx/sites-available/reportai
 ln -sfn /etc/nginx/sites-available/reportai /etc/nginx/sites-enabled/reportai
-nginx -t && systemctl reload nginx
+# -t checks every enabled site, so a fault in a neighbour's config stops here too. Better that
+# than reloading nginx into a broken state and taking the other application down with us.
+nginx -t || die "nginx is not happy with its configuration - nothing was reloaded. See the lines above."
+# A reload only works on a running nginx, and asking a stopped one to reload fails outright -
+# which, under set -e, ended the run right here and left the API unstarted. Enable it so it comes
+# back after a reboot, and start it when it is down instead of asking it to reload.
+systemctl enable nginx >/dev/null 2>&1 || true
+if systemctl is-active --quiet nginx; then
+    systemctl reload nginx
+else
+    echo "  nginx was not running - starting it"
+    systemctl start nginx || die "nginx would not start. See: systemctl status nginx"
+fi
+echo "  serving on port $NGINX_PORT"
+
+# A closed firewall port is indistinguishable from a broken deploy in a browser, so open the one
+# port this app needs. Only that port: nothing else about the firewall is touched.
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+    ufw allow "$NGINX_PORT/tcp" >/dev/null && echo "  opened $NGINX_PORT/tcp in ufw"
+fi
 
 # ---------------------------------------------------------------- start
 
@@ -252,15 +282,23 @@ cat <<DONE
 Address:
 $(reportai url 2>/dev/null || echo "  http://127.0.0.1/ - set server_name in the nginx site")
 
+Open this:
+
+  http://${HOST_IP:-this-server}:$NGINX_PORT/
+
 Still to do by hand:
-  1. The nginx site answers for one name only. Set it, and open the port:
-       sed -i 's/server_name .*/server_name YOUR.HOST.OR.IP;/' /etc/nginx/sites-available/reportai
-       nginx -t && systemctl reload nginx
-       ufw status   # if active: ufw allow 80/tcp
-  2. Your first account (not app.seed - that makes demo logins with published passwords):
+  1. Your first account (not app.seed - that makes demo logins with published passwords):
        cd $PROJECT/backend
        sudo -u $SERVICE_USER $PY -m app.create_admin you@example.com "Your Name"
-  3. Set CORS_ORIGINS in $ENV_FILE to the address people will use, then: reportai restart
+  2. To use a hostname instead of the IP, both of these have to agree, or the page loads and
+     every call it makes is refused:
+       sed -i 's/server_name .*/server_name YOUR.HOST;/' /etc/nginx/sites-available/reportai
+       nginx -t && systemctl reload nginx
+       sed -i 's|^CORS_ORIGINS=.*|CORS_ORIGINS=http://YOUR.HOST:$NGINX_PORT|' $ENV_FILE
+       reportai restart
+
+This app is on port $NGINX_PORT and touches nothing on 80 or 443, where the other application on
+this server lives.
 
 To update later, run this script again - it pulls $BRANCH, rebuilds, migrates and restarts.
 DONE
