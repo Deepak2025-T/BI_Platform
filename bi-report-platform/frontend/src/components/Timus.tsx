@@ -1,60 +1,30 @@
 /**
- * The company's mark and wordmark, drawn rather than loaded.
+ * The company's logo, as it is printed.
  *
- * Drawing it keeps it crisp at every size on every screen, costs no network request on the one
- * page a person sees before they are signed in, and lets the sign-in card and the dark panel use
- * the same logo in two colourways without shipping two files.
+ * These are the real files rather than a drawing of them: `timus-mark.png` is the T on its own,
+ * cut from the full logo, and `timus-logo.png` is the whole lockup. Both are transparent, so they
+ * sit on the white card and on the near-black panel without a box around them.
+ *
+ * Sizes are given as a height. The width follows from the file's own proportions, so a logo can
+ * never arrive squashed.
  */
 
 export const COMPANY_NAME = "Timus Consulting Services";
 export const COMPANY_PROMISE = "Technology Simplified!";
 
-interface MarkProps {
-  size?: number;
-  className?: string;
-}
-
-/** The orange tile with the T and its leaf. */
-export function TimusMark({ size = 40, className = "" }: MarkProps) {
+/** The T on its own: for the sidebar, the tab icon, and anywhere too narrow for the full logo. */
+export function TimusMark({ size = 34, className = "" }: { size?: number; className?: string }) {
   return (
-    <svg className={className} width={size} height={size} viewBox="0 0 40 40" role="img"
-      aria-label={`${COMPANY_NAME} logo`}>
-      <defs>
-        <linearGradient id="timus-tile" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#FB8C3C" />
-          <stop offset="100%" stopColor="#E2600C" />
-        </linearGradient>
-      </defs>
-      <rect width="40" height="40" rx="11" fill="url(#timus-tile)" />
-      {/* The T, cut in white so it reads on the tile at sidebar size as well as at hero size. */}
-      <g fill="#FFFFFF">
-        <rect x="9" y="11" width="22" height="5" rx="2.5" />
-        <rect x="17.5" y="11" width="5" height="20" rx="2.5" />
-      </g>
-      {/* The leaf: the curve the brand turns on, kept at part strength so it reads as a shape
-          behind the letter rather than a second letter. */}
-      <path d="M16.6 17.6c-.3 6-3.2 10.3-7.8 12.6.3-6.3 3.2-10.6 7.8-12.6z"
-        fill="#FFFFFF" opacity=".62" />
-    </svg>
+    <img className={`timus-mark ${className}`} src="/timus-mark.png" alt={COMPANY_NAME}
+      height={size} style={{ height: size, width: "auto" }} />
   );
 }
 
-/**
- * The mark with the name beside it, as it is printed.
- *
- * `onDark` swaps the two inks for white, so the same component serves the sign-in card and the
- * dark panel without a second copy of the logo.
- */
-export function TimusWordmark({ size = 40, onDark = false }: { size?: number; onDark?: boolean }) {
+/** The whole logo - the T, the name and the strap line - as one picture. */
+export function TimusWordmark({ size = 44 }: { size?: number }) {
   return (
-    <div className={"timus-logo" + (onDark ? " on-dark" : "")}>
-      <TimusMark size={size} />
-      <div className="timus-words">
-        <div className="timus-name">TIMUS</div>
-        <div className="timus-sub">Consulting Services</div>
-        <div className="timus-tag">{COMPANY_PROMISE}</div>
-      </div>
-    </div>
+    <img className="timus-logo" src="/timus-logo.png" alt={`${COMPANY_NAME} - ${COMPANY_PROMISE}`}
+      height={size} style={{ height: size, width: "auto" }} />
   );
 }
 

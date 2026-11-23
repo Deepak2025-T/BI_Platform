@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from ..ai.providers import CLAUDE_MODELS, NVIDIA_MODELS, PROVIDERS, AIError, ModelSpec, discover, ping
+from ..ai.providers import (CLAUDE_MODELS, NVIDIA_MODELS, PROVIDERS, AIError, ModelSpec, discover,
+                           forget_clients, ping)
 from ..connections import crypto
 from ..database import get_db
 from ..deps import get_current_user, require_manager
@@ -134,6 +135,9 @@ def update_model(model_id: int, body: AIModelUpdate, db: Session = Depends(get_d
             m.api_key_encrypted = crypto.encrypt(changes["api_key"])
         except crypto.ConnectionsKeyError as err:
             raise bad_request(str(err))
+        # The API clients are kept and reused between calls, and they hold the key they were made
+        # with. A replaced key has to replace them too, or a revoked one would go on being used.
+        forget_clients()
     check_details(m.provider, m.base_url, bool(m.api_key_encrypted))
     if changes.get("is_active") is not None:
         m.is_active = changes["is_active"]
@@ -155,6 +159,7 @@ def update_model(model_id: int, body: AIModelUpdate, db: Session = Depends(get_d
 def delete_model(model_id: int, db: Session = Depends(get_db)):
     db.delete(get_model(db, model_id))
     db.commit()
+    forget_clients()
 
 
 @router.post("/test", response_model=AIModelTestOut, dependencies=[Depends(require_manager)])

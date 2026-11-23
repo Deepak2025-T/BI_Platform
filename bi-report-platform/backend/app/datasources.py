@@ -10,6 +10,7 @@ every database again.
 """
 
 import datetime as dt
+import logging
 import re
 import threading
 import time
@@ -155,15 +156,63 @@ def warm_schema(source: DataSource) -> int:
     return len(_schema_blocks(source))
 
 
+# Keys with a background refresh in flight, so an expired copy is only re-read once however many
+# questions arrive while it is being read.
+_refreshing: set[tuple] = set()
+_refresh_lock = threading.Lock()
+
+
+def _read_blocks(source: DataSource) -> dict[str, str]:
+    return _openpages_blocks(source) if source.is_openpages else _sql_blocks(source)
+
+
+def _refresh_in_background(source: DataSource, key: tuple) -> None:
+    """Re-reads an expired schema without anybody waiting for it.
+
+    The first read is unavoidable, but the ones after it used to land on whoever asked the next
+    question once the copy went stale - and for OpenPages that is one HTTP request per object type,
+    so a chat message could sit there for the best part of a minute through no fault of its own.
+    """
+    with _refresh_lock:
+        if key in _refreshing:
+            return
+        _refreshing.add(key)
+
+    def work():
+        try:
+            _blocks_cache[key] = (time.time(), _read_blocks(source))
+        except Exception:
+            # The copy already in hand still answers. Moving its timestamp on holds the next
+            # attempt off for another SCHEMA_CACHE_SECONDS instead of retrying on every question.
+            stale = _blocks_cache.get(key)
+            if stale:
+                _blocks_cache[key] = (time.time(), stale[1])
+            logging.getLogger("uvicorn.error").warning("Schema refresh failed for source %s", source.id,
+                                                       exc_info=True)
+        finally:
+            with _refresh_lock:
+                _refreshing.discard(key)
+
+    threading.Thread(target=work, name=f"schema-refresh-{source.id}", daemon=True).start()
+
+
 def _schema_blocks(source: DataSource) -> dict[str, str]:
-    """{table: its description}, cached. Reading is what costs; choosing what to show is free."""
+    """{table: its description}, cached. Reading is what costs; choosing what to show is free.
+
+    Past SCHEMA_CACHE_SECONDS the copy in hand is still served and a fresh one is read behind it,
+    so only the very first question on a connection ever waits for the schema. A connection that
+    changes gets a new `version`, and so a new key and a blocking read - a stale copy is only ever
+    served for fields added in the source database itself, never for tables somebody just shared.
+    """
     key = _cache_key(source)
     hit = _blocks_cache.get(key)
-    if hit and time.time() - hit[0] < SCHEMA_CACHE_SECONDS:
-        return hit[1]
-    blocks = _openpages_blocks(source) if source.is_openpages else _sql_blocks(source)
-    _blocks_cache[key] = (time.time(), blocks)
-    return blocks
+    if hit is None:
+        blocks = _read_blocks(source)
+        _blocks_cache[key] = (time.time(), blocks)
+        return blocks
+    if time.time() - hit[0] >= SCHEMA_CACHE_SECONDS:
+        _refresh_in_background(source, key)
+    return hit[1]
 
 
 def _sql_blocks(source: DataSource) -> dict[str, str]:

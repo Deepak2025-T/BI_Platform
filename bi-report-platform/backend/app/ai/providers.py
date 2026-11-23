@@ -11,6 +11,7 @@ Talks to the AI providers. Every call asks for a JSON answer that matches a sche
 
 import json
 import re
+import threading
 import time
 from dataclasses import dataclass
 
@@ -78,6 +79,37 @@ def _check_room(answer: dict, spec: "ModelSpec") -> None:
         f"or ask about a connection that shares fewer tables."
         if used else
         f"{spec.model} ran out of room mid-answer. Raise OLLAMA_NUM_CTX in backend/.env.")
+
+
+# ---------- Reusing connections ----------
+#
+# A chat message is two model calls (the query, then the explanation of what came back), and a
+# dashboard is dozens. Building a client per call threw away the connection every time, so each
+# one paid for a fresh TLS handshake to the other side of the internet before it could say
+# anything. These are both thread-safe and are kept for the life of the process.
+
+_clients: dict[str, anthropic.Anthropic] = {}
+_clients_lock = threading.Lock()
+
+# Keyed by key, not by ModelSpec: one account's calls share the pool whatever model they name.
+def _claude_client(api_key: str) -> anthropic.Anthropic:
+    with _clients_lock:
+        client = _clients.get(api_key)
+        if client is None:
+            client = anthropic.Anthropic(api_key=api_key, timeout=TIMEOUT, max_retries=1)
+            _clients[api_key] = client
+        return client
+
+
+def forget_clients() -> None:
+    """Drops the kept clients. Called when an API key is changed or removed."""
+    with _clients_lock:
+        _clients.clear()
+
+
+# One pool for Ollama and the OpenAI-compatible servers. Local calls are cheap to open, but a
+# hosted OpenAI-compatible endpoint is a TLS handshake like any other.
+_http = httpx.Client(timeout=HTTP_TIMEOUT)
 
 
 class AIError(Exception):
@@ -164,11 +196,17 @@ def discover(provider: str, base_url: str, api_key: str) -> list[str]:
 def _claude(spec: ModelSpec, system: str, user: str, schema: dict) -> dict:
     if not spec.api_key:
         raise AIError("No API key is saved for this model.")
-    client = anthropic.Anthropic(api_key=spec.api_key, timeout=TIMEOUT, max_retries=1)
+    client = _claude_client(spec.api_key)
     output_config: dict = {"format": {"type": "json_schema", "schema": schema}}
     if spec.model in _CLAUDE_EFFORT_MODELS:
         output_config["effort"] = "low"
-    request = {"model": spec.model, "max_tokens": 4000, "system": system,
+    # The system prompt is the schema of every table the connection shares - the same thousands of
+    # tokens on every question about that database, while the question itself is a line or two.
+    # Marking it cached means the second question on a connection is not charged for, and does not
+    # wait for, the tables being read again. Caching is a prefix match, so nothing per-request may
+    # be put in front of it; the question goes in the message, where it already was.
+    request = {"model": spec.model, "max_tokens": 4000,
+               "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
                "messages": [{"role": "user", "content": user}], "output_config": output_config}
     try:
         if spec.model in _CLAUDE_FALLBACK_MODELS:
@@ -208,7 +246,7 @@ def _ollama(spec: ModelSpec, system: str, user: str, schema: dict) -> dict:
             "keep_alive": OLLAMA_KEEP_ALIVE,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     try:
-        res = httpx.post(f"{_base(spec.base_url)}/api/chat", json=body, timeout=HTTP_TIMEOUT)
+        res = _http.post(f"{_base(spec.base_url)}/api/chat", json=body, timeout=HTTP_TIMEOUT)
         if res.status_code == 404:
             raise AIError(f'Ollama doesn\'t have the model "{spec.model}". Run: ollama pull {spec.model}')
         res.raise_for_status()
@@ -237,10 +275,10 @@ def _openai_compatible(spec: ModelSpec, system: str, user: str, schema: dict, nv
     headers = {"Authorization": f"Bearer {spec.api_key}"} if spec.api_key else {}
     url = f"{_base(spec.base_url)}/chat/completions"
     try:
-        res = httpx.post(url, json=body, headers=headers, timeout=timeout)
+        res = _http.post(url, json=body, headers=headers, timeout=timeout)
         if nvidia and res.status_code == 400 and "chat_template_kwargs" in res.text:
             body.pop("chat_template_kwargs")  # a model without the thinking switch
-            res = httpx.post(url, json=body, headers=headers, timeout=timeout)
+            res = _http.post(url, json=body, headers=headers, timeout=timeout)
         if res.status_code in (401, 403):
             raise AIError("The server rejected the API key.")
         res.raise_for_status()

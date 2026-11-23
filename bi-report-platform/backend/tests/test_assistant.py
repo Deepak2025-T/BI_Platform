@@ -288,7 +288,9 @@ def test_ollama_is_told_how_much_room_to_use(monkeypatch):
         sent.update(json or {})
         return Res()
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    # The calls go through one kept httpx client now, so that pool reuses its connection
+    # instead of opening one per call; patching httpx.post would no longer intercept them.
+    monkeypatch.setattr(providers._http, "post", fake_post)
     providers._ollama(providers.ModelSpec(provider="ollama", model="m", base_url="http://x"),
                       "system", "user", {"type": "object"})
     assert sent["options"]["num_ctx"] == providers.OLLAMA_NUM_CTX

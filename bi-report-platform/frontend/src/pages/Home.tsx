@@ -321,6 +321,10 @@ export default function Home() {
         <div className="hero">
           <div className="hero-glow" aria-hidden="true" />
           <div className="stack">
+            {/* The company's logo over the question, so the first screen after signing in carries
+                the same mark the sign-in page did. */}
+            <img className="hero-logo rise" src="/timus-logo.png" width={52} height={30}
+              alt="Timus Consulting Services - Technology Simplified!" />
             <h1 className="display rise">
               {mode === "build"
                 ? <>What report should {PRODUCT_NAME} build, {user?.full_name.split(" ")[0]}?</>

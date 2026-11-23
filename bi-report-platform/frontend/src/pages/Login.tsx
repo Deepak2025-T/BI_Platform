@@ -50,7 +50,7 @@ export default function Login() {
         <span className="login-blob two" aria-hidden="true" />
 
         <div className="login-side-top">
-          <TimusWordmark size={38} onDark />
+          <TimusWordmark size={46} />
         </div>
 
         <AuthArt className="login-art" />
