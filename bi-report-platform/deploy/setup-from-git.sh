@@ -36,12 +36,25 @@ die() { printf '\nStopped: %s\n' "$1" >&2; exit 1; }
 
 say "Packages"
 apt-get update -qq
-# python3-venv for the API, nodejs for building the frontend, nginx to serve it, unixodbc because
+# python3-venv for the API, nginx to serve it, unixodbc because
 # pyodbc links against it, acl so files the deploy writes stay readable by the service.
 apt-get install -y --no-install-recommends \
   git curl ca-certificates rsync acl \
   python3 python3-venv python3-dev build-essential \
-  nodejs npm nginx unixodbc unixodbc-dev libpq5 postgresql-client
+  nginx unixodbc unixodbc-dev libpq5 postgresql-client
+
+# Node builds the frontend, and is the one package that cannot simply be asked for. A nodejs from
+# NodeSource already contains npm and declares a conflict with Ubuntu's separate npm package, so on
+# such a machine 'apt install nodejs npm' can never be satisfied - apt reports held broken packages
+# and the whole install fails. So install Node only when it is genuinely missing.
+if ! command -v node >/dev/null 2>&1; then
+    apt-get install -y --no-install-recommends nodejs npm
+elif ! command -v npm >/dev/null 2>&1; then
+    # Node is here but npm is not: the NodeSource package, installed without its bundled npm.
+    apt-get install -y --reinstall nodejs || true
+fi
+command -v npm >/dev/null 2>&1 || die "npm is missing and apt cannot supply it next to this nodejs. Install Node 20 from https://deb.nodesource.com/ and run this again."
+echo "  node $(node -v), npm $(npm -v)"
 
 # ---------------------------------------------------------------- users and directories
 
