@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from .datasources import DataSource, table_columns
 from .models import ChatConversation, ChatMessage, Report, User
+from .openpages_detail_reports import REPORTS as DETAIL_REPORTS, WIDGET_COUNT
 from .openpages_prompts import CURATED
 from .openpages_template_prompts import FROM_TEMPLATES
 from .prompt_ideas import _FREE_TEXT, _GROUP_WORDS, _MEASURE_WORDS, _NUMBER_TYPES, _label, _pick
@@ -444,10 +445,23 @@ def recommend(db: Session, user: User, source: DataSource, limit: int = MAX_IDEA
         # person reading the box is deciding whether this is the report they want, not auditing
         # its SQL - and a box full of [OPSS-Ctl:Operating Effectiveness] is something nobody
         # dares edit, which defeats the point of filling the box rather than building at once.
-        return [asdict(Idea(id=c.id, title=c.title, why=c.why, reason="curated", prompt=c.plain,
-                            build_prompt=c.prompt, charts=c.charts, subject=c.namespace,
-                            data_model=c.model_key))
-                for c in (*FROM_TEMPLATES, *CURATED)]
+        # Ahead of them, the four subjects people ask for in one line. These carry no second
+        # wording: the sentence on the card IS the request, and openpages_detail_reports expands
+        # it when it is sent. That is what lets someone change "3 months" to "6" in the box and
+        # still get the written-out report, which a stored technical wording could not do.
+        detail = [asdict(Idea(id=r.id, title=f"{r.title} - detail report", why=r.why,
+                              reason="curated", prompt=r.ask, charts=WIDGET_COUNT,
+                              subject="Written out in full"))
+                  for r in DETAIL_REPORTS]
+        return [*[asdict(Idea(id=c.id, title=c.title, why=c.why, reason="curated", prompt=c.plain,
+                              build_prompt=c.prompt, charts=c.charts, subject=c.namespace,
+                              data_model=c.model_key))
+                  for c in FROM_TEMPLATES],
+                *detail,
+                *[asdict(Idea(id=c.id, title=c.title, why=c.why, reason="curated", prompt=c.plain,
+                              build_prompt=c.prompt, charts=c.charts, subject=c.namespace,
+                              data_model=c.model_key))
+                  for c in CURATED]]
 
     prompts = past_prompts(db, user, source)
     report_prompts = [r.prompt for r in db.scalars(

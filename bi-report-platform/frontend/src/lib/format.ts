@@ -29,6 +29,46 @@ export function cellText(v: unknown): string {
   return String(v);
 }
 
+/**
+ * Dates, written the two ways this app writes them.
+ *
+ * A database hands back a date as a timestamp - "2026-05-04T08:46:45.000-04:00" - and nobody reads
+ * a report in that. Worse, it is wider than the column, so a table of them wraps every cell to
+ * four lines and a chart axis turns into a wall of overlapping text.
+ *
+ * So a date is shown one of two ways, and which one depends only on where it is. In a table it is
+ * dd/mm/yyyy: a table is a list of records and the day is the point of it. Anywhere a value is a
+ * label - a chart axis, a legend, a slice - it is mm/yy, because a label is read at a glance and
+ * the day in it is noise that costs the axis its room.
+ *
+ * Only a date written the way a database returns one is touched. "11/25" from a month rollup,
+ * "Q1 26", "Not recorded" and every other value are left exactly as they came.
+ */
+const TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})(?:[T ]|$)/;
+
+function datePartsIn(text: string): { d: string; m: string; y: string } | null {
+  const parts = TIMESTAMP.exec(text.trim());
+  if (!parts) return null;
+  const [, y, m, d] = parts;
+  // A real date, not four digits that happen to be separated by dashes.
+  if (+m < 1 || +m > 12 || +d < 1 || +d > 31) return null;
+  return { d, m, y };
+}
+
+/** A cell for a table: a date as dd/mm/yyyy, everything else as it reads. */
+export function displayText(v: unknown): string {
+  const text = cellText(v);
+  const on = datePartsIn(text);
+  return on ? `${on.d}/${on.m}/${on.y}` : text;
+}
+
+/** A value used as a label: a date as mm/yy, everything else as it reads. */
+export function axisText(v: unknown): string {
+  const text = v === null || v === undefined ? "" : String(v);
+  const on = datePartsIn(text);
+  return on ? `${on.m}/${on.y.slice(2)}` : text;
+}
+
 /** "total_revenue" -> "Total revenue" */
 export function columnLabel(name: string): string {
   // OpenPages: "OPSS-Ctl:Control Type" -> "Control Type", "Count_Resource ID" -> "Count".

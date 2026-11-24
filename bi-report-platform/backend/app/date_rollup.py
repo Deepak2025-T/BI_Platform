@@ -20,7 +20,7 @@ import datetime as dt
 import re
 
 PERIODS = ("month", "quarter", "year")
-DEFAULT_FORMATS = {"month": "mm/yyyy", "quarter": "Qq yyyy", "year": "yyyy"}
+DEFAULT_FORMATS = {"month": "mm/yy", "quarter": "Qq yy", "year": "yyyy"}
 
 # "2026-11-03", "2026-11-03T06:00:00Z", "2026/11/03 06:00" and the day-first and US spellings.
 _ISO = re.compile(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})")
@@ -51,6 +51,25 @@ def _parse(value) -> dt.date | None:
         return dt.date(year, month, day)
     except ValueError:
         return None
+
+
+def table_text(value) -> str:
+    """A cell for a table of records: a date as dd/mm/yyyy, anything else as it already reads.
+
+    The same two shapes the browser shows, so a report exported to PowerPoint reads the way it
+    read on screen rather than reverting to the timestamps the database handed back."""
+    day = _parse(value)
+    if day is None:
+        return "" if value is None else str(value)
+    return f"{day.day:02d}/{day.month:02d}/{day.year:04d}"
+
+
+def label_text(value) -> str:
+    """A value used as a label - a chart axis, a legend: a date as mm/yy, anything else as is."""
+    day = _parse(value)
+    if day is None:
+        return "" if value is None else str(value)
+    return f"{day.month:02d}/{day.year % 100:02d}"
 
 
 def label_of(day: dt.date, to: str, fmt: str) -> str:

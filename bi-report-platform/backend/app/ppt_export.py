@@ -19,6 +19,7 @@ from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Inches, Pt
 
+from . import date_rollup
 from .dashboard_filters import is_active
 
 # The same palette the charts use in the browser (see DataChart.tsx CHART_COLORS).
@@ -115,7 +116,7 @@ def _series(columns: list[str], rows: list[list], chart: dict) -> tuple[str, lis
         return x, [], []
     xi = columns.index(x)
     picked = rows[:MAX_CATEGORIES]
-    categories = [("" if r[xi] is None else str(r[xi]))[:60] for r in picked]
+    categories = [date_rollup.label_text(r[xi])[:60] for r in picked]
     series = [(name, [_numeric(r[columns.index(name)]) for r in picked]) for name in wanted]
     return x, categories, series
 
@@ -272,7 +273,7 @@ def _table_slide(slide, columns: list[str], rows: list[list]) -> bool:
     for r, row in enumerate(shown_rows, start=1):
         for c in range(len(shown_columns)):
             value = row[c] if c < len(row) else None
-            _text(table.cell(r, c).text_frame, "" if value is None else str(value)[:60], 10)
+            _text(table.cell(r, c).text_frame, date_rollup.table_text(value)[:60], 10)
     return True
 
 

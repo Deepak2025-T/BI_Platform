@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { Cell } from "../api/types";
-import { cellText, columnLabel } from "../lib/format";
+import { columnLabel, displayText } from "../lib/format";
 import Icon from "./Icon";
 
 interface Props {
@@ -136,8 +136,8 @@ export default function ResultTable({ columns, rows, limit = 100, truncated, wid
                 <td key={c.i} className={numeric[c.i] ? "r" : ""}
                   // Held on one line, the whole value is only readable as a tooltip. Wrapped, it
                   // is all on screen already and a tooltip repeating it is just in the way.
-                  title={wrapText ? undefined : cellText(row[c.i])}>
-                  {cellText(row[c.i])}
+                  title={wrapText ? undefined : displayText(row[c.i])}>
+                  {displayText(row[c.i])}
                 </td>
               ))}
             </tr>

@@ -14,6 +14,7 @@ import pytest
 from app.database import SessionLocal
 from app.datasources import DataSource, get_source
 from app.models import Report, User
+from app.openpages_detail_reports import REPORTS as DETAIL_REPORTS
 from app.openpages_prompts import CURATED
 from app.openpages_template_prompts import FROM_TEMPLATES
 from app.report_ideas import MAX_IDEAS, Recipe, _affinity, _title_of, recommend
@@ -108,11 +109,26 @@ def test_an_openpages_connection_is_offered_the_reference_dashboards():
     be joined - only the published object model does, and a prompt that joins a pair a namespace
     does not list fails at the query service. So nothing here is guessed from the tables."""
     ideas = _recommend(None, src=_openpages(["SOXRisk", "SOXControl"]))
-    assert len(ideas) == len(FROM_TEMPLATES) + len(CURATED)
+    assert len(ideas) == len(FROM_TEMPLATES) + len(DETAIL_REPORTS) + len(CURATED)
     assert {i["reason"] for i in ideas} == {"curated"}
     # The three drawn from templates come first: they are the reports this installation already
     # builds, so they are the safest thing to put in front of someone.
     assert [i["title"] for i in ideas[:3]] == [c.title for c in FROM_TEMPLATES]
+
+
+def test_the_four_one_line_requests_are_offered_as_they_are_typed():
+    """"Get me control test report for past 3 months" goes into the box as it stands. There is no
+    second wording to send instead, because the expansion happens when it is sent - which is what
+    lets someone change the window in the box and still get the written-out report."""
+    ideas = _recommend(None, src=_openpages(["SOXRisk"]))
+    detail = [i for i in ideas if i["id"].startswith("detail-")]
+    assert [i["prompt"] for i in detail] == [r.ask for r in DETAIL_REPORTS]
+    for idea in detail:
+        assert not idea["build_prompt"], "the sentence is the request; it is expanded on the way"
+        assert not idea["data_model"], "these read whatever the connection holds"
+        assert idea["charts"] >= 20
+    # After the templates, ahead of the reference dashboards: the shortest route into a demo.
+    assert [i["id"] for i in ideas[3:3 + len(detail)]] == [r.id for r in DETAIL_REPORTS]
 
 
 def test_the_box_is_filled_in_words_and_the_builder_is_sent_the_queries():

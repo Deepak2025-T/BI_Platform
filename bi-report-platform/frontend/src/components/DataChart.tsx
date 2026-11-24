@@ -6,7 +6,7 @@ import { CanvasRenderer } from "echarts/renderers";
 import type { Cell, ChartSpec, WidgetStyle } from "../api/types";
 import { isDark } from "../lib/cardColors";
 import { meaningColor, normalizeColor, ruleColor, worthColoringByMeaning } from "../lib/colors";
-import { columnLabel, formatValue } from "../lib/format";
+import { axisText, columnLabel, formatValue } from "../lib/format";
 import { delta, tone } from "../lib/history";
 import ResultTable from "./ResultTable";
 
@@ -122,7 +122,9 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     return tableHeight ? <div className="table-scroll" style={{ maxHeight: tableHeight }}>{table}</div> : table;
   }
 
-  const labels = sorted.map((r) => String(r[xi] ?? ""));
+  // A date is a label here, not a record, so it is written mm/yy: an axis is read at a glance
+  // and a timestamp on it is both unreadable and wide enough to push its neighbours over.
+  const labels = sorted.map((r) => axisText(r[xi]));
 
   // One series, many categories: give each category its own colour, so a chart of risk ratings
   // reads the way it would on paper instead of as one block of blue. Several series keep the
@@ -160,7 +162,7 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     // One cell per pair of values: rows down the side, columns across the top, colour for the
     // number. Rows arrive one per pair, so they are laid out onto the grid by name.
     const down = [...new Set(labels)];
-    const across = [...new Set(sorted.map((r) => String(r[gridIndex] ?? "")))];
+    const across = [...new Set(sorted.map((r) => axisText(r[gridIndex])))];
     const vi = columns.indexOf(ys[0]);
     // The query only returns the pairs that have something in them, so a grid drawn straight from
     // the rows has holes in it - and a hole reads as "no data here" when what it means is "none".
@@ -168,7 +170,7 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     const counted = new Map<string, number>();
     for (const r of sorted) {
       const value = typeof r[vi] === "number" ? r[vi] as number : Number(r[vi]);
-      if (Number.isFinite(value)) counted.set(`${String(r[gridIndex] ?? "")}\u0000${String(r[xi] ?? "")}`, value);
+      if (Number.isFinite(value)) counted.set(`${axisText(r[gridIndex])}\u0000${axisText(r[xi])}`, value);
     }
     const cells = across.flatMap((col, ax) =>
       down.map((row, dy) => [ax, dy, counted.get(`${col}\u0000${row}`) ?? 0]));

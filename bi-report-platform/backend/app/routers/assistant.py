@@ -15,6 +15,8 @@ from ..datasources import QueryFailed, SourceError, get_source, list_sources, na
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import AIModel, Report, User
+from ..date_charts import with_rollups
+from ..openpages_detail_reports import expand as expand_detail_report
 from ..prompt_clarify import clarify
 from ..prompt_ideas import ideas_for
 from ..report_ideas import recommend
@@ -164,10 +166,24 @@ def build_dashboard(body: DashboardIn, db: Session = Depends(get_db), user: User
     model, spec = _model(db, body.model_id)
     source = _source(db, body.source_id, body.data_model)
     params = body.parameters.model_dump(mode="json")
-    plan = _ai_call(plan_dashboard, spec, source, body.prompt, params)
+    # "Get me control test report for past 3 months" is a request for a known report, not a
+    # description of one. Where it is, the written-out version goes to the model in its place,
+    # with the window resolved to real dates; everything else is sent exactly as typed.
+    prompt = body.prompt
+    detail = expand_detail_report(body.prompt) if source.is_openpages else None
+    if detail is not None:
+        prompt = detail.prompt
+    plan = _ai_call(plan_dashboard, spec, source, prompt, params)
     # The data model is kept on the report so a refresh, a drill or an added chart later on sees
     # the same object types this dashboard was planned against.
     extra = {"parameters": params, "model": model.name}
+    if detail is not None:
+        # Kept so the page can say which report this was read as and over which dates - a person
+        # who typed three words should be able to see what was built from them.
+        extra["detail_report"] = {"id": detail.report.id, "title": detail.report.title,
+                                  "from": detail.window.start.isoformat(),
+                                  "to": detail.window.end.isoformat(),
+                                  "window": detail.window.label}
     if body.data_model:
         extra["data_model"] = body.data_model
     # A request that asked for tabs was planned with the charts already on them.
@@ -178,7 +194,7 @@ def build_dashboard(body: DashboardIn, db: Session = Depends(get_db), user: User
     # too, but asking is not the same as getting, and a dashboard someone has to re-learn because
     # this one put its table in the middle is a worse dashboard.
     report = _save(db, user, title=plan["title"], prompt=body.prompt, source=source,
-                   widgets=shape(plan["widgets"]), extra=extra)
+                   widgets=shape(with_rollups(plan["widgets"])), extra=extra)
     return {"report": report, "failed": plan["failed"]}
 
 

@@ -21,6 +21,7 @@ OpenPages SQL has no AS, no SUM and no date functions; COUNT works on one object
 never alongside a JOIN. Totals are therefore counts, and amounts appear in lists rather than charts.
 """
 
+from .date_charts import MONTH_FORMAT
 from .openpages_templates import (COUNT, ENT, Field, count_by, count_by_two, field_pairs, filter_on, heading,
                                   normalise, summary_table, table_of, total, with_entity_filter)
 
@@ -276,7 +277,7 @@ def by_month(widget: dict, field: str, title: str = "") -> dict:
     """A date chart counted per month. OpenPages SQL has no date functions, so the query still
     groups by the date itself and the rows are folded to mm/yyyy after they come back (see
     date_rollup); the chart's x stays the same field, so nothing else about the chart changes."""
-    widget["rollup"] = {"column": field, "to": "month", "format": "mm/yyyy"}
+    widget["rollup"] = {"column": field, "to": "month", "format": MONTH_FORMAT}
     if title:
         widget["title"] = widget["question"] = title
     return widget

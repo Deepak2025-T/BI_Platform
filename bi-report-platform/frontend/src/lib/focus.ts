@@ -9,7 +9,7 @@
  */
 
 import type { Cell, ChartSpec, ChartType, Widget } from "../api/types";
-import { cellText, columnLabel } from "./format";
+import { axisText, cellText, columnLabel } from "./format";
 
 /** What the reader has clicked into: one value of one column, and the chart it was clicked on. */
 export interface Focus {
@@ -45,8 +45,16 @@ export function focusIndex(columns: string[], column: string): number {
   return columns.findIndex((c) => columnLabel(c).toLowerCase() === want);
 }
 
-/** A field a record can hold several of at once arrives as one cell, "Fraud, Conduct". */
-const holds = (cell: string, value: string) => cell === value || cell.split(", ").includes(value);
+/**
+ * Whether one table cell is the value that was clicked.
+ *
+ * Two things stop a straight comparison. A field a record can hold several of at once arrives as
+ * one cell, "Fraud, Conduct". And a chart grouped on a date was folded to months before it was
+ * drawn, so the bar says "11/25" while the table still holds the timestamp it was folded from -
+ * a click on a month would otherwise match nothing, which is the one thing a reader notices.
+ */
+const holds = (cell: string, value: string) =>
+  cell === value || cell.split(", ").includes(value) || axisText(cell) === value;
 
 /**
  * The rows of one table that match the selection, or null when this table has no such column -

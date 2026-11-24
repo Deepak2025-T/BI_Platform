@@ -22,6 +22,7 @@ import re
 
 from .ai.colors import color_rules_from_prompt
 from .datasources import DataSource, column_values, table_columns
+from .openpages_detail_reports import expand as expand_detail_report
 
 # Never put more than this in front of someone. Past four questions it stops being a clarification
 # and becomes a form, which is the thing the plain-language box exists to avoid.
@@ -292,6 +293,11 @@ def clarify(source: DataSource, prompt: str, parameters: dict | None = None) -> 
     """
     parameters = parameters or {}
     text = prompt or ""
+    # A request for one of the written-out detail reports has nothing open: the shape, the
+    # measure and the window are all settled by the prompt it is about to be expanded into.
+    # Asking anyway would add words that stop it being recognised.
+    if source.is_openpages and expand_detail_report(text) is not None:
+        return {"subject": None, "questions": []}
     subject = _subject(source, text)
     questions: list[dict] = []
 
