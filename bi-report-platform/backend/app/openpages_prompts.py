@@ -7,7 +7,14 @@ point of them - a prompt written for ORM2 does not work against ORM1, and the re
 are where the difference shows. They are offered ahead of anything derived from the connection
 because a hand-written prompt that names the real pairs beats a guess at them every time.
 
-Source: Openpages_model/OpenPages Report Prompts.docx. Each prompt is self-contained - it carries
+Source: Openpages_model/OpenPages Report Prompts.docx, with one correction. The document's
+cross-namespace report said its relationship tables used "only the pairs every namespace shares";
+checked against Openpages_model/openpagesobjectmodelnamespace, no pair is in all nine namespaces
+and only [SOXBusEntity] is in all of them. That section now uses [Location] and no joins, which is
+what actually survives any namespace. test_openpages_prompts.py checks every join in every prompt
+against the object model, so the next edit cannot reintroduce one.
+
+Each prompt is self-contained - it carries
 its own rules for the OpenPages Query Service - so it can be edited in the box before building
 without losing the constraints that make it run.
 
@@ -25,6 +32,10 @@ class CuratedPrompt:
     title: str
     # The namespace of the reporting framework it is written against.
     namespace: str
+    # That namespace as openpages_model keys it, so picking this report also sets the data model
+    # and the query writer is given the real parent/child pairs instead of guessing at them.
+    # Empty for the cross-namespace report, which is written to need no joins at all.
+    model_key: str
     why: str
     prompt: str
     charts: int
@@ -35,6 +46,7 @@ CURATED: tuple[CuratedPrompt, ...] = (
         id='curated-enterprise-grc-control-tower',
         title='Enterprise GRC Control Tower',
         namespace='Operational_Risk_and_Control / DEFAULT',
+        model_key='operational_risk_and_control/default',
         why='The whole default model on one page: what the organisation is made of, how well it is controlled, what it has lost and what is being watched. This is the board-level read.',
         charts=42,
         prompt=r"""Build an "Enterprise GRC Control Tower" dashboard on this IBM OpenPages connection, using
@@ -158,6 +170,7 @@ RULES - IBM OpenPages Query Service SQL
         id='curated-operational-loss-incident-and-scenario-b',
         title='Operational Loss, Incident and Scenario Book',
         namespace='Operational_Risk_and_Control / ORM1',
+        model_key='operational_risk_and_control/orm1',
         why='Everything that actually went wrong and everything modelled as possibly going wrong: losses, their impacts and recoveries, incidents, external ORX losses, scenarios and their results, with the evaluations behind the risk and control ratings.',
         charts=36,
         prompt=r"""Build an "Operational Loss, Incident and Scenario Book" dashboard on this IBM OpenPages
@@ -263,6 +276,7 @@ RULES - IBM OpenPages Query Service SQL
         id='curated-risk-appetite-and-indicator-monitoring',
         title='Risk Appetite and Indicator Monitoring',
         namespace='Operational_Risk_and_Control / ORM2',
+        model_key='operational_risk_and_control/orm2',
         why='The namespace where indicators and losses hang off the risk itself rather than the entity. The report reads appetite: which risks are watched, what the readings say, and which risks have actually produced losses.',
         charts=32,
         prompt=r"""Build a "Risk Appetite and Indicator Monitoring" dashboard on this IBM OpenPages connection,
@@ -368,6 +382,7 @@ RULES - IBM OpenPages Query Service SQL
         id='curated-conduct-risk-complaints-investigations-a',
         title='Conduct Risk: Complaints, Investigations and Redress',
         namespace='Operational_Risk_and_Control / ORM3',
+        model_key='operational_risk_and_control/orm3',
         why='The conduct chain: a complaint, what was found when it was investigated, and what the customer was given. Plus the scenario-to-loss link that only ORM3 carries.',
         charts=30,
         prompt=r"""Build a "Conduct Risk: Complaints, Investigations and Redress" dashboard on this IBM
@@ -470,6 +485,7 @@ RULES - IBM OpenPages Query Service SQL
         id='curated-project-delivery-and-project-risk',
         title='Project Delivery and Project Risk',
         namespace='Operational_Risk_and_Control / PM',
+        model_key='operational_risk_and_control/pm',
         why='Delivery and the risk carried by it in one place: projects under each entity, the risks and controls on those projects, and the milestone / deliverable / task breakdown.',
         charts=32,
         prompt=r"""Build a "Project Delivery and Project Risk" dashboard on this IBM OpenPages connection,
@@ -576,6 +592,7 @@ RULES - IBM OpenPages Query Service SQL
         id='curated-risk-assessment-assurance-chain',
         title='Risk Assessment Assurance Chain',
         namespace='Operational_Risk_and_Control / RA1',
+        model_key='operational_risk_and_control/ra1',
         why='One clean chain, assessment to test result. The report follows it link by link and shows where it breaks: assessments with no risks, risks with no controls, controls never tested, tests with exceptions.',
         charts=36,
         prompt=r"""Build a "Risk Assessment Assurance Chain" dashboard on this IBM OpenPages connection, using
@@ -687,6 +704,7 @@ RULES - IBM OpenPages Query Service SQL
         id='curated-rcsa-coverage-and-outcome',
         title='RCSA Coverage and Outcome',
         namespace='Operational_Risk_and_Control / RA2',
+        model_key='operational_risk_and_control/ra2',
         why='RA2 runs the assessment over processes rather than straight to risks, so this is the RCSA report: how much of the process estate is assessed, what the assessment found, and whether the indicators and losses underneath agree with it.',
         charts=37,
         prompt=r"""Build an "RCSA Coverage and Outcome" dashboard on this IBM OpenPages connection, using the
@@ -797,6 +815,7 @@ RULES - IBM OpenPages Query Service SQL
         id='curated-sox-financial-control-certification',
         title='SOX Financial Control Certification',
         namespace='Operational_Risk_and_Control / SOX1',
+        model_key='operational_risk_and_control/sox1',
         why='The financial reporting view: the account structure and its assertions on one side, the process-risk-control-test chain on the other, and the three evaluation objects that carry the certification conclusions.',
         charts=43,
         prompt=r"""Build a "SOX Financial Control Certification" dashboard on this IBM OpenPages connection,
@@ -916,6 +935,7 @@ RULES - IBM OpenPages Query Service SQL
         id='curated-mandate-to-obligation-compliance-coverag',
         title='Mandate-to-Obligation Compliance Coverage',
         namespace='Platform_Reporting / DEFAULT (Folders)',
+        model_key='platform_reporting/default',
         why='The regulatory spine: mandate down to obligation with an evaluation at each end, the questionnaire programme that collects the evidence, and the generic folder hierarchy (LevelOne / LevelTwo / LevelThree) the platform uses to file it all.',
         charts=38,
         prompt=r"""Build a "Mandate-to-Obligation Compliance Coverage" dashboard on this IBM OpenPages
@@ -1034,6 +1054,7 @@ RULES - IBM OpenPages Query Service SQL
         id='curated-cross-namespace-executive-grc-summary',
         title='Cross-Namespace Executive GRC Summary',
         namespace='Every namespace - the shared backbone only',
+        model_key='',
         why='One page that survives whichever namespace a connection is pointed at, because it only uses the objects and the parent/child pairs that every namespace shares. Use it as the landing page and link the nine specialised reports off it.',
         charts=41,
         prompt=r"""Build a "Cross-Namespace Executive GRC Summary" dashboard on this IBM OpenPages connection.
@@ -1113,17 +1134,22 @@ namespaces carry - this page must build unchanged against any of them.
    Entity Summary - table - SELECT [Name], [OPSS-Ent:Entity Type], [OPSS-Ent:In Scope],
      [OPSS-Ent:RCSA Scope], [OPSS-Ent:Framework], [OPSS-Ent:Status] FROM [SOXBusEntity]
  
-7. RELATIONSHIP TABLES - only the pairs every namespace shares
-   Processes under each entity - SELECT [SOXBusEntity].[Name], [SOXProcess].[Name],
-     [SOXProcess].[OPSS-Proc:Status] FROM [SOXBusEntity] JOIN [SOXProcess] ON PARENT([SOXBusEntity])
-   Sub-processes of each process - SELECT [SOXProcess].[Name], [SOXSubprocess].[Name],
-     [SOXSubprocess].[OPSS-Subproc:Status]
-     FROM [SOXProcess] JOIN [SOXSubprocess] ON PARENT([SOXProcess])
-   Risks on each process       - SELECT [SOXProcess].[Name], [SOXRisk].[Name],
-     [SOXRisk].[OPSS-Risk:Residual Risk Rating] FROM [SOXProcess] JOIN [SOXRisk] ON PARENT([SOXProcess])
-   Controls on each risk       - SELECT [SOXRisk].[Name], [SOXRisk].[OPSS-Risk:Residual Risk Rating],
-     [SOXControl].[Name], [SOXControl].[OPSS-Ctl:Operating Effectiveness]
-     FROM [SOXRisk] JOIN [SOXControl] ON PARENT([SOXRisk])
+7. RECORDS UNDER EACH ENTITY - no joins at all
+   Use NO relationship table in this report. There is no parent/child pair that every namespace
+   carries: [SOXRisk]|[SOXControl] is in eight of the nine, [SOXBusEntity]|[SOXBusEntity] in
+   seven, and [SOXProcess]|[SOXSubprocess] in five. The only object type every namespace has is
+   [SOXBusEntity]. A join written here is therefore a join that fails on some connection this
+   report is meant to survive.
+   [Location] is a system field on every object holding the business-entity path it sits under,
+   so a plain SELECT already says which entity a record belongs to - which is what the tables
+   below were for.
+   Processes by entity - table - SELECT [Name], [OPSS-Proc:Status], [Location] FROM [SOXProcess]
+   Risks by entity     - table - SELECT [Name], [OPSS-Risk:Residual Risk Rating], [Location]
+     FROM [SOXRisk]
+   Controls by entity  - table - SELECT [Name], [OPSS-Ctl:Operating Effectiveness], [Location]
+     FROM [SOXControl]
+   Losses by entity    - table - SELECT [Name], [Description], [Location] FROM [LossEvent]
+   Drop any of these whose object type this connection does not share, and say which.
  
 Filters: business entity on [Location], residual risk rating, control operating effectiveness,
 KRI breach status, action item status.

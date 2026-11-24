@@ -768,6 +768,10 @@ export interface ReportIdea {
   /** Roughly how many charts it would build. 0 when it can't be told from the request. */
   charts: number;
   subject: string;
+  /** The OpenPages namespace this report is written against, as the data-model list keys it.
+   *  Picking the idea selects it, so the queries are written against the real relationships.
+   *  Empty for everything else. */
+  data_model?: string;
   /** The headline numbers it would open with. Empty for a past request offered back. */
   kpis?: string[];
 }

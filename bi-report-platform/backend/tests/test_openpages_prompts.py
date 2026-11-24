@@ -6,8 +6,20 @@ cannot say which object types may legally be joined - only the published object 
 So the value of these is entirely in their being correct and unedited, which is what these guard.
 """
 
+import re
+
+from app.openpages_model import get
 from app.openpages_prompts import CURATED
 from app.schemas import MAX_WIDGETS, PROMPT_MAX
+
+# FROM [Parent] JOIN [Child] ON PARENT([Parent]) - the only join shape the Query Service takes.
+_JOIN = re.compile(r"FROM\s*\[([^\]]+)\]\s*JOIN\s*\[([^\]]+)\]\s*ON\s*PARENT\(\s*\[([^\]]+)\]\s*\)",
+                   re.I)
+
+
+def _joins(prompt):
+    """The (parent, child, on) triples a prompt asks for, minus the rules' own template line."""
+    return [t for t in _JOIN.findall(prompt) if t[0] != "Parent"]
 
 
 def test_there_are_ten_one_per_namespace():
@@ -53,3 +65,42 @@ def test_the_brackets_the_query_service_needs_survived_the_extraction():
     for c in CURATED:
         assert "[" in c.prompt and "]" in c.prompt, c.title
         assert "“" not in c.prompt and "”" not in c.prompt, f"{c.title} has smart quotes"
+
+
+# ---------- every join is one the namespace actually has ----------
+
+def test_every_prompt_names_a_data_model_that_exists():
+    """Picking a reference report selects its namespace, which is what hands the query writer the
+    real parent/child pairs. A key that resolves to nothing would quietly leave it guessing."""
+    for c in CURATED[:-1]:
+        assert get(c.model_key) is not None, f"{c.title} points at {c.model_key!r}"
+
+
+def test_no_prompt_joins_a_pair_its_namespace_does_not_have():
+    """The one failure mode these prompts exist to avoid.
+
+    OpenPages has no foreign keys - a join is "this type sits under that type" - so a pair the
+    namespace does not list is not a wrong answer, it is a query the service refuses. Each refusal
+    costs its chart, and a 40-chart report arrives with holes in it."""
+    for c in CURATED[:-1]:
+        model = get(c.model_key)
+        legal = {(r.parent, r.child) for r in model.relationships}
+        for parent, child, on in _joins(c.prompt):
+            assert on == parent, f"{c.title}: ON PARENT([{on}]) under FROM [{parent}]"
+            assert (parent, child) in legal,                 f"{c.title}: [{parent}] | [{child}] is not in {model.name}"
+
+
+def test_the_cross_namespace_report_joins_nothing():
+    """It is the one report meant to run against any namespace, and there is no pair that all of
+    them carry - [SOXRisk]|[SOXControl], the most widespread, is missing from ORM3. So it uses
+    [Location], which every object has, and no joins at all."""
+    assert not _joins(CURATED[-1].prompt), "a join here fails on whichever namespace lacks it"
+    assert "[Location]" in CURATED[-1].prompt
+
+
+def test_no_pair_is_shared_by_every_namespace():
+    """The fact the test above rests on. If a future object model made one universal, this goes
+    red and the cross-namespace report can be given its relationship tables back."""
+    from app.openpages_model import MODELS
+    shared = set.intersection(*[{(r.parent, r.child) for r in m.relationships} for m in MODELS])
+    assert not shared, f"these pairs are now in every namespace: {sorted(shared)}"

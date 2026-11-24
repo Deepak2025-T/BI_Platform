@@ -406,6 +406,11 @@ export default function Home() {
                   onHide={() => setHideIdeas(true)}
                   onPick={(idea) => {
                     setPrompt(idea.prompt);
+                    // A reference report is written against one namespace. Selecting it hands the
+                    // query writer that namespace's real parent/child pairs; left on "every shared
+                    // object type" it has to guess which joins are legal, and the charts whose
+                    // guess is wrong are dropped from the report.
+                    if (idea.data_model) chooseDataModel(idea.data_model);
                     setHideIdeas(true);
                     document.getElementById("ask")?.focus();
                   }} />

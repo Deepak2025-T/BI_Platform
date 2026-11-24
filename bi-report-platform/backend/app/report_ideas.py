@@ -60,6 +60,11 @@ class Idea:
     subject: str = ""
     # The headline numbers it would open with, so the card says what it measures.
     kpis: tuple[str, ...] = ()
+    # For an OpenPages reference report, the namespace it is written against (openpages_model
+    # keys it). Picking the card sets the data model with it, so the query writer is handed that
+    # namespace's real parent/child pairs rather than left to guess which joins are legal -
+    # which is the difference between a report that builds and one that drops half its charts.
+    data_model: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -430,7 +435,7 @@ def recommend(db: Session, user: User, source: DataSource, limit: int = MAX_IDEA
     # beside them would only invite someone to pick the guess.
     if source.is_openpages:
         return [asdict(Idea(id=c.id, title=c.title, why=c.why, reason="curated", prompt=c.prompt,
-                            charts=c.charts, subject=c.namespace)) for c in CURATED]
+                            charts=c.charts, subject=c.namespace, data_model=c.model_key)) for c in CURATED]
 
     prompts = past_prompts(db, user, source)
     report_prompts = [r.prompt for r in db.scalars(

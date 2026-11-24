@@ -1,0 +1,77 @@
+Operational_Risk_and_Control
+Namespaces
+Description
+Value
+Object Model
+Description
+The objects and relationships in this namespace.
+Value
+SOXBusEntity | SOXBusEntity , SOXSubprocess | SOXSubprocess , SOXSubaccount | SOXSubaccount , SOXBusEntity | SOXProcess , SOXProcess | SOXSubprocess , SOXSubprocess | SOXRisk , SOXRisk | SOXControl , SOXControl | SOXTest , SOXTest | SOXTestResult , SOXBusEntity | RiskAssessment , SOXBusEntity | KeyRiskIndicator , KeyRiskIndicator | KeyRiskIndicatorValue , SOXBusEntity | KeyPerfIndicator , KeyPerfIndicator | KeyPerfIndicatorValue , SOXProcess | SOXRisk , SOXBusEntity | SOXAccount , SOXAccount | SOXSubaccount , SOXSubaccount | Assertion , SOXBusEntity | LossEvent , LossEvent | LossImpact , LossEvent | LossRecovery , SOXBusEntity | Preference , SOXBusEntity | Program , Program | QuestionnaireAssessment , SOXBusEntity | SOXSubprocess , SOXProcess | QuestionnaireAssessment , SOXSubprocess | QuestionnaireAssessment , SOXBusEntity | Vendor , Vendor | QuestionnaireAssessment , SOXBusEntity | Resource , Resource | QuestionnaireAssessment , SOXBusEntity | Employee , Employee | QuestionnaireAssessment , SOXBusEntity | RiskEntity , RiskEntity | QuestionnaireAssessment , QuestionnaireAssessment | QuestionnaireTemplate , QuestionnaireTemplate | SectionTemplate , SectionTemplate | SubSectionTemplate , SubSectionTemplate | QuestionTemplate , SOXBusEntity | BCPlan , SOXBusEntity | Location , Location | BCPlan , SOXBusEntity | ORXLoss , SOXBusEntity | FIRSTLoss , SOXRisk | RiskEval , SOXProcess | SOXRisk , SOXProcess | SOXRisk , SOXBusEntity | SOXProcess , SOXSubprocess | SOXRisk , SOXProcess | SOXSubprocess , SOXProcess | SOXRisk , SOXBusEntity | SOXControl
+less
+
+
+ORM1
+
+
+Object Model
+Description
+Value
+SOXBusEntity | SOXBusEntity , SOXSubprocess | SOXSubprocess , SOXBusEntity | SOXProcess , SOXProcess | SOXSubprocess , SOXSubprocess | SOXRisk , SOXRisk | SOXControl , SOXBusEntity | LossEvent , LossEvent | LossImpact , LossEvent | LossRecovery , SOXProcess | SOXRisk , SOXBusEntity | ORXLoss , SOXBusEntity | ScenarioAnalysis , ScenarioAnalysis | ScenarioResult , SOXRisk | RiskEval , SOXControl | CtlEval , SOXBusEntity | Incident , SOXProcess | SOXRisk , SOXBusEntity | SOXProcess , SOXProcess | SOXRisk , SOXRisk | SOXControl , SOXControl | RootCauseAnalysis
+less
+
+
+ORM2
+
+Object Model
+Description
+Value
+KeyRiskIndicator | KeyRiskIndicatorValue , LossEvent | LossImpact , LossEvent | LossRecovery , SOXBusEntity | SOXBusEntity , SOXBusEntity | SOXProcess , SOXProcess | SOXRisk , SOXProcess | SOXSubprocess , SOXRisk | KeyRiskIndicator , SOXRisk | LossEvent , SOXRisk | SOXControl , SOXSubprocess | SOXRisk , SOXSubprocess | SOXSubprocess , SOXRisk | RiskEval , SOXControl | CtlEval , SOXProcess | SOXRisk
+less
+
+
+ORM3
+Description
+Value
+
+Is Default
+Description
+Value
+false
+
+Is Enabled
+Description
+Value
+true
+
+Object Model
+Description
+Value
+LossEvent | LossImpact , LossEvent | LossRecovery , ScenarioAnalysis | LossEvent , ScenarioAnalysis | ScenarioResult , SOXBusEntity | ScenarioAnalysis , SOXBusEntity | Customer Complaint , Customer Complaint | Investigation , Customer Complaint | Outcome and Redress
+Object Model
+Description
+The objects and relationships in this namespace.
+Value
+SOXBusEntity | Project , Project | SOXRisk , SOXRisk | SOXControl , Deliverable | Task , Task | Sub-Task , Project | Milestone
+RA1
+Object Model
+Description
+Value
+SOXBusEntity | SOXBusEntity , SOXBusEntity | RiskAssessment , RiskAssessment | SOXRisk , SOXRisk | SOXControl , SOXControl | SOXTest , SOXTest | SOXTestResult , SOXRisk | RiskEval , SOXControl | CtlEval
+RA2
+Object Model
+Description
+Value
+KeyRiskIndicator | KeyRiskIndicatorValue , LossEvent | LossImpact , LossEvent | LossRecovery , RiskAssessment | SOXProcess , SOXBusEntity | RiskAssessment , SOXBusEntity | SOXBusEntity , SOXProcess | SOXRisk , SOXProcess | SOXSubprocess , SOXRisk | KeyRiskIndicator , SOXRisk | LossEvent , SOXRisk | SOXControl , SOXSubprocess | SOXRisk , SOXSubprocess | SOXSubprocess , SOXRisk | RiskEval , SOXControl | CtlEval
+less
+SOX1
+Object Model
+Description
+Value
+SOXBusEntity | SOXBusEntity , SOXSubprocess | SOXSubprocess , SOXBusEntity | SOXProcess , SOXProcess | SOXSubprocess , SOXSubprocess | SOXRisk , SOXRisk | SOXControl , SOXControl | SOXTest , SOXTest | SOXTestResult , SOXProcess | SOXRisk , SOXBusEntity | SOXAccount , SOXAccount | SOXSubaccount , SOXSubaccount | Assertion , SOXControl | CtlEval , SOXRisk | RiskEval , SOXProcess | ProcessEval , SOXProcess | SOXAccount , SOXProcess | SOXRisk
+less
+Platform_Reporting
+Object Model
+Description
+The objects and relationships in this namespace.
+Value
+SOXBusEntity | SOXBusEntity , SOXBusEntity | Program , Program | QuestionnaireAssessment , QuestionnaireAssessment | QuestionnaireTemplate , QuestionnaireTemplate | SectionTemplate , SectionTemplate | SubSectionTemplate , SubSectionTemplate | QuestionTemplate , SOXBusEntity | LevelOne , LevelOne | LevelTwo , LevelTwo | LevelTwo , LevelTwo | LevelThree , SOXBusEntity | SOXBusEntity , SOXBusEntity | Mandate , Mandate | Submandate , Submandate | Requirement , Requirement | ReqEval , Requirement | Obligation , Obligation | OblEval , SOXBusEntity | SOXBusEntity , SOXBusEntity | SOXRisk , SOXRisk | SOXControl , SOXControl | SOXTest , SOXTest | SOXTestResult , SOXBusEntity | RiskAssessment , RiskAssessment | SOXRisk , SOXRisk | SOXControl , SOXControl | SOXTest , SOXTest | SOXTestResult , SOXBusEntity | LossEvent , SOXProcess | SOXRisk , SOXBusEntity | SOXProcess , SOXBusEntity | SOXControl

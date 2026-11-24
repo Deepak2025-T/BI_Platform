@@ -357,6 +357,12 @@ spelled the same way each time, and keep the charts of one tab together and in t
 for. When the request asks for no such thing, leave "section" empty on every chart: a report of
 one page is one page.
 
+A tab is about one thing, and every chart on it reads that thing. A chart about losses does not
+belong on a tab about controls, however well it fits the page: the reader opened that tab to see
+one subject. Where a request lists the charts of each tab, that list is the whole of that tab -
+do not move a chart to another tab and do not add one the request did not ask for there. Each
+tab ends with its own summary table, of the records that tab is about.
+
 {_sql_rules(source, prompt)}
 {params_text}
 {_chart_rules(wanted)}"""
