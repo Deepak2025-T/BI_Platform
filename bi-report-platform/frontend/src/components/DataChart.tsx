@@ -6,7 +6,7 @@ import { CanvasRenderer } from "echarts/renderers";
 import type { Cell, ChartSpec, WidgetStyle } from "../api/types";
 import { isDark } from "../lib/cardColors";
 import { meaningColor, normalizeColor, ruleColor, worthColoringByMeaning } from "../lib/colors";
-import { axisText, columnLabel, formatValue } from "../lib/format";
+import { axisText, columnLabel, formatValue, shortLabel } from "../lib/format";
 import { delta, tone } from "../lib/history";
 import ResultTable from "./ResultTable";
 
@@ -14,6 +14,10 @@ echarts.use([BarChart, HeatmapChart, LineChart, PieChart, GridComponent, LegendC
              VisualMapComponent, CanvasRenderer]);
 
 /** Figures are set in a monospaced face so columns of them line up, matching the app's CSS. */
+// The most categories a bar chart or a ring is drawn with. Past this the names stop being
+// readable and the tile says less than the sentence "137 of them" would.
+const MAX_CATEGORIES = 20;
+
 export const NUMERALS = "'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace";
 
 export const CHART_COLORS = ["#00B4D8", "#0D3B66", "#F5A623", "#7A8BA3", "#2A9D8F", "#A63D40", "#6D597A", "#1E7F4F"];
@@ -122,9 +126,21 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     return tableHeight ? <div className="table-scroll" style={{ maxHeight: tableHeight }}>{table}</div> : table;
   }
 
+  // A ring or a bar chart with a hundred categories is a wall, not a chart: every bar is one
+  // record high and no name can be read. The largest are drawn and the rest are counted in a
+  // line under the tile, so the number is still honest about what is not on screen. A line over
+  // time is never capped - the point of it is the whole stretch.
+  const CAPPED = ["bar", "pie", "donut"];
+  const overflowing = CAPPED.includes(chart.type) && sortIndex >= 0 && sorted.length > MAX_CATEGORIES;
+  const shown = overflowing
+    ? [...sorted].sort((a, b) => Math.abs(Number(b[sortIndex]) || 0) - Math.abs(Number(a[sortIndex]) || 0))
+        .slice(0, MAX_CATEGORIES)
+        .sort((a, b) => sorted.indexOf(a) - sorted.indexOf(b))
+    : sorted;
+
   // A date is a label here, not a record, so it is written mm/yy: an axis is read at a glance
   // and a timestamp on it is both unreadable and wide enough to push its neighbours over.
-  const labels = sorted.map((r) => axisText(r[xi]));
+  const labels = shown.map((r) => axisText(r[xi]));
 
   // One series, many categories: give each category its own colour, so a chart of risk ratings
   // reads the way it would on paper instead of as one block of blue. Several series keep the
@@ -138,7 +154,7 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
   const categoryColor = (label: string, i: number) =>
     ruleColor(label, style.colorRules) || (useMeanings ? meaningColor(label) : "")
     || (colorMode === "palette" || pie ? colors[i % colors.length] : colors[0]);
-  const values = (y: string) => sorted.map((r) => {
+  const values = (y: string) => shown.map((r) => {
     const v = r[columns.indexOf(y)];
     return typeof v === "number" ? v : Number(v);
   });
@@ -162,13 +178,13 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     // One cell per pair of values: rows down the side, columns across the top, colour for the
     // number. Rows arrive one per pair, so they are laid out onto the grid by name.
     const down = [...new Set(labels)];
-    const across = [...new Set(sorted.map((r) => axisText(r[gridIndex])))];
+    const across = [...new Set(shown.map((r) => axisText(r[gridIndex])))];
     const vi = columns.indexOf(ys[0]);
     // The query only returns the pairs that have something in them, so a grid drawn straight from
     // the rows has holes in it - and a hole reads as "no data here" when what it means is "none".
     // Every pair is laid out, and one that never came back counts as zero.
     const counted = new Map<string, number>();
-    for (const r of sorted) {
+    for (const r of shown) {
       const value = typeof r[vi] === "number" ? r[vi] as number : Number(r[vi]);
       if (Number.isFinite(value)) counted.set(`${axisText(r[gridIndex])}\u0000${axisText(r[xi])}`, value);
     }
@@ -246,10 +262,10 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
             icon: "circle", itemGap: 7, textStyle: { color: ink, fontSize: 12, rich: {} },
             formatter: (name: string) => {
               const v = slices[labels.indexOf(name)] ?? 0;
-              return `${name}  ${fmt(v)}  ${whole ? Math.round((v / whole) * 100) : 0}%`;
+              return `${shortLabel(name)}  ${fmt(v)}  ${whole ? Math.round((v / whole) * 100) : 0}%`;
             },
           }
-          : { bottom: 0, left: "center", type: "scroll", textStyle: { color: ink } },
+          : { bottom: 0, left: "center", type: "scroll", textStyle: { color: ink }, formatter: shortLabel },
       // The total sits in the hole, under the word for what is being counted.
       ...(ringLegend ? {
         title: {
@@ -282,9 +298,10 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     // A few categories: show every name, wrapped; many: hide the ones that would overlap.
     // Horizontal bars: long names are cut at 160 px instead of pushing the bars aside.
     const few = labels.length <= 8;
-    const axisLabel = horizontal ? { ...AXIS.axisLabel, width: 160, overflow: "truncate" }
-      : few ? { ...AXIS.axisLabel, interval: 0, width: 80, overflow: "break", lineHeight: 13 }
-      : { ...AXIS.axisLabel, hideOverlap: true };
+    const formatter = shortLabel;
+    const axisLabel = horizontal ? { ...AXIS.axisLabel, width: 160, overflow: "truncate", formatter }
+      : few ? { ...AXIS.axisLabel, interval: 0, width: 80, overflow: "break", lineHeight: 13, formatter }
+      : { ...AXIS.axisLabel, hideOverlap: true, formatter };
     const category = { type: "category", data: labels, ...AXIS, axisLabel, inverse: horizontal }; // horizontal: first row on top
     // The builder saves stackMode; charts from before it only have `stacked`.
     const stackMode = style.stackMode ?? (style.stacked ? "stacked" : "none");
@@ -346,6 +363,11 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
       <div role="img" aria-label={alt}>
         <ReactEChartsCore echarts={echarts} option={option} notMerge style={{ height, width: "100%" }} onEvents={clicks} />
       </div>
+      {overflowing && (
+        <p className="chart-changes small muted">
+          The {MAX_CATEGORIES} largest of {sorted.length} are shown.
+        </p>
+      )}
       {compare && (chart.type === "pie" || chart.type === "donut") && (
         <p className="chart-changes small muted">Since {compare.label}: {changes.length ? changes.join(" · ") : "no change"}</p>
       )}

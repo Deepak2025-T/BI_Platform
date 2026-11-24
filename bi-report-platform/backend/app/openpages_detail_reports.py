@@ -136,6 +136,10 @@ class DetailReport:
     # expanded here when it is sent, so editing "3 months" to "6" is all it takes to move it.
     ask: str = ""
     why: str = ""
+    # The filters the built report opens with, beyond the business entity and the window that
+    # every one of them gets. Named in the words people read, not as field names: the column is
+    # chosen per chart from the fields that chart's object types really have. See report_filters.
+    filters: tuple[str, ...] = ()
 
     def matches(self, words: set[str], text: str) -> bool:
         if any(bad in text for bad in self.never):
@@ -157,6 +161,7 @@ CONTROL_TESTS = DetailReport(
     default_months=3,
     ask='Get me control test report for past 3 months',
     why='Every test run in the window with its result, the control it covers and the risk that control mitigates - what passed, what failed, and what is being done about the failures.',
+    filters=('Test status', 'Test result'),
     extra_drill="- From a failed result, the drill path runs result to test to control to risk to "
                 "process to\n  business entity, and every step is clickable.",
     body="""Build a detail report called "{title}" from my IBM OpenPages data.
@@ -213,6 +218,7 @@ RISKS = DetailReport(
     default_months=2,
     ask='Get me risk report for past 2 months',
     why='The register as it stands: inherent against residual, what sits outside tolerance, how many controls each risk carries and which risks carry none.',
+    filters=('Residual risk rating', 'Within tolerance'),
     extra_drill="- From a risk, the drill path runs risk to its controls to those controls' "
                 "tests, and upwards\n  risk to process to business entity.",
     body="""Build a detail report called "{title}" from my IBM OpenPages data.
@@ -268,6 +274,7 @@ KRI_TREND = DetailReport(
     default_months=6,
     ask='Show me KRI trend report for past 6 months',
     why='Where the indicators are heading, month by month: breaches over time, which went red, which came back, and how the breaches line up against actual losses.',
+    filters=('Breach status', 'Measurement frequency'),
     extra_drill="- Clicking a point on any trend line filters the page to that month and lists "
                 "the readings taken\n  in it.\n"
                 "- From a reading, the drill path runs reading to indicator to risk to business "
@@ -326,6 +333,7 @@ LOSS_EVENTS = DetailReport(
     default_months=3,
     ask='Loss events report for past 3 months',
     why='What was lost and what came back: events by month, category and entity, with their impacts, their recoveries and how long each took to discover.',
+    filters=('Loss category', 'Loss event status'),
     extra_drill="- From a loss event, the drill path runs event to its impacts and recoveries, "
                 "and upwards event\n  to risk to process to business entity.",
     body="""Build a detail report called "{title}" from my IBM OpenPages data.

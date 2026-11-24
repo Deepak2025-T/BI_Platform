@@ -17,6 +17,7 @@ from ..deps import get_current_user
 from ..models import AIModel, Report, User
 from ..date_charts import with_rollups
 from ..openpages_detail_reports import expand as expand_detail_report
+from .. import report_filters
 from ..report_window import bake as bake_window
 from ..prompt_clarify import clarify
 from ..prompt_ideas import ideas_for
@@ -195,6 +196,13 @@ def build_dashboard(body: DashboardIn, db: Session = Depends(get_db), user: User
                                   # of their own covers everything, and the reader should know
                                   # which ones those are.
                                   "unbounded": unbounded}
+        # Every detail report opens with at least the business entity and the window, plus the
+        # two fields its own subject is read by. The first question anyone asks of a page of
+        # counts is "yes, but for my part of the business", and without a filter the answer is
+        # "build another report".
+        wanted = (report_filters.ENTITY, report_filters.WINDOW,
+                  *[report_filters.Wanted(label) for label in detail.report.filters])
+        extra["filters"] = report_filters.build(spec, source, plan["widgets"], wanted)
     if body.data_model:
         extra["data_model"] = body.data_model
     # A request that asked for tabs was planned with the charts already on them.

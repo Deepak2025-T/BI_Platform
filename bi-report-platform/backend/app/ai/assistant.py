@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ..config import settings
 from ..connections import openpages
-from .. import dashboard_pages, kpi_total
+from .. import chart_check, dashboard_pages, kpi_total
 from ..prompt_clarify import apply_style
 from ..schemas import MAX_WIDGETS
 from ..datasources import DataSource, QueryFailed, describe, run_sql
@@ -202,6 +202,12 @@ Always use action "query". {_CHART_RULES}"""
     folded = kpi_total.apply(data["columns"], data["rows"], total) if total else None
     if folded:
         data = {**data, **folded}
+    # A chart that needs a number and came back without one. Said rather than drawn: left alone,
+    # fit_chart makes it a table, and a tile that looks built and says nothing is the one kind of
+    # failure nobody spots. See chart_check.
+    problem = chart_check.measure_problem(answer.get("chart"), data["columns"], data["rows"])
+    if problem:
+        raise AssistantError(problem)
     widget = new_widget(answer["title"] or question, question, data["sql"],
                         fit_chart(answer.get("chart"), data["columns"], data["rows"]),
                         {"total": total} if folded else None)

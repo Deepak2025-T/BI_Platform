@@ -69,6 +69,23 @@ export function axisText(v: unknown): string {
   return on ? `${on.m}/${on.y.slice(2)}` : text;
 }
 
+/**
+ * A value shown as a label on a chart, when the value is a path.
+ *
+ * An OpenPages business entity is written as the whole path it sits under -
+ * "/Employees/ABC Financial Institution/ABC Financial Institution_LE_0310" - which is the right
+ * thing in a table, where the reader is identifying a record, and hopeless on an axis, where
+ * seven of them fill the tile and none of them can be read.
+ *
+ * So the axis is given the last step of the path and the chart keeps the whole of it: the bar
+ * still carries the full value, so the tooltip shows it and a click still finds its records.
+ */
+export function shortLabel(text: string): string {
+  if (!text.startsWith("/") || text.length < 2) return text;
+  const leaf = text.slice(text.lastIndexOf("/") + 1);
+  return leaf || text;
+}
+
 /** "total_revenue" -> "Total revenue" */
 export function columnLabel(name: string): string {
   // OpenPages: "OPSS-Ctl:Control Type" -> "Control Type", "Count_Resource ID" -> "Count".
