@@ -54,6 +54,21 @@ const RECOGNISER: RecogniserClass | undefined = WINDOW.SpeechRecognition ?? WIND
  */
 export const dictationSupported = !!RECOGNISER && window.isSecureContext;
 
+/**
+ * Why there is no microphone here, when there is a reason worth saying.
+ *
+ * Empty when dictation works, and empty for a browser that simply has no recogniser - there is
+ * nothing to be done about Firefox, so saying so is just noise. It is only filled in for the one
+ * case that looks like a fault and is not: a browser that can listen, on a page served over plain
+ * http. Browsers only hand out the microphone in a secure context, and http://localhost counts as
+ * one - which is exactly why this works on a developer's machine and stops on a real server.
+ */
+export const dictationBlockedReason: string =
+  !RECOGNISER || window.isSecureContext
+    ? ""
+    : "Speaking needs a secure page. This one is served over plain http, so the browser will not "
+      + "give any site the microphone. It comes back once the server is on https.";
+
 /** What went wrong, in words someone can act on. */
 const REASONS: Record<string, string> = {
   "not-allowed": "The microphone is blocked for this site. Allow it in the browser's address bar, then try again.",

@@ -117,7 +117,7 @@ export default function DataChart({ columns, rows, chart, style = {}, height = 2
     const table = (
       <ResultTable columns={columns} rows={sorted} truncated={truncated} limit={50}
         widths={style.columnWidths} hiddenColumns={style.hiddenColumns}
-        rowNumbers={style.rowNumbers !== false} wrapText={!!style.wrapText} onColumns={onColumns} />
+        rowNumbers={style.rowNumbers !== false} wrapText={style.wrapText !== false} onColumns={onColumns} />
     );
     return tableHeight ? <div className="table-scroll" style={{ maxHeight: tableHeight }}>{table}</div> : table;
   }

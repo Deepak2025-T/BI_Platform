@@ -1584,3 +1584,4 @@ body.printing .page-print-head:first-child { break-before: auto; }
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden; margin-top: 2px;
 }
+.dictate-blocked { white-space: nowrap; opacity: .7; }

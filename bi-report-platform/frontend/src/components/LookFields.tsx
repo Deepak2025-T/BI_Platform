@@ -166,8 +166,10 @@ export function TileLookFields({ style, config, onChange, isTable, isHeading, is
         </label>
         {isTable && (
           <label className="check">
-            <input type="checkbox" checked={!!style.wrapText}
-              onChange={(e) => onChange({ wrapText: e.target.checked || undefined })} />
+            {/* Wrapping is the default, so what is stored is the exception: false when someone
+                turns it off, and nothing at all when they leave it alone. */}
+            <input type="checkbox" checked={style.wrapText !== false}
+              onChange={(e) => onChange({ wrapText: e.target.checked ? undefined : false })} />
             Wrap long values onto more lines
           </label>
         )}

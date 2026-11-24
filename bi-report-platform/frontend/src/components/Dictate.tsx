@@ -1,4 +1,4 @@
-import { useDictation } from "../lib/dictation";
+import { dictationBlockedReason, useDictation } from "../lib/dictation";
 import Icon from "./Icon";
 
 interface Props {
@@ -25,7 +25,14 @@ interface Props {
 export default function Dictate({ onPhrase, compact, what = "your request" }: Props) {
   const { supported, listening, interim, error, toggle } = useDictation(onPhrase);
 
-  if (!supported) return null;
+  // A browser with no recogniser gets nothing: there is no advice to give. A browser that could
+  // listen but is on an http page gets the reason, because an absent button reads as a fault in
+  // the app, and someone can act on this one - it is the page's address, not their microphone.
+  if (!supported) {
+    return dictationBlockedReason
+      ? <span className="dictate-blocked muted small" title={dictationBlockedReason}>Speaking needs https</span>
+      : null;
+  }
 
   return (
     <div className={"dictate" + (compact ? " compact" : "")}>

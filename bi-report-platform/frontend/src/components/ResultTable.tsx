@@ -39,7 +39,7 @@ const MIN_WIDTH = 60;
 
 /** Any query result as a table. Numbers are right-aligned. */
 export default function ResultTable({ columns, rows, limit = 100, truncated, widths = {}, hiddenColumns = [],
-                                     rowNumbers = true, wrapText = false, onColumns }: Props) {
+                                     rowNumbers = true, wrapText = true, onColumns }: Props) {
   const hidden = new Set(hiddenColumns);
   const shown = columns.map((c, i) => ({ name: c, i })).filter((c) => !hidden.has(c.name));
   const numeric = columns.map((_, i) => rows.some((r) => typeof r[i] === "number")
