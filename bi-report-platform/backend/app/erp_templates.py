@@ -13,6 +13,8 @@ which, so a connection holding only some of the schemas still gets a dashboard.
 The SQL is plain PostgreSQL and goes through the same read-only check as everything else.
 """
 
+from .report_layout import shape
+
 # Schemas these templates read. A connection that shares none of a template's tables gets nothing
 # from it, which the build endpoint reports as "skipped".
 CRM, HD, LMS, ACC, SLS = "crm", "helpdesk", "lms", "account", "sales"
@@ -453,6 +455,8 @@ def template_rows() -> list[dict]:
     """The templates as rows for report_templates (layout holds the dashboard)."""
     return [{"name": t["name"], "description": t["description"], "color": t["color"], "prompt": t["prompt"],
              "category": t["category"],
-             "layout": {"kind": "dashboard", "source_type": "postgresql", "widgets": t["widgets"],
+             # The same house layout the GRC templates get: counts first, charts three to a row,
+             # records last. A report should not read differently for being about invoices.
+             "layout": {"kind": "dashboard", "source_type": "postgresql", "widgets": shape(t["widgets"]),
                         "filters": t["filters"]}}
             for t in ERP_TEMPLATES]

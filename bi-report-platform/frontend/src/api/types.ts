@@ -747,7 +747,9 @@ export interface ClarifyResult {
 }
 
 /** Where a recommendation came from, which is also how the panel groups them. */
-export type IdeaReason = "history" | "subject" | "breadth" | "kpi";
+/** "curated" is one of the reference dashboards written against the OpenPages object model;
+ *  the rest are worked out from the connection and from what this person asked for before. */
+export type IdeaReason = "history" | "subject" | "breadth" | "kpi" | "curated";
 
 /**
  * A whole report worth building on the chosen database, suggested before anything is typed.

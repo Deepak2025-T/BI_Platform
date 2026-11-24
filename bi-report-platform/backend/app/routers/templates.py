@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import or_, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from .. import dashboard_filters, dashboard_pages
@@ -348,9 +348,15 @@ def check_can_share(visibility: str | None, user: User):
 @router.get("", response_model=list[TemplateOut])
 def list_templates(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     # Everyone sees shared and built-in templates plus their own private ones.
+    # Operational risk is what this is used for day to day, and the built-in list is long enough
+    # that anything not near the top is found by scrolling. So ORM comes first, and the rest keep
+    # the order they had.
+    # The module column, not the name: the name is built as "ORM: ..." for display, and matching
+    # display text would break the day one is renamed.
+    orm_first = case((ReportTemplate.module == "ORM", 0), else_=1)
     stmt = (select(ReportTemplate).options(joinedload(ReportTemplate.owner))
             .where(or_(ReportTemplate.visibility == "shared", ReportTemplate.owner_id == user.id))
-            .order_by(ReportTemplate.is_builtin, ReportTemplate.updated_at.desc()))
+            .order_by(orm_first, ReportTemplate.is_builtin, ReportTemplate.updated_at.desc()))
     return [to_out(t, user) for t in db.scalars(stmt).all()]
 
 

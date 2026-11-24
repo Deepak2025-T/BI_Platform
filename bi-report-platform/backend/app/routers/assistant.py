@@ -18,6 +18,7 @@ from ..models import AIModel, Report, User
 from ..prompt_clarify import clarify
 from ..prompt_ideas import ideas_for
 from ..report_ideas import recommend
+from ..report_layout import shape
 from .. import suggestions
 from ..excel_export import dashboard_workbook
 from ..ppt_export import dashboard_deck
@@ -172,8 +173,12 @@ def build_dashboard(body: DashboardIn, db: Session = Depends(get_db), user: User
     # A request that asked for tabs was planned with the charts already on them.
     if plan.get("pages"):
         extra["pages"] = plan["pages"]
-    report = _save(db, user, title=plan["title"], prompt=body.prompt, source=source, widgets=plan["widgets"],
-                   extra=extra)
+    # Every report opens the same way, however it was asked for: the headline counts across the
+    # top, the breakdowns three to a row, the records at the bottom. The model is asked for this
+    # too, but asking is not the same as getting, and a dashboard someone has to re-learn because
+    # this one put its table in the middle is a worse dashboard.
+    report = _save(db, user, title=plan["title"], prompt=body.prompt, source=source,
+                   widgets=shape(plan["widgets"]), extra=extra)
     return {"report": report, "failed": plan["failed"]}
 
 

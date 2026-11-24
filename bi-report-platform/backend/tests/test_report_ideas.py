@@ -14,6 +14,7 @@ import pytest
 from app.database import SessionLocal
 from app.datasources import DataSource, get_source
 from app.models import Report, User
+from app.openpages_prompts import CURATED
 from app.report_ideas import MAX_IDEAS, Recipe, _affinity, _title_of, recommend
 
 
@@ -99,36 +100,42 @@ def test_a_table_with_a_date_and_an_amount_gets_a_kpi_scorecard(source):
     assert subject["kpis"], "a subject card says what it measures"
 
 
-def test_an_openpages_connection_is_only_asked_about_what_it_shares():
-    """A suggestion about vendors on a connection with no vendors is noise, and worse, it would
-    fail every chart in it."""
+def test_an_openpages_connection_is_offered_the_ten_reference_dashboards():
+    """An OpenPages connection gets the hand-written prompts and nothing derived.
+
+    The connection says which object types are shared; it does not say which of them may legally
+    be joined - only the published object model does, and a prompt that joins a pair a namespace
+    does not list fails at the query service. So nothing here is guessed from the tables."""
     ideas = _recommend(None, src=_openpages(["SOXRisk", "SOXControl"]))
-    subjects = {i["subject"] for i in ideas}
-    assert {"risk", "control"} <= subjects
-    assert not {"vendor", "policy", "loss event"} & subjects
+    assert len(ideas) == len(CURATED)
+    assert {i["reason"] for i in ideas} == {"curated"}
+    assert ideas[0]["title"] == CURATED[0].title
 
 
-def test_an_openpages_recommendation_asks_for_a_whole_report():
-    risk = next(i for i in _recommend(None, src=_openpages(["SOXRisk"])) if i["subject"] == "risk")
-    assert "[SOXRisk]" in risk["prompt"], "the request should name the object type it was built from"
-    assert risk["charts"] >= 8, "a subject report is KPI cards plus breakdowns, not one chart"
-    assert "residual" in risk["prompt"] and "status" in risk["prompt"]
+def test_a_reference_dashboard_arrives_whole_rather_than_summarised():
+    """The card fills the box with the prompt itself. Shortening it to fit a card would lose the
+    rules that make its SQL run."""
+    first = _recommend(None, src=_openpages(["SOXRisk"]))[0]
+    assert first["prompt"] == CURATED[0].prompt
+    assert len(first["prompt"]) > 1000 and "RULES" in first["prompt"]
+    assert first["charts"] >= 20, "these are whole dashboards, not single charts"
 
 
-def test_a_wide_connection_is_also_offered_one_page_across_subjects():
-    ideas = _recommend(None, src=_openpages(["SOXRisk", "SOXControl", "SOXIssue", "ActionItem"]))
-    breadth = [i for i in ideas if i["reason"] == "breadth"]
-    assert breadth, "four subjects on one connection is worth an overview across them"
-    assert "tab for each subject" in breadth[0]["prompt"]
+def test_the_same_ten_whatever_the_connection_shares():
+    """They are per namespace, not per connection: two OpenPages connections sharing different
+    object types still get the same ten, because what differs between them is which prompt the
+    person should pick - not which prompts exist."""
+    few = _recommend(None, src=_openpages(["SOXRisk"]))
+    many = _recommend(None, src=_openpages(["SOXRisk", "SOXControl", "LossEvent", "Policy"]))
+    assert [i["id"] for i in few] == [i["id"] for i in many]
 
 
-def test_a_connection_with_one_subject_is_not_offered_an_overview_of_it():
-    assert not [i for i in _recommend(None, src=_openpages(["SOXRisk"])) if i["reason"] == "breadth"]
-
-
-def test_there_are_never_more_than_a_handful():
-    ideas = _recommend(None, src=_openpages(["SOXRisk", "SOXControl", "SOXIssue", "ActionItem",
-                                             "LossEvent", "KeyRiskIndicator", "SOXProcess", "Policy"]))
+def test_a_sql_connection_is_still_offered_what_its_own_tables_can_answer(source):
+    """The curated list is OpenPages-only - it names OpenPages object types, which mean nothing
+    on a SQL database. That connection keeps the suggestions worked out from its columns."""
+    src, _ = source
+    ideas = _recommend(None, src=src)
+    assert ideas and not any(i["reason"] == "curated" for i in ideas)
     assert len(ideas) <= MAX_IDEAS
 
 

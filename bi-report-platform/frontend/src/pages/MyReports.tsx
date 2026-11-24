@@ -150,7 +150,7 @@ export default function MyReports() {
         </div>
 
         {reports === null ? <div className="card">Loading…</div> : reports.length === 0 ? (
-          <div className="card muted">No reports yet. Ask a question on the home page to build one.</div>
+          <div className="card muted">No reports yet. Build one from the home page.</div>
         ) : groups.every((g) => g.reports.length === 0) ? (
           <div className="card muted">{search ? "No reports match your search." : "No reports in this category yet. Pick it when you publish a report."}</div>
         ) : groups.map((g, at) => {

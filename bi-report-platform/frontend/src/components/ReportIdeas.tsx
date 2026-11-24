@@ -18,6 +18,9 @@ const LOOKS: Record<IdeaReason, { icon: string; group: string }> = {
   breadth: { icon: "layers", group: "Everything at once" },
   // The period-over-period numbers people track whatever the subject.
   kpi: { icon: "trend", group: "Common KPIs" },
+  // Written by hand against the published OpenPages object model, not worked out from the
+  // connection - so they are not described as coming from what it holds.
+  curated: { icon: "template", group: "IBM OpenPages reference reports" },
 };
 
 interface Props {
@@ -39,6 +42,8 @@ export default function ReportIdeas({ ideas, sourceName, onPick, loading, onHide
     );
   }
   if (!ideas.length) return null;
+  // Every idea curated, not merely some: the subtitle has to describe the whole list.
+  const curated = ideas.every((i) => i.reason === "curated");
 
   return (
     <section className="idea-panel" aria-label={`Reports worth building on ${sourceName}`}>
@@ -46,8 +51,12 @@ export default function ReportIdeas({ ideas, sourceName, onPick, loading, onHide
         <div>
           <h3>What kind of report would you like?</h3>
           <p className="muted small">
-            From what {sourceName} holds and what you have asked for before. Pick one to fill the
-            box — you can change the words before building.
+            {curated
+              ? <>One per namespace of the IBM OpenPages reporting framework, each written against
+                  that namespace's own object model. Pick one to fill the box — you can change the
+                  words before building.</>
+              : <>From what {sourceName} holds and what you have asked for before. Pick one to fill
+                  the box — you can change the words before building.</>}
           </p>
         </div>
         {onHide && (

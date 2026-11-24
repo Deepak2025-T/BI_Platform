@@ -432,8 +432,15 @@ def test_the_orm_overview_is_the_two_pages_it_was_designed_as(client, user):
         assert part in titles(second), part
     # Beyond the business-entity band every module dashboard opens with, neither page repeats the
     # other's charts: the point of the split is that each answers its own question.
-    band = {w["title"] for w in first["layout"]["widgets"][:5]}
-    assert not (set(titles(first)) - band) & (set(titles(second)) - band)
+    #
+    # The band is named rather than taken as the first few widgets. Reading order is the house
+    # layout's to decide (report_layout.shape puts the counts first), so a position here would be
+    # asserting that layout rather than this design - and would go red the next time it changed.
+    def beyond_the_band(t):
+        return {w["title"] for w in t["layout"]["widgets"]
+                if not w["title"].startswith(("Business entities", "Business entity", "Entities by"))}
+
+    assert not beyond_the_band(first) & beyond_the_band(second)
 
 
 def test_both_orm_overview_pages_write_sql_openpages_accepts(client, user):

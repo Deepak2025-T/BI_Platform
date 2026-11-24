@@ -365,8 +365,11 @@ button.tpl-main { cursor: pointer; }
 .filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 6px 0; border-top: 1px solid var(--border); }
 .widget-head .badge { flex: none; }
 .dash-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; }
-.widget { grid-column: span 6; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.widget.w-kpi { grid-column: span 4; }
+/* Three to a row, matching report_layout.py: two left a six-category bar chart with more empty
+   space than chart, and four made the labels unreadable. A widget with a size of its own (a tile
+   someone widened, a full-width line chart) overrides this below. */
+.widget { grid-column: span 4; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.widget.w-kpi { grid-column: span 3; }
 .widget.w-table { grid-column: span 12; }
 @media (max-width: 900px) { .widget, .widget.w-kpi, .widget.w-table { grid-column: span 12; } }
 .widget-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

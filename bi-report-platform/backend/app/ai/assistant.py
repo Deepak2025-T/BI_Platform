@@ -342,7 +342,11 @@ def plan_dashboard(spec: ModelSpec, source: DataSource, prompt: str, parameters:
 When the request lists the charts it wants, give every one of them, in that order, however many
 there are - a request for forty charts is a request for forty charts, not for the first few.
 When it does not say, give 4 to 6. Never more than {MAX_WIDGETS}.
-Start with the headline numbers as "kpi" charts, then the breakdowns.
+Every dashboard is laid out the same way, so give the charts in this order:
+  1. the headline numbers, as "kpi" charts;
+  2. the breakdowns - bar, line, area, pie;
+  3. a "table" of the records behind them, last.
+End every dashboard, and every tab of one, with that summary table.
 
 Do NOT write any SQL here. For each chart give only a short title, the one-line question it answers,
 and which chart shape fits. The queries are written separately.

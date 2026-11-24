@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from .datasources import DataSource, table_columns
 from .models import ChatConversation, ChatMessage, Report, User
+from .openpages_prompts import CURATED
 from .prompt_ideas import _FREE_TEXT, _GROUP_WORDS, _MEASURE_WORDS, _NUMBER_TYPES, _label, _pick
 
 # How many recommendations to offer. Six fits on one row of cards without a scroll, and a list
@@ -422,6 +423,15 @@ def recommend(db: Session, user: User, source: DataSource, limit: int = MAX_IDEA
     subjects it can carry, and one with nothing recognisable on it gets an empty list, which the
     page shows as its own plain suggestions rather than as an error.
     """
+    # An OpenPages connection gets the ten reference dashboards and nothing else. They are written
+    # against the published object model - the real parent/child pairs of each namespace - which is
+    # knowledge this code does not have and cannot derive from the connection: the connection says
+    # which object types are shared, not which of them may legally be joined. Offering a guess
+    # beside them would only invite someone to pick the guess.
+    if source.is_openpages:
+        return [asdict(Idea(id=c.id, title=c.title, why=c.why, reason="curated", prompt=c.prompt,
+                            charts=c.charts, subject=c.namespace)) for c in CURATED]
+
     prompts = past_prompts(db, user, source)
     report_prompts = [r.prompt for r in db.scalars(
         select(Report).where(Report.owner_id == user.id).order_by(Report.updated_at.desc())

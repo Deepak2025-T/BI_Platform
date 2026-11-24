@@ -14,7 +14,7 @@ export default function AppShell() {
       <nav className="sidebar" aria-label="Main">
         <Brand />
 
-        <NavLink to="/" end className={navClass}><Icon name="home" />Ask a question</NavLink>
+        <NavLink to="/" end className={navClass}><Icon name="home" />Home</NavLink>
         <NavLink to="/chat" className={navClass}><Icon name="chat" />Chat with data</NavLink>
         <NavLink to="/build-chart" className={navClass}><Icon name="grid" />Build a chart</NavLink>
         <NavLink to="/reports" className={navClass}><Icon name="reports" />Reports</NavLink>

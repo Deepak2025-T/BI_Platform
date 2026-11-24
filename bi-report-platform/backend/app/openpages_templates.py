@@ -12,6 +12,8 @@ only, so charts that count never JOIN; lists may.
 
 import re
 
+from .report_layout import shape
+
 COUNT = "Count_Resource ID"
 # Bar charts whose values are long phrases.
 LONG_LABELS = {"Risks by category", "Management responses", "Root causes", "Issues by type", "Resolution status",
@@ -798,8 +800,9 @@ def table_last(widgets: list[dict]) -> list[dict]:
 
 
 def normalise(widgets: list[dict]) -> list[dict]:
-    """One shape for every template: twelve charts where the fields allow it, summary table last."""
-    return table_last(pad_charts(list(widgets)))
+    """One shape for every template: twelve charts where the fields allow it, then the house
+    layout - counts at the top, charts three to a row, records last (report_layout.shape)."""
+    return shape(table_last(pad_charts(list(widgets))))
 
 
 def with_entity_filter(filters: list[dict] | None) -> list[dict]:
