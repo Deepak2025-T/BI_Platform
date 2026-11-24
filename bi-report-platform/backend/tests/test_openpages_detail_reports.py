@@ -59,7 +59,20 @@ def test_real_dates_reach_the_prompt_not_a_relative_phrase():
     assert "Control Testing - Last 3 Months" in prompt
     # The relative phrase the person typed never survives into the prompt on its own.
     assert "past 3 months" not in prompt
-    assert "falls between" in prompt
+    assert "This report covers 26 August 2026" in prompt
+
+
+def test_no_prompt_asks_the_model_for_a_date_condition():
+    """The window is applied to every query after it is written, on the date field each record
+    type really has. A date condition written into the SQL as well is a second condition on top
+    of that one - and when it names a field this installation spells differently it matches
+    nothing, which is how a report of twenty tiles came back reading nought."""
+    for report in REPORTS:
+        prompt = report.build(_window_for(report))
+        assert "Do not write that window into any query" in prompt, report.id
+        assert "No date conditions." in prompt, report.id
+        for asked in ("falls between", "in the window.", "created, last assessed"):
+            assert asked not in prompt, f"{report.id} still asks for a date condition: {asked!r}"
 
 
 def test_the_more_specific_subject_wins():
@@ -92,3 +105,8 @@ def test_every_prompt_carries_the_shared_blocks_and_fits_the_cap():
         assert "{window}" not in prompt and "{title}" not in prompt
         # 4 cards + 15 charts + 2 tables, comfortably under the cap that used to truncate these.
         assert 4 + 15 + 2 <= MAX_WIDGETS
+
+
+def _window_for(report):
+    """The window this report is usually asked for, as expand() would have resolved it."""
+    return expand(report.ask, TODAY).window

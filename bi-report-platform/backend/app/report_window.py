@@ -14,6 +14,12 @@ so a refresh, an export and a drill all read the same window as the page did whe
 A chart whose object type has no date to bound - controls tested by control type, say, where a
 control has no loss date of its own - is left as it is and named in the return, because a report
 that quietly bounds nineteen charts and not the twentieth is the thing this exists to prevent.
+
+And a bound only stays if it answers. A date field can be spelled differently on this
+installation, hold nothing, or not compare the way the Query Service wants, and none of those
+fails: the query runs and matches no row. A bound that empties a chart which had records is
+therefore dropped - the window cannot be the reason, since the chart was built from the same
+records - and the chart is named like any other that could not be bounded.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ import datetime as dt
 
 from . import dashboard_filters
 from .ai.providers import ModelSpec
-from .datasources import DataSource
+from .datasources import DataSource, run_sql
 
 LABEL = "Date range"
 
@@ -49,9 +55,41 @@ def bake(spec: ModelSpec, source: DataSource, widgets: list[dict], start: dt.dat
                                                           values, widget["id"])
         # Bound values only exist for a database connection, and there the bound SQL cannot be
         # saved without them. OpenPages writes its conditions as literals, which can.
-        if applied and not params:
+        if applied and not params and _bound_still_answers(source, widget["sql"], sql):
             out.append({**widget, "sql": sql})
         else:
             out.append(widget)
             unbounded.append(str(widget.get("title") or "")[:120])
     return out, unbounded
+
+
+def _rows(source: DataSource, sql: str) -> int | None:
+    """How many rows this query returns, or None when it will not run. The unbounded query was
+    already run to build the chart, so asking for it again is answered from the result cache."""
+    try:
+        return len(run_sql(source, sql)["rows"])
+    except Exception:  # a query the service refused, a connection that would not answer
+        return None
+
+
+def _bound_still_answers(source: DataSource, before: str, after: str) -> bool:
+    """Whether the bound is one worth keeping.
+
+    A date field can be spelled differently here, hold nothing, or not compare the way the Query
+    Service wants, and none of those fails - the query runs and matches no row. A whole report of
+    zeros is the result, which is the worst thing this could do: a chart that read 207 now reads 0
+    and nothing says why.
+
+    So the bound has to earn its place. A bounded query that answers is kept. One that empties a
+    chart which had records is dropped, because the window cannot be the reason - it was built
+    from the same records. One where there was nothing to begin with keeps the bound, since
+    "nothing happened in these three months" is a true answer and widening it would hide that.
+    """
+    bounded = _rows(source, after)
+    if bounded is None:
+        return False
+    if bounded > 0:
+        return True
+    # Nothing came back. Keep the bound only where there was nothing to begin with; if the chart
+    # had records, or we cannot tell, the bound is not what emptied it and goes.
+    return _rows(source, before) == 0

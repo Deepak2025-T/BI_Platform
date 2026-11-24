@@ -655,7 +655,7 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
           <p className="muted small report-window">
             Covers {displayText(config.detail_report.from)} to {displayText(config.detail_report.to)}.
             {config.detail_report.unbounded?.length
-              ? ` Not limited by date: ${config.detail_report.unbounded.join(", ")} — those records carry no date of their own.`
+              ? ` Not limited by date: ${config.detail_report.unbounded.join(", ")} — those cover everything, because their records carry no date of their own or the date on them could not be read here.`
               : ""}
           </p>
         )}

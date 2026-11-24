@@ -89,8 +89,9 @@ LAYOUT = """LAYOUT
 - After every six charts, place one detail summary table across the full width, with at least
   eight columns, showing the records those six charts were built from.
 - Give the report a subtitle that states the date window it covers and the date it was run.
-- Put a business entity filter and a date-range filter at the top of the page, with the date
-  range pre-set to the window named in this prompt."""
+- Do not design any filters. The business entity, the window and the two fields this report is
+  read by are added to the page afterwards, from the fields each chart's record types really
+  have."""
 
 DRILL_DOWN = """DRILL-DOWN
 - Every KPI card, every chart slice and every bar is clickable.
@@ -114,7 +115,12 @@ HOUSE_RULES = """HOUSE RULES
 - Read the real field list of each record type first and use the fields that are actually there.
   If a field a chart needs is missing, drop that one chart, note which field was missing, and
   build the rest of the page.
-- Never invent a value for a dropdown field. Read the values the field really has."""
+- Never invent a value for a dropdown field. Read the values the field really has.
+- No date conditions. No WHERE on a date, no "in the last three months", no date in a KPI's
+  count. The window is applied to every query after it is written, on the date field each record
+  type actually has. A date written here is a second condition on top of that one, and when it
+  names a field this installation spells differently it matches nothing - which is how a report
+  of twenty tiles comes back reading nought."""
 
 
 @dataclass(frozen=True)
@@ -166,18 +172,19 @@ CONTROL_TESTS = DetailReport(
                 "process to\n  business entity, and every step is clickable.",
     body="""Build a detail report called "{title}" from my IBM OpenPages data.
 
-Cover only control tests whose test date, completion date or scheduled date falls between
-{window}, together with the test results underneath them and the controls they belong to.
+This report covers {window}. Do not write that window into any query - it is applied to every
+one of them afterwards, on each record type's own date field. Ask for the control tests, the test
+results underneath them and the controls they belong to, over all time.
 
 Records to use: control tests, test results, controls, risks, processes and business entities.
 A control belongs to a risk, a risk sits under a process, a process sits under a business entity,
 a control holds its tests, and a test holds its results.
 
 KPI CARDS
-- Tests carried out in the window.
-- Test results recorded in the window.
+- Control tests carried out.
+- Test results recorded.
 - Results that failed or raised an exception.
-- Controls covered by at least one test in the window.
+- Controls covered by at least one test.
 
 CHARTS - first six
 1. Tests by status.
@@ -204,7 +211,7 @@ Columns: result name, the test, the control, result date, outcome, deficiency se
 note, remediation owner, remediation status.
 
 CHARTS - closing row
-13. Controls tested against controls not tested in the window.
+13. Tests by tester, most first.
 14. Tests completed on time against tests completed late.
 15. Pass rate by business entity.""",
 )
@@ -223,7 +230,9 @@ RISKS = DetailReport(
                 "tests, and upwards\n  risk to process to business entity.",
     body="""Build a detail report called "{title}" from my IBM OpenPages data.
 
-Cover only risks created, last assessed or last updated between {window}, together with the
+This report covers {window}. Do not write that window into any query - it is applied to every
+one of them afterwards, on each record type's own date field. Ask for the risks over all time,
+together with the
 controls under them and the evaluations behind their ratings.
 
 Records to use: risks, controls, risk evaluations, processes, sub-processes and business entities.
@@ -231,7 +240,7 @@ A risk sits under a process or a sub-process, a process sits under a business en
 its controls, and a risk holds its evaluations.
 
 KPI CARDS
-- Risks added or updated in the window.
+- Risks on the register.
 - Risks rated high or critical on residual rating.
 - Risks sitting outside tolerance.
 - Controls attached to those risks.
@@ -281,7 +290,9 @@ KRI_TREND = DetailReport(
                 "entity.",
     body="""Build a detail report called "{title}" from my IBM OpenPages data.
 
-Cover indicator readings whose reading date falls between {window}, together with the indicators
+This report covers {window}. Do not write that window into any query - it is applied to every
+one of them afterwards, on each record type's own date field. Ask for the readings over all time,
+together with the indicators
 they belong to and the risks those indicators monitor. This report is about movement over time, so
 most charts are lines across the window.
 
@@ -290,8 +301,8 @@ An indicator holds its readings, an indicator monitors a risk or sits under a bu
 a risk holds its loss events.
 
 KPI CARDS
-- Indicators with at least one reading in the window.
-- Readings recorded in the window.
+- Indicators with at least one reading.
+- Indicator readings recorded.
 - Indicators currently in red breach.
 - Readings that were in breach when taken.
 
@@ -338,7 +349,9 @@ LOSS_EVENTS = DetailReport(
                 "and upwards event\n  to risk to process to business entity.",
     body="""Build a detail report called "{title}" from my IBM OpenPages data.
 
-Cover only loss events whose date of occurrence or date discovered falls between {window},
+This report covers {window}. Do not write that window into any query - it is applied to every
+one of them afterwards, on each record type's own date field. Ask for the loss events over all
+time,
 together with their impacts and recoveries.
 
 Records to use: loss events, loss impacts, loss recoveries, risks, processes and business entities.
@@ -346,9 +359,9 @@ A loss event sits under a business entity or under a risk, and a loss event hold
 its recoveries.
 
 KPI CARDS
-- Loss events in the window.
-- Total gross loss amount in the window.
-- Total amount recovered in the window.
+- Loss events.
+- Total gross loss amount.
+- Total amount recovered.
 - Loss events still open.
 
 CHARTS - first six
@@ -377,7 +390,7 @@ Columns: record name, the loss event it belongs to, impact or recovery, type, am
 date recorded, business entity, status.
 
 CHARTS - closing row
-13. Running total of gross loss by month across the window.
+13. Total gross loss by month across the window.
 14. Loss events above the reporting threshold against those below it.
 15. Loss events by owner, most first.""",
 )

@@ -32,6 +32,14 @@ def source() -> DataSource:
                       tables=[TYPE, "openpages.SOXControl"])
 
 
+@pytest.fixture(autouse=True)
+def answers(monkeypatch):
+    """Every query answers with one row unless a test says otherwise. A bound that empties a
+    chart is dropped, so without this every test here would be testing that rule instead."""
+    monkeypatch.setattr(report_window, "run_sql",
+                        lambda source, sql, params=None, **k: {"columns": ["c"], "rows": [["x"]]})
+
+
 @pytest.fixture
 def mapped(monkeypatch):
     """The column each chart is bounded on, as map_filter would have chosen it - except that here
@@ -103,3 +111,46 @@ def test_the_bound_is_the_one_a_date_filter_would_have_written(source, mapped):
         DATED, source, [date_filter],
         {"win": {"date_from": START.isoformat(), "date_to": END.isoformat()}}, "w1")
     assert w["sql"] == same
+
+
+# ---------- a bound only stays if it answers ----------
+
+def _answering(monkeypatch, rows_by_sql):
+    """Each query answers with however many rows the test says, by whether it carries the bound."""
+    def fake(source, sql, params=None, **kw):
+        bounded = "Date of Occurrence] >=" in sql
+        count = rows_by_sql[bounded]
+        if count is None:
+            raise RuntimeError("OP-60002: the query failed to be transformed into SQL")
+        return {"columns": ["c"], "rows": [["x"]] * count}
+    monkeypatch.setattr(report_window, "run_sql", fake)
+
+
+def test_a_bound_that_empties_a_chart_which_had_records_is_dropped(source, mapped, monkeypatch):
+    """The failure that made a whole report read nought. A date field spelled differently here,
+    or holding nothing, does not fail - the query runs and matches no row. The window cannot be
+    why a chart built from these records now has none, so the bound goes and the chart is named."""
+    _answering(monkeypatch, {True: 0, False: 207})
+    [w], unbounded = report_window.bake(None, source, [widget("w1", DATED, "By status")], START, END)
+    assert w["sql"] == DATED
+    assert unbounded == ["By status"]
+
+
+def test_a_window_with_genuinely_nothing_in_it_keeps_its_bound(source, mapped, monkeypatch):
+    """No tests were run in these three months. That is an answer, and widening the report to all
+    time to avoid showing it would be the lie."""
+    _answering(monkeypatch, {True: 0, False: 0})
+    [w], unbounded = report_window.bake(None, source, [widget("w1", DATED, "By status")], START, END)
+    assert w["sql"] != DATED and not unbounded
+
+
+def test_a_bound_the_query_service_refuses_is_dropped(source, mapped, monkeypatch):
+    _answering(monkeypatch, {True: None, False: 207})
+    [w], unbounded = report_window.bake(None, source, [widget("w1", DATED, "By status")], START, END)
+    assert w["sql"] == DATED and unbounded == ["By status"]
+
+
+def test_a_bound_that_still_answers_is_kept(source, mapped, monkeypatch):
+    _answering(monkeypatch, {True: 91, False: 207})
+    [w], unbounded = report_window.bake(None, source, [widget("w1", DATED, "By status")], START, END)
+    assert "Date of Occurrence] >=" in w["sql"] and not unbounded
