@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from .datasources import DataSource, table_columns
 from .models import ChatConversation, ChatMessage, Report, User
 from .openpages_prompts import CURATED
+from .openpages_template_prompts import FROM_TEMPLATES
 from .prompt_ideas import _FREE_TEXT, _GROUP_WORDS, _MEASURE_WORDS, _NUMBER_TYPES, _label, _pick
 
 # How many recommendations to offer. Six fits on one row of cards without a scroll, and a list
@@ -65,6 +66,11 @@ class Idea:
     # namespace's real parent/child pairs rather than left to guess which joins are legal -
     # which is the difference between a report that builds and one that drops half its charts.
     data_model: str = ""
+    # What is actually sent when the request has not been edited. `prompt` is what the box shows -
+    # ordinary words, nothing to fill in - while this is the same request written against the
+    # Query Service. Keeping them apart means the box can be readable without the queries losing
+    # the precision that makes them run. Empty when the two are the same.
+    build_prompt: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -434,8 +440,14 @@ def recommend(db: Session, user: User, source: DataSource, limit: int = MAX_IDEA
     # which object types are shared, not which of them may legally be joined. Offering a guess
     # beside them would only invite someone to pick the guess.
     if source.is_openpages:
-        return [asdict(Idea(id=c.id, title=c.title, why=c.why, reason="curated", prompt=c.prompt,
-                            charts=c.charts, subject=c.namespace, data_model=c.model_key)) for c in CURATED]
+        # The box gets the plain-English wording and the builder gets the technical one. The
+        # person reading the box is deciding whether this is the report they want, not auditing
+        # its SQL - and a box full of [OPSS-Ctl:Operating Effectiveness] is something nobody
+        # dares edit, which defeats the point of filling the box rather than building at once.
+        return [asdict(Idea(id=c.id, title=c.title, why=c.why, reason="curated", prompt=c.plain,
+                            build_prompt=c.prompt, charts=c.charts, subject=c.namespace,
+                            data_model=c.model_key))
+                for c in (*FROM_TEMPLATES, *CURATED)]
 
     prompts = past_prompts(db, user, source)
     report_prompts = [r.prompt for r in db.scalars(

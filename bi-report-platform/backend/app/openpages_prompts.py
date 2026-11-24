@@ -37,6 +37,12 @@ class CuratedPrompt:
     # Empty for the cross-namespace report, which is written to need no joins at all.
     model_key: str
     why: str
+    # The request in ordinary words - no query language, nothing to fill in. This is what the box
+    # shows, because the box is for the person: SQL in it is something to be frightened of editing
+    # rather than something to read.
+    plain: str
+    # The same request written against the Query Service, which is what is actually sent. It names
+    # the field groups and the exact join shape, and that precision is why the charts run.
     prompt: str
     charts: int
 
@@ -49,6 +55,123 @@ CURATED: tuple[CuratedPrompt, ...] = (
         model_key='operational_risk_and_control/default',
         why='The whole default model on one page: what the organisation is made of, how well it is controlled, what it has lost and what is being watched. This is the board-level read.',
         charts=42,
+        plain=r"""Build a report called "Enterprise GRC Control Tower" from my IBM OpenPages data.
+ 
+This is the board-level page. It should answer, on one screen: what the
+organisation is made of, how well it is controlled, what it has lost, and what
+is being watched.
+ 
+Records to use: business entities, processes and sub-processes, risks,
+controls, control tests and test results, risk assessments, key risk
+indicators and their readings, key performance indicators and their readings,
+accounts, sub-accounts and assertions, loss events with their impacts and
+recoveries, programmes and questionnaire assessments, vendors, resources,
+employees, business continuity plans, locations, external ORX losses, external
+FIRST losses, and risk evaluations.
+ 
+How these are related, parent to child:
+business entity contains business entities; business entity contains
+processes; a process contains sub-processes; a sub-process holds risks; a risk
+holds controls; a control holds tests; a test holds test results. Separately, a
+business entity holds risk assessments, key risk indicators (each with its
+readings), key performance indicators (each with its readings), accounts (each
+with sub-accounts, each with assertions), loss events (each with impacts and
+recoveries), programmes (each with questionnaire assessments), vendors,
+resources, employees, continuity plans, locations and external losses. A risk
+also holds its risk evaluations.
+ 
+Across the top, show these counts, each one counting a single kind of record:
+total business entities, total processes, total risks, total controls, total
+control tests, total loss events, total key risk indicators, total risk
+assessments, total accounts, total vendors, total employees and total
+continuity plans.
+ 
+Section "The organisation"
+- A donut of business entities by entity type.
+- A donut of business entities by status.
+- A bar chart of the number of processes under each business entity.
+- A summary table of business entities with: name, description, entity type,
+  status, location or region, and owner.
+ 
+Section "Risk and control health"
+- A donut of risks by inherent risk rating.
+- A donut of risks by residual risk rating.
+- A donut of risks by whether they sit within tolerance.
+- A bar chart of risks by risk category or domain.
+- A donut of controls by control type.
+- A donut of controls by whether they are automated or manual.
+- A donut of controls by effectiveness rating.
+- A bar chart of controls by frequency.
+- A summary table of risks with: risk name, business entity, inherent rating,
+  residual rating, risk category, owner and status.
+- A summary table of controls with: control name, the risk it sits under,
+  control type, automation, frequency, effectiveness and owner.
+ 
+Section "Testing"
+- A donut of control tests by status.
+- A donut of test results by outcome, showing passes against exceptions.
+- A bar chart of the number of tests under each control, highest first.
+- A summary table of test results with: test name, the control tested,
+  test date, outcome, tester and any exception note.
+ 
+Section "Losses"
+- A bar chart of loss events by month of occurrence, for the last two years.
+- A donut of loss events by loss category.
+- A donut of loss events by status.
+- A bar chart of total loss amount by business entity, biggest first.
+- A bar chart comparing total gross loss against total recovered amount.
+- A summary table of loss events with: event name, business entity, event
+  date, loss category, gross amount, recovered amount and status.
+ 
+Section "What is being watched"
+- A donut of key risk indicators by breach status, red against amber against
+  green.
+- A line chart of indicator readings over time for the indicators that are
+  currently breached.
+- A donut of key performance indicators by status.
+- A donut of risk assessments by status.
+- A summary table of key risk indicators with: indicator name, business
+  entity, threshold, latest reading, breach status, owner and frequency.
+ 
+Section "The wider estate"
+- A donut of vendors by criticality or tier.
+- A donut of business continuity plans by status.
+- A bar chart of employees by business entity.
+- A donut comparing internal loss events against external ORX and FIRST
+  losses by count.
+- A summary table of vendors with: vendor name, business entity, criticality,
+  service provided, contract status and relationship owner.
+ 
+HOW TO BUILD IT
+ 
+- Every number tile counts one kind of record only. Do not add two kinds of
+  record together, and do not let a record be counted twice.
+- When you count records of one kind, count them on their own. Do not count
+  and link to a related record in the same step - do one or the other.
+- Only link records that are directly related as parent and child. If two
+  records are related through a third one in between, go through that one,
+  step by step.
+- You can only link in one step at a time, and when you link, show the fields
+  of the child record, not the parent's.
+- Charts that break records down by a category should use fields that hold a
+  fixed list of values - status, rating, type, severity, priority, yes/no.
+- Do not try to sort by one of those fixed-list fields; sort by the count or
+  by a plain text or date field instead.
+- Do not try to group dates into months, quarters or years as part of reading
+  the data. Read the plain date, then roll it up to month, quarter or year
+  when you build the chart.
+- Do not try to add up amounts as part of reading the data. Bring back the
+  amounts and total them when you build the chart.
+- Do not ask for only the top few rows. Bring back the rows and let the chart
+  show the ones that matter.
+- Field names are not identical in every OpenPages installation. Read the
+  field list of each record type first and use the fields that are actually
+  there. If a field a chart needs is missing, drop that one chart, say in a
+  note which field was missing, and build the rest of the page anyway.
+- Never invent a value for a dropdown field. Read the values the field really
+  has and filter on those.
+- Give the page a filter for business entity at the top, so the whole report
+  can be narrowed to one part of the organisation.""",
         prompt=r"""Build an "Enterprise GRC Control Tower" dashboard on this IBM OpenPages connection, using
 the DEFAULT namespace of the Operational Risk and Control model.
  
@@ -173,6 +296,120 @@ RULES - IBM OpenPages Query Service SQL
         model_key='operational_risk_and_control/orm1',
         why='Everything that actually went wrong and everything modelled as possibly going wrong: losses, their impacts and recoveries, incidents, external ORX losses, scenarios and their results, with the evaluations behind the risk and control ratings.',
         charts=36,
+        plain=r"""Build a report called "Operational Loss, Incident and Scenario Book" from my
+IBM OpenPages data.
+ 
+This page covers everything that actually went wrong and everything modelled as
+possibly going wrong: losses, their impacts and recoveries, incidents, external
+losses, scenarios and their results, with the evaluations behind the risk and
+control ratings.
+ 
+Records to use: business entities, processes and sub-processes, risks,
+controls, loss events with their impacts and recoveries, external ORX losses,
+scenario analyses and their results, incidents, root cause analyses, risk
+evaluations and control evaluations.
+ 
+How these are related, parent to child:
+business entity contains business entities; business entity contains
+processes; a process contains sub-processes; a sub-process holds risks; a risk
+holds controls. A business entity also holds loss events (each with impacts and
+recoveries), external ORX losses, scenario analyses (each with scenario
+results) and incidents. A risk holds its evaluations, a control holds its
+evaluations, and a control holds its root cause analyses.
+ 
+Across the top, show these counts, each counting a single kind of record:
+total loss events, total loss impacts, total loss recoveries, total incidents,
+total external ORX losses, total scenario analyses, total scenario results,
+total risks, total controls, open incidents, loss events still open, and
+scenarios rated severe.
+ 
+Section "Loss picture"
+- A bar chart of loss events by month of occurrence over the last 24 months.
+- A donut of loss events by Basel event category.
+- A donut of loss events by status.
+- A donut of loss events by severity.
+- A bar chart of total gross loss amount by business entity, biggest first.
+- A summary table of loss events with: event name, business entity, date of
+  occurrence, date discovered, event category, gross amount and status.
+ 
+Section "Impact and recovery"
+- A donut of loss impacts by impact type, such as financial, reputational or
+  regulatory.
+- A bar chart of total impact amount by impact type.
+- A donut of recoveries by recovery type, such as insurance or third party.
+- A bar chart comparing gross loss against recovered amount by business
+  entity.
+- A summary table of loss impacts with: impact description, the loss event it
+  belongs to, impact type, amount, currency and date recorded.
+- A summary table of recoveries with: recovery description, the loss event,
+  recovery type, amount recovered, recovery date and status.
+ 
+Section "Incidents"
+- A donut of incidents by status.
+- A donut of incidents by severity.
+- A bar chart of incidents by month reported.
+- A bar chart of incidents by business entity.
+- A summary table of incidents with: incident name, business entity, reported
+  date, severity, status, owner and whether it turned into a loss.
+ 
+Section "Root cause"
+- A donut of root cause analyses by root cause category.
+- A bar chart of root cause analyses by the control they sit under.
+- A summary table of root cause analyses with: analysis name, the control it
+  belongs to, root cause category, finding, corrective action and status.
+ 
+Section "Scenarios"
+- A donut of scenario analyses by status.
+- A donut of scenario analyses by severity or likelihood band.
+- A bar chart of scenario results by estimated loss band.
+- A bar chart of scenario analyses by business entity.
+- A summary table of scenario analyses with: scenario name, business entity,
+  scenario type, likelihood, estimated loss, owner and status.
+- A summary table of scenario results with: result name, the scenario it
+  belongs to, estimated loss, confidence level, assessment date and assessor.
+ 
+Section "External losses"
+- A donut of external ORX losses by event category.
+- A bar chart of external ORX losses by year.
+- A summary table of external losses with: loss name, business entity, event
+  category, reported amount, loss date and source.
+ 
+Section "Behind the ratings"
+- A donut of risk evaluations by resulting risk rating.
+- A donut of control evaluations by resulting effectiveness rating.
+- A summary table of risk evaluations with: evaluation name, the risk, rating
+  given, evaluation date, evaluator and method.
+ 
+HOW TO BUILD IT
+ 
+- Every number tile counts one kind of record only. Do not add two kinds of
+  record together, and do not let a record be counted twice.
+- When you count records of one kind, count them on their own. Do not count
+  and link to a related record in the same step - do one or the other.
+- Only link records that are directly related as parent and child. If two
+  records are related through a third one in between, go through that one,
+  step by step.
+- You can only link in one step at a time, and when you link, show the fields
+  of the child record, not the parent's.
+- Charts that break records down by a category should use fields that hold a
+  fixed list of values - status, rating, type, severity, priority, yes/no.
+- Do not try to sort by one of those fixed-list fields; sort by the count or
+  by a plain text or date field instead.
+- Do not try to group dates into months, quarters or years as part of reading
+  the data. Read the plain date, then roll it up to month, quarter or year
+  when you build the chart.
+- Do not try to add up amounts as part of reading the data. Bring back the
+  amounts and total them when you build the chart.
+- Do not ask for only the top few rows. Bring back the rows and let the chart
+  show the ones that matter.
+- Field names are not identical in every OpenPages installation. Read the
+  field list of each record type first and use the fields that are actually
+  there. If a field a chart needs is missing, drop that one chart, say in a
+  note which field was missing, and build the rest of the page anyway.
+- Never invent a value for a dropdown field. Read the values the field really
+  has and filter on those.
+- Give the page a filter for business entity at the top, so the whole report
+  can be narrowed to one part of the organisation.""",
         prompt=r"""Build an "Operational Loss, Incident and Scenario Book" dashboard on this IBM OpenPages
 connection, using the ORM1 namespace.
  
@@ -279,6 +516,103 @@ RULES - IBM OpenPages Query Service SQL
         model_key='operational_risk_and_control/orm2',
         why='The namespace where indicators and losses hang off the risk itself rather than the entity. The report reads appetite: which risks are watched, what the readings say, and which risks have actually produced losses.',
         charts=32,
+        plain=r"""Build a report called "Risk Appetite and Indicator Monitoring" from my IBM
+OpenPages data.
+ 
+In this part of the model the indicators and the losses hang off the risk
+itself rather than off the business entity. The report reads appetite: which
+risks are watched, what the readings say, and which risks have actually
+produced losses.
+ 
+Records to use: business entities, processes and sub-processes, risks, key risk
+indicators and their readings, loss events with their impacts and recoveries,
+controls, risk evaluations and control evaluations.
+ 
+How these are related, parent to child:
+business entity contains business entities; business entity contains
+processes; a process contains sub-processes and also holds risks directly; a
+sub-process contains sub-processes and holds risks. A risk holds its key risk
+indicators, and each indicator holds its readings. A risk also holds its own
+loss events, and each loss event holds its impacts and recoveries. A risk holds
+its controls, and holds its risk evaluations; a control holds its control
+evaluations.
+ 
+Across the top, show these counts, each counting a single kind of record:
+total risks, total key risk indicators, total indicator readings, total loss
+events, total controls, risks outside tolerance, indicators in red breach,
+indicators in amber, risks with no indicator at all, risks rated high or
+critical on residual, loss events in the last 12 months, and total loss
+amount.
+ 
+Section "Appetite"
+- A donut of risks by whether they sit within tolerance.
+- A donut of risks by residual risk rating.
+- A donut of risks by inherent risk rating.
+- A bar chart comparing inherent against residual rating across the risk
+  population.
+- A bar chart of risks outside tolerance by business entity.
+- A summary table of risks with: risk name, business entity, inherent rating,
+  residual rating, within tolerance, risk owner and status.
+ 
+Section "Indicators"
+- A donut of key risk indicators by breach status.
+- A donut of key risk indicators by measurement frequency.
+- A bar chart of the number of indicators attached to each risk, most first.
+- A bar chart of indicators by business entity, split by breach status.
+- A summary table of key risk indicators with: indicator name, the risk it
+  monitors, threshold, latest value, breach status, frequency and owner.
+ 
+Section "Readings over time"
+- A line chart of indicator readings by month for the past 24 months.
+- A bar chart of readings by month counting how many were in breach.
+- A summary table of indicator readings with: the indicator, reading date,
+  value, threshold at the time, breach status and who recorded it.
+ 
+Section "Where appetite was actually breached"
+- A bar chart of loss events by month of occurrence.
+- A bar chart of the number of loss events under each risk, most first.
+- A donut of loss events by category.
+- A bar chart of total loss amount by risk, biggest first.
+- A summary table of loss events with: event name, the risk it belongs to,
+  occurrence date, category, gross amount, recovered amount and status.
+ 
+Section "Controls and evaluations"
+- A donut of controls by effectiveness rating.
+- A donut of controls by whether they are automated or manual.
+- A donut of risk evaluations by rating given.
+- A summary table of controls with: control name, the risk, control type,
+  automation, frequency, effectiveness and owner.
+ 
+HOW TO BUILD IT
+ 
+- Every number tile counts one kind of record only. Do not add two kinds of
+  record together, and do not let a record be counted twice.
+- When you count records of one kind, count them on their own. Do not count
+  and link to a related record in the same step - do one or the other.
+- Only link records that are directly related as parent and child. If two
+  records are related through a third one in between, go through that one,
+  step by step.
+- You can only link in one step at a time, and when you link, show the fields
+  of the child record, not the parent's.
+- Charts that break records down by a category should use fields that hold a
+  fixed list of values - status, rating, type, severity, priority, yes/no.
+- Do not try to sort by one of those fixed-list fields; sort by the count or
+  by a plain text or date field instead.
+- Do not try to group dates into months, quarters or years as part of reading
+  the data. Read the plain date, then roll it up to month, quarter or year
+  when you build the chart.
+- Do not try to add up amounts as part of reading the data. Bring back the
+  amounts and total them when you build the chart.
+- Do not ask for only the top few rows. Bring back the rows and let the chart
+  show the ones that matter.
+- Field names are not identical in every OpenPages installation. Read the
+  field list of each record type first and use the fields that are actually
+  there. If a field a chart needs is missing, drop that one chart, say in a
+  note which field was missing, and build the rest of the page anyway.
+- Never invent a value for a dropdown field. Read the values the field really
+  has and filter on those.
+- Give the page a filter for business entity at the top, so the whole report
+  can be narrowed to one part of the organisation.""",
         prompt=r"""Build a "Risk Appetite and Indicator Monitoring" dashboard on this IBM OpenPages connection,
 using the ORM2 namespace, where KeyRiskIndicator and LossEvent are children of SOXRisk.
  
@@ -385,6 +719,104 @@ RULES - IBM OpenPages Query Service SQL
         model_key='operational_risk_and_control/orm3',
         why='The conduct chain: a complaint, what was found when it was investigated, and what the customer was given. Plus the scenario-to-loss link that only ORM3 carries.',
         charts=30,
+        plain=r"""Build a report called "Conduct Risk: Complaints, Investigations and Redress"
+from my IBM OpenPages data.
+ 
+This page follows the conduct chain: a customer complaint, what was found when
+it was investigated, and what the customer was given at the end. It also covers
+the link from a scenario straight through to a loss.
+ 
+Records to use: business entities, customer complaints, investigations,
+outcome and redress records, scenario analyses and their results, loss events
+with their impacts and recoveries.
+ 
+How these are related, parent to child:
+a business entity holds customer complaints; a complaint holds its
+investigations; a complaint also holds its outcome and redress records. A
+business entity holds scenario analyses; a scenario holds its scenario results
+and also holds loss events; each loss event holds its impacts and recoveries.
+ 
+Important: complaints, investigations and redress records are solution-specific
+record types, so their fields differ between installations. Read the field list
+of each one first and use the fields that are really there, matching on meaning
+rather than on an exact name.
+ 
+Across the top, show these counts, each counting a single kind of record:
+total complaints, open complaints, complaints closed this year, total
+investigations, investigations still open, total redress records, complaints
+upheld, complaints not upheld, total redress amount, total scenario analyses,
+total loss events linked to scenarios, and total loss amount.
+ 
+Section "Complaints"
+- A donut of complaints by status.
+- A donut of complaints by product or service complained about.
+- A donut of complaints by complaint category or root cause.
+- A donut of complaints by channel received.
+- A bar chart of complaints by month received over the last 24 months.
+- A bar chart of complaints by business entity, most first.
+- A bar chart of complaints grouped by how long they have been open: 1 to 10
+  days, 11 to 30 days, 31 to 60 days, and above 60 days.
+- A summary table of complaints with: reference, business entity, date
+  received, product, category, status and owner.
+ 
+Section "Investigations"
+- A donut of investigations by status.
+- A donut of investigations by finding or conclusion.
+- A bar chart of the number of investigations under each complaint, most
+  first.
+- A bar chart of investigations by month opened.
+- A summary table of investigations with: reference, the complaint it belongs
+  to, opened date, closed date, investigator, finding and status.
+ 
+Section "Outcome and redress"
+- A donut of outcome records by outcome, upheld against partly upheld against
+  not upheld.
+- A donut of redress by redress type, such as refund, compensation or apology.
+- A bar chart of total redress amount by month.
+- A bar chart of total redress amount by product.
+- A summary table of outcome and redress with: reference, the complaint,
+  outcome, redress type, amount paid, date paid and status.
+ 
+Section "Scenario to loss"
+- A donut of scenario analyses by status.
+- A bar chart of the number of loss events under each scenario.
+- A bar chart of total loss amount by scenario, biggest first.
+- A donut of loss events by category.
+- A summary table of scenario analyses with: scenario name, business entity,
+  scenario type, estimated loss, number of linked losses, owner and status.
+- A summary table of loss events with: event name, the scenario it belongs to,
+  occurrence date, category, gross amount and recovered amount.
+ 
+HOW TO BUILD IT
+ 
+- Every number tile counts one kind of record only. Do not add two kinds of
+  record together, and do not let a record be counted twice.
+- When you count records of one kind, count them on their own. Do not count
+  and link to a related record in the same step - do one or the other.
+- Only link records that are directly related as parent and child. If two
+  records are related through a third one in between, go through that one,
+  step by step.
+- You can only link in one step at a time, and when you link, show the fields
+  of the child record, not the parent's.
+- Charts that break records down by a category should use fields that hold a
+  fixed list of values - status, rating, type, severity, priority, yes/no.
+- Do not try to sort by one of those fixed-list fields; sort by the count or
+  by a plain text or date field instead.
+- Do not try to group dates into months, quarters or years as part of reading
+  the data. Read the plain date, then roll it up to month, quarter or year
+  when you build the chart.
+- Do not try to add up amounts as part of reading the data. Bring back the
+  amounts and total them when you build the chart.
+- Do not ask for only the top few rows. Bring back the rows and let the chart
+  show the ones that matter.
+- Field names are not identical in every OpenPages installation. Read the
+  field list of each record type first and use the fields that are actually
+  there. If a field a chart needs is missing, drop that one chart, say in a
+  note which field was missing, and build the rest of the page anyway.
+- Never invent a value for a dropdown field. Read the values the field really
+  has and filter on those.
+- Give the page a filter for business entity at the top, so the whole report
+  can be narrowed to one part of the organisation.""",
         prompt=r"""Build a "Conduct Risk: Complaints, Investigations and Redress" dashboard on this IBM
 OpenPages connection, using the ORM3 namespace.
  
@@ -488,6 +920,103 @@ RULES - IBM OpenPages Query Service SQL
         model_key='operational_risk_and_control/pm',
         why='Delivery and the risk carried by it in one place: projects under each entity, the risks and controls on those projects, and the milestone / deliverable / task breakdown.',
         charts=32,
+        plain=r"""Build a report called "Project Delivery and Project Risk" from my IBM
+OpenPages data.
+ 
+This page puts delivery and the risk carried by it in one place: the projects
+under each business entity, the risks and controls on those projects, and the
+milestone, deliverable and task breakdown underneath.
+ 
+Records to use: business entities, projects, milestones, deliverables, tasks
+and sub-tasks, risks and controls.
+ 
+How these are related, parent to child:
+a business entity holds projects; a project holds its risks, and each risk
+holds its controls; a project holds its milestones; a deliverable holds its
+tasks; a task holds its sub-tasks.
+ 
+Important: projects, milestones, deliverables, tasks and sub-tasks are
+solution-specific record types, so their fields differ between installations.
+Read the field list of each one first and use what is really there, matching on
+meaning rather than on an exact name. Note that the record type named
+"Sub-Task" has a hyphen in its name - use the name exactly as it appears.
+ 
+Across the top, show these counts, each counting a single kind of record:
+total projects, projects in flight, projects completed, total milestones,
+milestones overdue, total deliverables, total tasks, tasks overdue, total
+sub-tasks, total project risks, risks rated high or critical, and total
+controls on project risks.
+ 
+Section "Portfolio"
+- A donut of projects by status.
+- A donut of projects by delivery phase or stage.
+- A donut of projects by health, such as red, amber or green.
+- A bar chart of projects by business entity, most first.
+- A bar chart of projects by planned completion month over the next 18 months.
+- A summary table of projects with: project name, business entity, project
+  manager, start date, planned end date, phase, health and status.
+ 
+Section "Milestones"
+- A donut of milestones by status.
+- A bar chart of milestones by planned date, by month.
+- A bar chart of the number of milestones under each project, most first.
+- A bar chart of milestones grouped by how overdue they are: 1 to 10 days, 11
+  to 30 days, 31 to 60 days, and above 60 days.
+- A summary table of milestones with: milestone name, the project, planned
+  date, actual date, status, owner and whether it is overdue.
+ 
+Section "Work breakdown"
+- A donut of tasks by status.
+- A donut of tasks by priority.
+- A bar chart of the number of tasks under each deliverable, most first.
+- A bar chart of tasks by due month.
+- A donut of sub-tasks by status.
+- A summary table of tasks with: task name, the deliverable it belongs to,
+  assignee, start date, due date, priority and status.
+- A summary table of deliverables with: deliverable name, owner, due date,
+  number of tasks, completion state and status.
+ 
+Section "Project risk"
+- A donut of project risks by residual risk rating.
+- A donut of project risks by inherent risk rating.
+- A donut of project risks by category.
+- A bar chart of the number of risks carried by each project, most first.
+- A donut of controls on project risks by effectiveness.
+- A summary table of project risks with: risk name, the project, inherent
+  rating, residual rating, category, owner and status.
+- A summary table of controls with: control name, the risk, control type,
+  frequency, effectiveness and owner.
+ 
+HOW TO BUILD IT
+ 
+- Every number tile counts one kind of record only. Do not add two kinds of
+  record together, and do not let a record be counted twice.
+- When you count records of one kind, count them on their own. Do not count
+  and link to a related record in the same step - do one or the other.
+- Only link records that are directly related as parent and child. If two
+  records are related through a third one in between, go through that one,
+  step by step.
+- You can only link in one step at a time, and when you link, show the fields
+  of the child record, not the parent's.
+- Charts that break records down by a category should use fields that hold a
+  fixed list of values - status, rating, type, severity, priority, yes/no.
+- Do not try to sort by one of those fixed-list fields; sort by the count or
+  by a plain text or date field instead.
+- Do not try to group dates into months, quarters or years as part of reading
+  the data. Read the plain date, then roll it up to month, quarter or year
+  when you build the chart.
+- Do not try to add up amounts as part of reading the data. Bring back the
+  amounts and total them when you build the chart.
+- Do not ask for only the top few rows. Bring back the rows and let the chart
+  show the ones that matter.
+- Field names are not identical in every OpenPages installation. Read the
+  field list of each record type first and use the fields that are actually
+  there. If a field a chart needs is missing, drop that one chart, say in a
+  note which field was missing, and build the rest of the page anyway.
+- Never invent a value for a dropdown field. Read the values the field really
+  has and filter on those.
+- Give the page a filter for business entity at the top, so the whole report
+  can be narrowed to one part of the organisation.""",
         prompt=r"""Build a "Project Delivery and Project Risk" dashboard on this IBM OpenPages connection,
 using the PM namespace.
  
@@ -595,6 +1124,107 @@ RULES - IBM OpenPages Query Service SQL
         model_key='operational_risk_and_control/ra1',
         why='One clean chain, assessment to test result. The report follows it link by link and shows where it breaks: assessments with no risks, risks with no controls, controls never tested, tests with exceptions.',
         charts=36,
+        plain=r"""Build a report called "Risk Assessment Assurance Chain" from my IBM OpenPages
+data.
+ 
+This part of the model holds one clean chain, from an assessment all the way
+down to a test result. The report follows it link by link and shows where it
+breaks: assessments with no risks under them, risks with no controls, controls
+that were never tested, and tests that came back with exceptions.
+ 
+Records to use: business entities, risk assessments, risks, controls, control
+tests and test results, risk evaluations and control evaluations.
+ 
+How these are related, parent to child:
+business entity contains business entities; a business entity holds its risk
+assessments; an assessment holds its risks; a risk holds its controls; a
+control holds its tests; a test holds its test results. A risk also holds its
+risk evaluations and a control holds its control evaluations.
+ 
+Across the top, show these counts, each counting a single kind of record:
+total risk assessments, assessments completed, assessments still in progress,
+total risks assessed, total controls, controls tested, total tests, total test
+results, tests that failed, risks with no control beneath them, controls never
+tested, and total risk evaluations.
+ 
+Section "Assessments"
+- A donut of risk assessments by status.
+- A donut of risk assessments by assessment type.
+- A bar chart of assessments by completion month over the last 24 months.
+- A bar chart of assessments by business entity, most first.
+- A summary table of risk assessments with: assessment name, business entity,
+  assessment type, start date, completion date, assessor and status.
+ 
+Section "Risks found"
+- A donut of risks by inherent risk rating.
+- A donut of risks by residual risk rating.
+- A donut of risks by category.
+- A bar chart of the number of risks under each assessment, most first.
+- A summary table of risks with: risk name, the assessment it came from,
+  inherent rating, residual rating, category, owner and status.
+ 
+Section "Controls"
+- A donut of controls by control type.
+- A donut of controls by whether they are automated or manual.
+- A donut of controls by effectiveness rating.
+- A bar chart of the number of controls under each risk, most first.
+- A bar chart showing risks that have at least one control against risks that
+  have none.
+- A summary table of controls with: control name, the risk, control type,
+  automation, frequency, effectiveness and owner.
+ 
+Section "Testing"
+- A donut of control tests by status.
+- A donut of control tests by test method.
+- A bar chart of tests by scheduled month.
+- A bar chart showing controls that have been tested against controls that
+  have not.
+- A summary table of control tests with: test name, the control, test method,
+  scheduled date, completed date, tester and status.
+ 
+Section "Results and exceptions"
+- A donut of test results by outcome.
+- A bar chart of failed test results by month.
+- A bar chart of the number of exceptions by control, most first.
+- A summary table of test results with: result name, the test it belongs to,
+  result date, outcome, exception noted, severity and who signed it off.
+ 
+Section "Where the chain breaks"
+- A bar chart counting, side by side: assessments with no risks, risks with no
+  controls, controls with no tests, and tests with no results.
+- A summary table of the broken links with: record name, record type, business
+  entity, owner, last updated date and what is missing beneath it.
+ 
+HOW TO BUILD IT
+ 
+- Every number tile counts one kind of record only. Do not add two kinds of
+  record together, and do not let a record be counted twice.
+- When you count records of one kind, count them on their own. Do not count
+  and link to a related record in the same step - do one or the other.
+- Only link records that are directly related as parent and child. If two
+  records are related through a third one in between, go through that one,
+  step by step.
+- You can only link in one step at a time, and when you link, show the fields
+  of the child record, not the parent's.
+- Charts that break records down by a category should use fields that hold a
+  fixed list of values - status, rating, type, severity, priority, yes/no.
+- Do not try to sort by one of those fixed-list fields; sort by the count or
+  by a plain text or date field instead.
+- Do not try to group dates into months, quarters or years as part of reading
+  the data. Read the plain date, then roll it up to month, quarter or year
+  when you build the chart.
+- Do not try to add up amounts as part of reading the data. Bring back the
+  amounts and total them when you build the chart.
+- Do not ask for only the top few rows. Bring back the rows and let the chart
+  show the ones that matter.
+- Field names are not identical in every OpenPages installation. Read the
+  field list of each record type first and use the fields that are actually
+  there. If a field a chart needs is missing, drop that one chart, say in a
+  note which field was missing, and build the rest of the page anyway.
+- Never invent a value for a dropdown field. Read the values the field really
+  has and filter on those.
+- Give the page a filter for business entity at the top, so the whole report
+  can be narrowed to one part of the organisation.""",
         prompt=r"""Build a "Risk Assessment Assurance Chain" dashboard on this IBM OpenPages connection, using
 the RA1 namespace: SOXBusEntity to RiskAssessment to SOXRisk to SOXControl to SOXTest to
 SOXTestResult, with RiskEval under the risk and CtlEval under the control.
@@ -707,6 +1337,110 @@ RULES - IBM OpenPages Query Service SQL
         model_key='operational_risk_and_control/ra2',
         why='RA2 runs the assessment over processes rather than straight to risks, so this is the RCSA report: how much of the process estate is assessed, what the assessment found, and whether the indicators and losses underneath agree with it.',
         charts=37,
+        plain=r"""Build a report called "RCSA Coverage and Outcome" from my IBM OpenPages data.
+ 
+In this part of the model the assessment runs over processes rather than
+straight to risks, so this is the risk and control self-assessment report: how
+much of the process estate has actually been assessed, what the assessment
+found, and whether the indicators and losses underneath agree with it.
+ 
+Records to use: business entities, risk assessments, processes and
+sub-processes, risks, controls, key risk indicators and their readings, loss
+events with their impacts and recoveries, risk evaluations and control
+evaluations.
+ 
+How these are related, parent to child:
+business entity contains business entities; a business entity holds its risk
+assessments; an assessment holds processes; a process holds sub-processes and
+also holds risks; a sub-process holds further sub-processes and holds risks. A
+risk holds its controls, its key risk indicators (each with readings), its own
+loss events (each with impacts and recoveries) and its risk evaluations; a
+control holds its control evaluations.
+ 
+Across the top, show these counts, each counting a single kind of record:
+total risk assessments, total processes, processes covered by an assessment,
+processes never assessed, total sub-processes, total risks identified, total
+controls, total key risk indicators, indicators in breach, total loss events,
+total loss amount, and risks rated high or critical.
+ 
+Section "Coverage"
+- A bar chart showing processes that sit under an assessment against processes
+  that do not.
+- A bar chart of the number of processes under each assessment, most first.
+- A donut of processes by status.
+- A donut of processes by process type or category.
+- A bar chart of processes by business entity, most first.
+- A summary table of processes with: process name, business entity, the
+  assessment covering it, process owner, criticality, last assessed date and
+  status.
+ 
+Section "The assessments themselves"
+- A donut of risk assessments by status.
+- A donut of risk assessments by assessment type.
+- A bar chart of assessments by completion month.
+- A summary table of risk assessments with: assessment name, business entity,
+  type, start date, completion date, assessor and status.
+ 
+Section "What the assessment found"
+- A donut of risks by inherent risk rating.
+- A donut of risks by residual risk rating.
+- A donut of risks by whether they sit within tolerance.
+- A bar chart of the number of risks under each process, most first.
+- A donut of controls by effectiveness rating.
+- A donut of controls by whether they are automated or manual.
+- A summary table of risks with: risk name, the process it sits under,
+  inherent rating, residual rating, within tolerance, owner and status.
+- A summary table of controls with: control name, the risk, control type,
+  frequency, automation, effectiveness and owner.
+ 
+Section "Does the evidence agree"
+- A donut of key risk indicators by breach status.
+- A line chart of indicator readings by month over the past 24 months.
+- A bar chart of the number of loss events under each risk, most first.
+- A bar chart of total loss amount by process, biggest first.
+- A bar chart comparing, for each process, its assessed residual rating
+  against the number of losses it has actually produced.
+- A summary table of key risk indicators with: indicator name, the risk,
+  threshold, latest value, breach status, frequency and owner.
+- A summary table of loss events with: event name, the risk, occurrence date,
+  category, gross amount, recovered amount and status.
+ 
+Section "Behind the ratings"
+- A donut of risk evaluations by rating given.
+- A donut of control evaluations by effectiveness given.
+- A summary table of evaluations with: evaluation name, what it evaluated,
+  rating given, evaluation date, evaluator and method.
+ 
+HOW TO BUILD IT
+ 
+- Every number tile counts one kind of record only. Do not add two kinds of
+  record together, and do not let a record be counted twice.
+- When you count records of one kind, count them on their own. Do not count
+  and link to a related record in the same step - do one or the other.
+- Only link records that are directly related as parent and child. If two
+  records are related through a third one in between, go through that one,
+  step by step.
+- You can only link in one step at a time, and when you link, show the fields
+  of the child record, not the parent's.
+- Charts that break records down by a category should use fields that hold a
+  fixed list of values - status, rating, type, severity, priority, yes/no.
+- Do not try to sort by one of those fixed-list fields; sort by the count or
+  by a plain text or date field instead.
+- Do not try to group dates into months, quarters or years as part of reading
+  the data. Read the plain date, then roll it up to month, quarter or year
+  when you build the chart.
+- Do not try to add up amounts as part of reading the data. Bring back the
+  amounts and total them when you build the chart.
+- Do not ask for only the top few rows. Bring back the rows and let the chart
+  show the ones that matter.
+- Field names are not identical in every OpenPages installation. Read the
+  field list of each record type first and use the fields that are actually
+  there. If a field a chart needs is missing, drop that one chart, say in a
+  note which field was missing, and build the rest of the page anyway.
+- Never invent a value for a dropdown field. Read the values the field really
+  has and filter on those.
+- Give the page a filter for business entity at the top, so the whole report
+  can be narrowed to one part of the organisation.""",
         prompt=r"""Build an "RCSA Coverage and Outcome" dashboard on this IBM OpenPages connection, using the
 RA2 namespace, where RiskAssessment is the parent of SOXProcess.
  
@@ -818,6 +1552,114 @@ RULES - IBM OpenPages Query Service SQL
         model_key='operational_risk_and_control/sox1',
         why='The financial reporting view: the account structure and its assertions on one side, the process-risk-control-test chain on the other, and the three evaluation objects that carry the certification conclusions.',
         charts=43,
+        plain=r"""Build a report called "SOX Financial Control Certification" from my IBM
+OpenPages data.
+ 
+This is the financial reporting view: the account structure and its assertions
+on one side, the process, risk, control and test chain on the other, and the
+three evaluation record types that carry the certification conclusions.
+ 
+Records to use: business entities, processes and sub-processes, risks,
+controls, control tests and test results, accounts, sub-accounts, assertions,
+control evaluations, risk evaluations and process evaluations.
+ 
+How these are related, parent to child:
+business entity contains business entities; a business entity holds processes;
+a process holds sub-processes and holds risks; a sub-process holds further
+sub-processes and holds risks; a risk holds its controls; a control holds its
+tests; a test holds its results. A business entity also holds accounts; an
+account holds sub-accounts; a sub-account holds assertions; and a process holds
+accounts as well. A control holds control evaluations, a risk holds risk
+evaluations, and a process holds process evaluations.
+ 
+Across the top, show these counts, each counting a single kind of record:
+total accounts, total sub-accounts, total assertions, total in-scope processes,
+total financial risks, total key controls, controls tested this cycle, total
+tests, total test results, tests with exceptions, controls rated ineffective,
+and total process evaluations.
+ 
+Section "Account structure"
+- A donut of accounts by account type.
+- A donut of accounts by whether they are in scope for certification.
+- A bar chart of the number of sub-accounts under each account, most first.
+- A donut of assertions by assertion type, such as existence, completeness,
+  valuation, rights and obligations, and presentation.
+- A bar chart of the number of assertions under each sub-account, most first.
+- A summary table of accounts with: account name, account number, business
+  entity, account type, in scope, materiality and owner.
+- A summary table of assertions with: assertion name, the sub-account it
+  belongs to, assertion type, risk of misstatement, assessed by and status.
+ 
+Section "In-scope processes"
+- A donut of processes by status.
+- A donut of processes by significance or materiality.
+- A bar chart of the number of accounts linked to each process, most first.
+- A bar chart of processes by business entity.
+- A summary table of processes with: process name, business entity, process
+  owner, significance, linked accounts, last certified date and status.
+ 
+Section "Risks and key controls"
+- A donut of risks by inherent risk rating.
+- A donut of risks by residual risk rating.
+- A donut of controls by whether they are key controls.
+- A donut of controls by whether they are automated or manual.
+- A donut of controls by control frequency.
+- A donut of controls by effectiveness rating, design against operating.
+- A summary table of risks with: risk name, the process, inherent rating,
+  residual rating, assertion affected, owner and status.
+- A summary table of controls with: control name, the risk, key control,
+  automation, frequency, design effectiveness, operating effectiveness and
+  owner.
+ 
+Section "Testing and deficiencies"
+- A donut of control tests by status.
+- A bar chart of tests by scheduled month across the certification year.
+- A donut of test results by outcome.
+- A donut of test results by deficiency severity, such as deficiency,
+  significant deficiency or material weakness.
+- A bar chart of exceptions by process, most first.
+- A summary table of test results with: result name, the test, the control
+  tested, test date, outcome, deficiency severity and remediation status.
+ 
+Section "Certification conclusions"
+- A donut of control evaluations by conclusion.
+- A donut of risk evaluations by rating given.
+- A donut of process evaluations by conclusion.
+- A bar chart of process evaluations by certification period.
+- A summary table of process evaluations with: evaluation name, the process,
+  certification period, conclusion, sign-off date, signed off by and any
+  qualification noted.
+ 
+HOW TO BUILD IT
+ 
+- Every number tile counts one kind of record only. Do not add two kinds of
+  record together, and do not let a record be counted twice.
+- When you count records of one kind, count them on their own. Do not count
+  and link to a related record in the same step - do one or the other.
+- Only link records that are directly related as parent and child. If two
+  records are related through a third one in between, go through that one,
+  step by step.
+- You can only link in one step at a time, and when you link, show the fields
+  of the child record, not the parent's.
+- Charts that break records down by a category should use fields that hold a
+  fixed list of values - status, rating, type, severity, priority, yes/no.
+- Do not try to sort by one of those fixed-list fields; sort by the count or
+  by a plain text or date field instead.
+- Do not try to group dates into months, quarters or years as part of reading
+  the data. Read the plain date, then roll it up to month, quarter or year
+  when you build the chart.
+- Do not try to add up amounts as part of reading the data. Bring back the
+  amounts and total them when you build the chart.
+- Do not ask for only the top few rows. Bring back the rows and let the chart
+  show the ones that matter.
+- Field names are not identical in every OpenPages installation. Read the
+  field list of each record type first and use the fields that are actually
+  there. If a field a chart needs is missing, drop that one chart, say in a
+  note which field was missing, and build the rest of the page anyway.
+- Never invent a value for a dropdown field. Read the values the field really
+  has and filter on those.
+- Give the page a filter for business entity at the top, so the whole report
+  can be narrowed to one part of the organisation.""",
         prompt=r"""Build a "SOX Financial Control Certification" dashboard on this IBM OpenPages connection,
 using the SOX1 namespace.
  
@@ -938,6 +1780,131 @@ RULES - IBM OpenPages Query Service SQL
         model_key='platform_reporting/default',
         why='The regulatory spine: mandate down to obligation with an evaluation at each end, the questionnaire programme that collects the evidence, and the generic folder hierarchy (LevelOne / LevelTwo / LevelThree) the platform uses to file it all.',
         charts=38,
+        plain=r"""Build a report called "Mandate-to-Obligation Compliance Coverage" from my IBM
+OpenPages data.
+ 
+This page follows the regulatory spine: a mandate down to the individual
+obligation, with an evaluation at each end, the questionnaire programme that
+collects the evidence, and the generic folder hierarchy the platform uses to
+file everything.
+ 
+Records to use: business entities, mandates, sub-mandates, requirements and
+their evaluations, obligations and their evaluations, programmes,
+questionnaire assessments, questionnaire templates with their section,
+sub-section and question templates, the folder levels named LevelOne, LevelTwo
+and LevelThree, risks, controls, control tests and test results, risk
+assessments and loss events.
+ 
+How these are related, parent to child:
+business entity contains business entities; a business entity holds mandates; a
+mandate holds sub-mandates; a sub-mandate holds requirements; a requirement
+holds its evaluations and also holds obligations; an obligation holds its own
+evaluations. A business entity holds programmes; a programme holds
+questionnaire assessments; an assessment holds its questionnaire template; a
+template holds section templates; a section holds sub-section templates; a
+sub-section holds question templates. A business entity holds LevelOne
+folders; a LevelOne holds LevelTwo folders; a LevelTwo holds further LevelTwo
+folders and LevelThree folders. A business entity also holds risks (each with
+controls, each with tests, each with results), risk assessments and loss
+events.
+ 
+Important: the folder record types LevelOne, LevelTwo and LevelThree are
+generic, so read their field lists first and use the fields that are really
+there.
+ 
+Across the top, show these counts, each counting a single kind of record:
+total mandates, total sub-mandates, total requirements, total obligations,
+requirements with no obligation beneath them, total requirement evaluations,
+total obligation evaluations, obligations assessed non-compliant, total
+programmes, total questionnaire assessments, assessments still open, and total
+question templates.
+ 
+Section "The regulatory spine"
+- A donut of mandates by regulator or source.
+- A donut of mandates by status.
+- A bar chart of the number of sub-mandates under each mandate, most first.
+- A bar chart of the number of requirements under each sub-mandate, most
+  first.
+- A bar chart of the number of obligations under each requirement, most first.
+- A summary table of mandates with: mandate name, business entity, regulator,
+  jurisdiction, effective date, owner and status.
+- A summary table of requirements with: requirement name, the sub-mandate it
+  belongs to, description, applicability, owner, due date and status.
+ 
+Section "Obligations and compliance"
+- A donut of obligations by compliance status.
+- A donut of obligations by criticality.
+- A bar chart of obligations by due month over the next 12 months.
+- A bar chart of obligations by business entity, most first.
+- A summary table of obligations with: obligation name, the requirement it
+  comes from, obligation type, owner, due date, compliance status and last
+  reviewed date.
+ 
+Section "Evaluations at both ends"
+- A donut of requirement evaluations by conclusion.
+- A donut of obligation evaluations by conclusion.
+- A bar chart of evaluations by month completed.
+- A summary table of evaluations with: evaluation name, what it evaluated,
+  conclusion, evaluation date, evaluator, method and status.
+ 
+Section "Evidence collection"
+- A donut of programmes by status.
+- A donut of questionnaire assessments by status.
+- A bar chart of the number of assessments under each programme, most first.
+- A bar chart of assessments by due month.
+- A bar chart of the number of question templates under each section template,
+  most first.
+- A summary table of questionnaire assessments with: assessment name, the
+  programme, business entity, template used, issued date, due date and status.
+- A summary table of questionnaire templates with: template name, number of
+  sections, number of questions, version, owner and status.
+ 
+Section "The filing structure"
+- A bar chart of the number of LevelTwo folders under each LevelOne folder.
+- A bar chart of the number of LevelThree folders under each LevelTwo folder.
+- A donut of LevelOne folders by type or category.
+- A summary table of the folder hierarchy with: folder name, folder level, its
+  parent folder, business entity, owner and status.
+ 
+Section "Control evidence"
+- A donut of risks by residual risk rating.
+- A donut of controls by effectiveness rating.
+- A donut of test results by outcome.
+- A bar chart of loss events by month, to show where compliance failures cost
+  money.
+- A summary table of controls with: control name, the risk, control type,
+  frequency, effectiveness, last tested date and owner.
+ 
+HOW TO BUILD IT
+ 
+- Every number tile counts one kind of record only. Do not add two kinds of
+  record together, and do not let a record be counted twice.
+- When you count records of one kind, count them on their own. Do not count
+  and link to a related record in the same step - do one or the other.
+- Only link records that are directly related as parent and child. If two
+  records are related through a third one in between, go through that one,
+  step by step.
+- You can only link in one step at a time, and when you link, show the fields
+  of the child record, not the parent's.
+- Charts that break records down by a category should use fields that hold a
+  fixed list of values - status, rating, type, severity, priority, yes/no.
+- Do not try to sort by one of those fixed-list fields; sort by the count or
+  by a plain text or date field instead.
+- Do not try to group dates into months, quarters or years as part of reading
+  the data. Read the plain date, then roll it up to month, quarter or year
+  when you build the chart.
+- Do not try to add up amounts as part of reading the data. Bring back the
+  amounts and total them when you build the chart.
+- Do not ask for only the top few rows. Bring back the rows and let the chart
+  show the ones that matter.
+- Field names are not identical in every OpenPages installation. Read the
+  field list of each record type first and use the fields that are actually
+  there. If a field a chart needs is missing, drop that one chart, say in a
+  note which field was missing, and build the rest of the page anyway.
+- Never invent a value for a dropdown field. Read the values the field really
+  has and filter on those.
+- Give the page a filter for business entity at the top, so the whole report
+  can be narrowed to one part of the organisation.""",
         prompt=r"""Build a "Mandate-to-Obligation Compliance Coverage" dashboard on this IBM OpenPages
 connection, using the DEFAULT (Folders) namespace of the Platform Reporting model.
  
@@ -1057,6 +2024,124 @@ RULES - IBM OpenPages Query Service SQL
         model_key='',
         why='One page that survives whichever namespace a connection is pointed at, because it only uses the objects and the parent/child pairs that every namespace shares. Use it as the landing page and link the nine specialised reports off it.',
         charts=41,
+        plain=r"""Build a report called "Cross-Namespace Executive GRC Summary" from my IBM
+OpenPages data.
+ 
+This page is built to survive whichever part of the model the connection points
+at, because it only uses record types and relationships that every one of them
+shares. Use it as the landing page, and link the nine specialised reports off
+it.
+ 
+Records to use: business entities, processes and sub-processes, risks,
+controls, loss events, key risk indicators, issues and action items.
+ 
+How these are related, parent to child:
+business entity contains business entities; a business entity holds processes;
+a process holds sub-processes; a process holds risks and a sub-process holds
+risks; a risk holds its controls. Loss events, key risk indicators, issues and
+action items are read on their own, without being linked to anything else, so
+that this page works everywhere.
+ 
+Across the top, show exactly these twelve counts, each one counting a single
+kind of record, with no mixing and no record counted twice:
+total risks, total controls, total business processes, total business
+entities, total loss events, total key risk indicators, total issues, total
+action items, open issues, overdue action items, risks whose residual rating is
+major or above, and key risk indicators in red breach.
+ 
+Section "Risk analysis"
+- A donut of risks by status.
+- A donut of risks by whether they sit within tolerance.
+- A donut of risks by risk category or domain.
+- A bar chart of risks by inherent risk rating.
+- A bar chart of risks by residual risk rating.
+- A summary table of risks with: risk name, business entity, inherent rating,
+  residual rating, within tolerance, owner and status.
+ 
+Section "Control analysis"
+- A donut of controls by control type.
+- A donut of controls by whether they are automated or manual.
+- A donut of controls by effectiveness rating.
+- A bar chart of controls by frequency.
+- A summary table of controls with: control name, the risk it mitigates,
+  control type, automation, frequency, effectiveness and owner.
+ 
+Section "Business process analysis"
+- A donut of processes by status.
+- A donut of processes by process type.
+- A bar chart of the number of risks under each process, most first.
+- A summary table of processes with: process name, business entity, process
+  owner, process type, criticality, number of risks and status.
+ 
+Section "Business entity analysis"
+- A donut of business entities by entity type.
+- A donut of business entities by status.
+- A bar chart of risks by business entity, most first.
+- A summary table of business entities with: entity name, parent entity, entity
+  type, region or location, owner, number of processes and status.
+ 
+Section "Loss event analysis"
+- A donut of loss events by status.
+- A donut of loss events by loss category.
+- A bar chart of loss events by month of occurrence over the last 24 months.
+- A bar chart of total loss amount by business entity, biggest first.
+- A summary table of loss events with: event name, business entity, occurrence
+  date, category, gross amount, recovered amount and status.
+ 
+Section "Key risk indicator analysis"
+- A donut of indicators by breach status, red against amber against green.
+- A donut of indicators by measurement frequency.
+- A bar chart of indicators by business entity, split by breach status.
+- A summary table of indicators with: indicator name, business entity,
+  threshold, latest value, breach status, frequency and owner.
+ 
+Section "Issue analysis"
+- A donut of issues by status, with open issues called out.
+- A donut of issues by severity or priority.
+- A donut of issues by issue source or type.
+- A bar chart of issues by month raised.
+- A summary table of issues with: issue name, business entity, raised date,
+  severity, owner, due date and status.
+ 
+Section "Action item analysis"
+- A donut comparing overdue action items against those not yet due.
+- A donut of action items by status.
+- A donut of action items by priority.
+- A bar chart of action items grouped by how overdue they are: 1 to 10 days,
+  11 to 30 days, 31 to 60 days, and above 60 days.
+- A summary table of action items with: action name, what it relates to,
+  assignee, due date, priority, days overdue and status.
+ 
+HOW TO BUILD IT
+ 
+- Every number tile counts one kind of record only. Do not add two kinds of
+  record together, and do not let a record be counted twice.
+- When you count records of one kind, count them on their own. Do not count
+  and link to a related record in the same step - do one or the other.
+- Only link records that are directly related as parent and child. If two
+  records are related through a third one in between, go through that one,
+  step by step.
+- You can only link in one step at a time, and when you link, show the fields
+  of the child record, not the parent's.
+- Charts that break records down by a category should use fields that hold a
+  fixed list of values - status, rating, type, severity, priority, yes/no.
+- Do not try to sort by one of those fixed-list fields; sort by the count or
+  by a plain text or date field instead.
+- Do not try to group dates into months, quarters or years as part of reading
+  the data. Read the plain date, then roll it up to month, quarter or year
+  when you build the chart.
+- Do not try to add up amounts as part of reading the data. Bring back the
+  amounts and total them when you build the chart.
+- Do not ask for only the top few rows. Bring back the rows and let the chart
+  show the ones that matter.
+- Field names are not identical in every OpenPages installation. Read the
+  field list of each record type first and use the fields that are actually
+  there. If a field a chart needs is missing, drop that one chart, say in a
+  note which field was missing, and build the rest of the page anyway.
+- Never invent a value for a dropdown field. Read the values the field really
+  has and filter on those.
+- Give the page a filter for business entity at the top, so the whole report
+  can be narrowed to one part of the organisation.""",
         prompt=r"""Build a "Cross-Namespace Executive GRC Summary" dashboard on this IBM OpenPages connection.
  
 Use only the object types and relationships that every namespace in this reporting framework has in

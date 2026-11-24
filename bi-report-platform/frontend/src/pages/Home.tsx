@@ -14,7 +14,7 @@ import ReportIdeas from "../components/ReportIdeas";
 import { SuggestionChips } from "../components/Suggestions";
 import TemplateForm from "../components/TemplateForm";
 import { useToast } from "../components/Toast";
-import { type AskModel, rememberModel, rememberedModel } from "../lib/aiModels";
+import { type AskModel, rememberedModel } from "../lib/aiModels";
 import { bySolution, rememberModel as rememberDataModel, rememberedModel as rememberedDataModel } from "../lib/dataModel";
 import { appendSpoken } from "../lib/dictation";
 import { shortDate } from "../lib/format";
@@ -91,6 +91,12 @@ export default function Home() {
   const state = location.state as { prompt?: string; template?: ReportTemplate; model?: AskModel | null;
                                    mode?: Mode; dataModel?: string; source?: string } | null;
   const [prompt, setPrompt] = useState(state?.prompt ?? state?.template?.prompt ?? "");
+  // A reference report is shown in the box in ordinary words and sent in the wording written for
+  // the query engine. This holds that second wording and the plain text it belongs to, so an
+  // edited box is sent as the person wrote it and an untouched one is sent as it was meant.
+  const [technical, setTechnical] = useState<{ plain: string; build: string } | null>(null);
+  const toSend = (text: string) =>
+    technical && text.trim() === technical.plain.trim() ? technical.build : text;
   const [template, setTemplate] = useState<ReportTemplate | null>(state?.template ?? null);
   const [reports, setReports] = useState<Report[]>([]);
   const [templates, setTemplates] = useState<ReportTemplate[]>([]);
@@ -188,7 +194,6 @@ export default function Home() {
   const inDomain = domain ? templates.filter((t) => t.category === domain) : templates;
 
   const chosenModel = models.find((m) => String(m.id) === modelChoice) ?? null;
-  const chooseModel = (v: string) => { setModelChoice(v); rememberModel(v); };
 
   const chosenSource = sources.find((x) => sourceValue(x) === sourceChoice) ?? null;
   const isOpenPages = chosenSource?.db_type === "openpages";
@@ -235,9 +240,9 @@ export default function Home() {
     ? `Builds ${readyMade.name.split(": ").pop()} on ${chosenSource?.name ?? "the database"} from its own queries. No AI model is used.`
     : needsModel
     ? (mode === "chat" ? "Chat needs an AI model. Pick one above." : "Pick an AI model to build a dashboard from this database.")
-    : mode === "chat" ? `${chosenModel?.name} answers from ${chosenSource?.name ?? "the database"}, with the query and the rows.`
+    : mode === "chat" ? `${PRODUCT_NAME} answers from ${chosenSource?.name ?? "the database"}, with the query and the rows.`
     : classic ? "Builds the standard sales report from the sample data."
-    : `${chosenModel?.name} plans a dashboard of 4 to 6 charts from ${chosenSource?.name ?? "the database"}.`;
+    : `${PRODUCT_NAME} plans a dashboard of 4 to 6 charts from ${chosenSource?.name ?? "the database"}.`;
 
   const ready = (!!readyMade || prompt.trim().length >= 3) && !needsModel && !building && !checking && !buildRunning;
 
@@ -265,7 +270,7 @@ export default function Home() {
     const req: BuildRequest = {
       source: { id: sourceIdOf(sourceChoice), name: chosenSource?.name ?? "" },
       model: { id: chosenModel.id, name: chosenModel.name },
-      prompt: text,
+      prompt: toSend(text),
       parameters,
       dataModel: dataModelSent,
     };
@@ -288,7 +293,8 @@ export default function Home() {
     };
     setChecking(true);
     try {
-      const result = await assistantApi.clarify({ source_id: sourceIdOf(sourceChoice), prompt: text,
+      const result = await assistantApi.clarify({ source_id: sourceIdOf(sourceChoice),
+                                                  prompt: toSend(text),
                                                   parameters, data_model: dataModelSent });
       if (result.questions.length) { setClarifying({ prompt: text, parameters, result }); return; }
     } catch {
@@ -406,6 +412,8 @@ export default function Home() {
                   onHide={() => setHideIdeas(true)}
                   onPick={(idea) => {
                     setPrompt(idea.prompt);
+                    setTechnical(idea.build_prompt
+                      ? { plain: idea.prompt, build: idea.build_prompt } : null);
                     // A reference report is written against one namespace. Selecting it hands the
                     // query writer that namespace's real parent/child pairs; left on "every shared
                     // object type" it has to guess which joins are legal, and the charts whose
@@ -447,15 +455,14 @@ export default function Home() {
                       {sources.length === 0 && <option value="builtin">Sample sales data</option>}
                     </select>
                   </label>
+                  {/* Which model answers is a setting, not a question to put to someone building
+                      a report: the name of a model is no help in deciding what to ask for, and in
+                      front of a client it is somebody else's brand on your product. The model is
+                      chosen under AI models and shown here as this product's own name. Managers
+                      who need to compare models can still switch there. */}
                   <label className="model-picker">
-                    <span className="muted small">AI model</span>
-                    <select value={modelChoice} onChange={(e) => chooseModel(e.target.value)}
-                      aria-label="AI model for this question" disabled={!!readyMade}>
-                      {models.map((m) => (
-                        <option key={m.id} value={m.id} title={m.provider_label}>{m.name}{m.is_default ? " (default)" : ""}</option>
-                      ))}
-                      <option value="builtin">Built-in engine (no AI)</option>
-                    </select>
+                    <span className="muted small">Answered by</span>
+                    <span className="model-name">{PRODUCT_NAME}</span>
                   </label>
                   {mode === "build" && (
                     <button type="button" className={"btn btn-ghost btn-sm more-btn" + (more ? " on" : "")}

@@ -763,8 +763,11 @@ export interface ReportIdea {
   /** Why this one is being suggested, in the person's own terms. */
   why: string;
   reason: IdeaReason;
-  /** The request itself, ready to go in the box and be edited before sending. */
+  /** The request in ordinary words, ready to go in the box and be edited before sending. */
   prompt: string;
+  /** The same request written for the query engine, sent instead of `prompt` while the box is
+   *  unedited. Empty where the two are the same. */
+  build_prompt?: string;
   /** Roughly how many charts it would build. 0 when it can't be told from the request. */
   charts: number;
   subject: string;

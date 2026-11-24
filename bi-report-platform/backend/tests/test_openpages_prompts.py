@@ -10,6 +10,10 @@ import re
 
 from app.openpages_model import get
 from app.openpages_prompts import CURATED
+from app.openpages_template_prompts import FROM_TEMPLATES
+
+# Everything the build panel offers on an OpenPages connection.
+ALL = (*FROM_TEMPLATES, *CURATED)
 from app.schemas import MAX_WIDGETS, PROMPT_MAX
 
 # FROM [Parent] JOIN [Child] ON PARENT([Parent]) - the only join shape the Query Service takes.
@@ -104,3 +108,50 @@ def test_no_pair_is_shared_by_every_namespace():
     from app.openpages_model import MODELS
     shared = set.intersection(*[{(r.parent, r.child) for r in m.relationships} for m in MODELS])
     assert not shared, f"these pairs are now in every namespace: {sorted(shared)}"
+
+
+# ---------- the box reads in words; the builder gets the queries ----------
+
+def test_the_plain_wording_carries_no_query_language():
+    """What the box shows is for the person deciding whether this is the report they want. A box
+    full of [OPSS-Ctl:Operating Effectiveness] is something nobody dares edit, which defeats the
+    point of filling the box rather than building at once."""
+    for c in ALL:
+        for jargon in ("SELECT ", "COUNT [", "JOIN ", "PARENT(", "GROUP BY", "OPSS-"):
+            assert jargon not in c.plain, f"{c.title} shows {jargon!r} to the reader"
+
+
+def test_the_plain_wording_asks_for_the_same_report():
+    for c in ALL:
+        assert c.plain.lstrip().startswith("Build"), c.title
+        assert len(c.plain) > 500, c.title
+
+
+def test_every_tab_is_told_to_end_with_its_own_table():
+    """A click on a chart filters the tables on the report, so a tab without one cannot be drilled
+    into - and a tab holding another tab's table drills into the wrong records."""
+    for c in ALL:
+        assert "summary table" in c.plain.lower(), c.title
+        assert "own tab" in c.plain or "its own tab" in c.plain or "tab" in c.plain, c.title
+
+
+def test_the_three_template_reports_are_offered_as_well_as_their_templates():
+    """As well as, not instead of: a template is built as it stands, a prompt can be changed
+    first. Removing either would take away one of those."""
+    from app.openpages_modules import module_template_rows
+    from app.openpages_templates import template_rows
+    names = {r["name"] for r in (*module_template_rows(), *template_rows())}
+    for wanted in ("ORM: ORM overview", "ORM: Events, indicators and remediation",
+                   "OpenPages: Audit plan item overview"):
+        assert wanted in names, f"{wanted} is offered as a prompt but no longer ships as a template"
+    titles = {c.title for c in FROM_TEMPLATES}
+    assert titles == {"ORM overview", "Events, indicators and remediation",
+                      "Audit plan item overview"}
+
+
+def test_the_template_prompts_are_plain_ascii():
+    """They are built from template titles, which use en and em dashes. A prompt travels through a
+    .py file, a JSON body and a textarea; the dashes do not always survive the trip."""
+    for c in FROM_TEMPLATES:
+        bad = [ch for ch in c.plain + c.prompt + c.title if ord(ch) > 126]
+        assert not bad, f"{c.title} carries {bad[:3]}"

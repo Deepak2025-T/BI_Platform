@@ -15,11 +15,12 @@ import ResultTable from "../components/ResultTable";
 import { QuickActions, SuggestionChips } from "../components/Suggestions";
 import { useToast } from "../components/Toast";
 import { downloadCsv, shownUnder, useSuggestions } from "../lib/suggestions";
-import { rememberModel, rememberedModel } from "../lib/aiModels";
+import { rememberedModel } from "../lib/aiModels";
 import { bySolution, rememberModel as rememberDataModel, rememberedModel as rememberedDataModel } from "../lib/dataModel";
 import { appendSpoken } from "../lib/dictation";
 import { shortDate } from "../lib/format";
 import { CHART_LABELS, cannotDraw, rememberSource, rememberedSource, retype, sourceIdOf, sourceValue } from "../lib/sources";
+import { PRODUCT_NAME } from "../components/Brand";
 
 interface Message {
   id: number;
@@ -156,12 +157,6 @@ export default function Chat() {
     if (chatId !== null) navigate("/chat");
   }
 
-  function changeModel(v: string) {
-    setModel(v);
-    rememberModel(v);
-    if (chatId !== null) chatsApi.update(chatId, { model_id: Number(v) }).catch(() => {});
-  }
-
   async function send(text: string) {
     const question = text.trim();
     if (question.length < 2 || !model || busy) return;
@@ -282,11 +277,11 @@ export default function Chat() {
               </label>
             )}
             <button type="button" className="btn btn-ghost" onClick={() => setPalettePanel(true)}>Colour palette</button>
+            {/* The model behind the answer is a setting, not part of the conversation - see the
+                note on the same picker in Home. */}
             <label className="model-picker">
-              <span className="muted small">AI model</span>
-              <select value={model} onChange={(e) => changeModel(e.target.value)} disabled={!models?.length}>
-                {models?.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
+              <span className="muted small">Answered by</span>
+              <span className="model-name">{PRODUCT_NAME}</span>
             </label>
           </div>
         </header>

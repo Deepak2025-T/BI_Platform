@@ -1588,3 +1588,12 @@ body.printing .page-print-head:first-child { break-before: auto; }
   overflow: hidden; margin-top: 2px;
 }
 .dictate-blocked { white-space: nowrap; opacity: .7; }
+.model-name { font-weight: 600; }
+
+/* The request behind a build. A reference report's request runs to thousands of words: the first
+   line names it, and the rest is there to be opened rather than shouted at 20px while waiting. */
+.request-detail { margin-top: 2px; }
+.request-detail summary { cursor: pointer; }
+.request-text { margin: 8px 0 0; padding: 12px 14px; max-height: 42vh; overflow: auto;
+  background: var(--accent-soft); border-radius: 8px; font-size: 12.5px; line-height: 1.5;
+  white-space: pre-wrap; font-family: inherit; color: var(--fg2); }

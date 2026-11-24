@@ -2,6 +2,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { ProgressRing, elapsedText } from "../components/BuildProgress";
 import Icon from "../components/Icon";
 import { BUILD_STAGES, estimatedShare, stageFor, useBuildJob } from "../lib/buildJob";
+import { PRODUCT_NAME } from "../components/Brand";
 
 export type { BuildRequest } from "../lib/buildJob";
 
@@ -20,14 +21,28 @@ export default function BuildDashboard() {
   if (!job) return <Navigate to="/" replace />;
 
   const { request: req } = job;
+  // The first line names the report; everything after it is the detail of what goes on it.
+  const [headline, ...rest] = req.prompt.split("\n");
+  const detail = rest.join("\n").trim();
+  const Request = () => (
+    <>
+      <div className="question">{headline}</div>
+      {detail && (
+        <details className="request-detail">
+          <summary className="muted small">What this asks for</summary>
+          <pre className="request-text">{detail}</pre>
+        </details>
+      )}
+    </>
+  );
   const back = () => { clear(); navigate("/", { state: { prompt: req.prompt, mode: "build" } }); };
 
   if (job.error) {
     return (
-      <div className="page narrow">
+      <div className="page">
         <div className="stack">
           <div className="muted small">Building a report</div>
-          <div className="question">{req.prompt}</div>
+          <Request />
           <div className="alert alert-error">{job.error}</div>
           <div className="row-wrap">
             <button className="btn btn-primary" onClick={back}>Change the request</button>
@@ -50,10 +65,10 @@ export default function BuildDashboard() {
     : req.source.name;
 
   return (
-    <div className="page narrow">
+    <div className="page">
       <div className="stack">
         <div className="muted small">Building a report</div>
-        <div className="question">{req.prompt}</div>
+        <Request />
 
         <div className="card build-card">
           <div className="build-head">
@@ -61,7 +76,7 @@ export default function BuildDashboard() {
             <div className="grow">
               <h2 className="h2">{stage}…</h2>
               <p className="muted small">
-                {req.model.name} is reading {source}. {elapsedText(elapsed)} so far — the share shown is an
+                {PRODUCT_NAME} is reading {source}. {elapsedText(elapsed)} so far — the share shown is an
                 estimate from how long builds usually take, not a count of the work done.
               </p>
             </div>

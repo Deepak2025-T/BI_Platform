@@ -15,6 +15,7 @@ from app.database import SessionLocal
 from app.datasources import DataSource, get_source
 from app.models import Report, User
 from app.openpages_prompts import CURATED
+from app.openpages_template_prompts import FROM_TEMPLATES
 from app.report_ideas import MAX_IDEAS, Recipe, _affinity, _title_of, recommend
 
 
@@ -100,28 +101,33 @@ def test_a_table_with_a_date_and_an_amount_gets_a_kpi_scorecard(source):
     assert subject["kpis"], "a subject card says what it measures"
 
 
-def test_an_openpages_connection_is_offered_the_ten_reference_dashboards():
-    """An OpenPages connection gets the hand-written prompts and nothing derived.
+def test_an_openpages_connection_is_offered_the_reference_dashboards():
+    """An OpenPages connection gets the hand-written reports and nothing derived.
 
     The connection says which object types are shared; it does not say which of them may legally
     be joined - only the published object model does, and a prompt that joins a pair a namespace
     does not list fails at the query service. So nothing here is guessed from the tables."""
     ideas = _recommend(None, src=_openpages(["SOXRisk", "SOXControl"]))
-    assert len(ideas) == len(CURATED)
+    assert len(ideas) == len(FROM_TEMPLATES) + len(CURATED)
     assert {i["reason"] for i in ideas} == {"curated"}
-    assert ideas[0]["title"] == CURATED[0].title
+    # The three drawn from templates come first: they are the reports this installation already
+    # builds, so they are the safest thing to put in front of someone.
+    assert [i["title"] for i in ideas[:3]] == [c.title for c in FROM_TEMPLATES]
 
 
-def test_a_reference_dashboard_arrives_whole_rather_than_summarised():
-    """The card fills the box with the prompt itself. Shortening it to fit a card would lose the
-    rules that make its SQL run."""
+def test_the_box_is_filled_in_words_and_the_builder_is_sent_the_queries():
+    """Two wordings of one request. The box is for the person deciding whether this is the report
+    they want; the builder needs the field groups and the exact join shape, and that precision is
+    why the charts run."""
     first = _recommend(None, src=_openpages(["SOXRisk"]))[0]
-    assert first["prompt"] == CURATED[0].prompt
-    assert len(first["prompt"]) > 1000 and "RULES" in first["prompt"]
+    assert first["prompt"] == FROM_TEMPLATES[0].plain
+    assert first["build_prompt"] == FROM_TEMPLATES[0].prompt
+    assert "OPSS-" not in first["prompt"], "the box should not show field groups"
+    assert "OPSS-" in first["build_prompt"], "the builder should be given them"
     assert first["charts"] >= 20, "these are whole dashboards, not single charts"
 
 
-def test_the_same_ten_whatever_the_connection_shares():
+def test_the_same_reports_whatever_the_connection_shares():
     """They are per namespace, not per connection: two OpenPages connections sharing different
     object types still get the same ten, because what differs between them is which prompt the
     person should pick - not which prompts exist."""
