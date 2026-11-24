@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { errorMessage } from "../api/client";
 import { aiModelsApi, assistantApi, dataModelsApi, reportsApi, templatesApi } from "../api/endpoints";
@@ -95,6 +95,14 @@ export default function Home() {
   // the query engine. This holds that second wording and the plain text it belongs to, so an
   // edited box is sent as the person wrote it and an untouched one is sent as it was meant.
   const [technical, setTechnical] = useState<{ plain: string; build: string } | null>(null);
+  const askBox = useRef<HTMLTextAreaElement>(null);
+  // Height follows content. Reset to auto first, or the box can only ever grow.
+  useEffect(() => {
+    const box = askBox.current;
+    if (!box) return;
+    box.style.height = "auto";
+    box.style.height = `${box.scrollHeight}px`;
+  }, [prompt]);
   const toSend = (text: string) =>
     technical && text.trim() === technical.plain.trim() ? technical.build : text;
   const [template, setTemplate] = useState<ReportTemplate | null>(state?.template ?? null);
@@ -398,7 +406,10 @@ export default function Home() {
                 </div>
               )}
               <label htmlFor="ask" className="sr-only">Your question</label>
-              <textarea id="ask" rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)}
+              {/* Grows with what is in it: a picked reference report is a page of text, and a box
+                  showing three lines of it hides what the person is about to build. CSS caps it. */}
+              <textarea id="ask" ref={askBox} rows={3} value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
                 placeholder={mode === "chat" ? "e.g. Which region grew fastest last quarter?" : "e.g. Sales dashboard for Q1 2024 by region and product"}
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) ask(); }} />
               <Dictate what={mode === "chat" ? "your question" : "your report request"}

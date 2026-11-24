@@ -144,6 +144,10 @@ Section "The wider estate"
  
 HOW TO BUILD IT
  
+- Every tab ends with a summary table of the records that tab is about, and
+  that table must show every field the charts above it break records down by.
+  Clicking a chart filters the table to the records behind the part clicked,
+  and it can only do that for a field the table actually shows.
 - Every number tile counts one kind of record only. Do not add two kinds of
   record together, and do not let a record be counted twice.
 - When you count records of one kind, count them on their own. Do not count
@@ -285,6 +289,10 @@ RULES - IBM OpenPages Query Service SQL
   as the colour.
 - Every section ends with a full-width summary table: a plain SELECT of at least 5 fields FROM
   that one object type, [Name] first. No COUNT, no GROUP BY, no JOIN in a summary table.
+- That table must select every field the charts in its own section group by. Clicking a chart
+  filters the tables on this field, so a section whose table leaves it out cannot be drilled
+  into: the selection is made and nothing happens. Include [Location] in every summary table for
+  the same reason.
 - Add a "Business entity" filter on [Location].
 - If a field below does not exist on this connection, drop that one chart or column and say which,
   instead of failing the dashboard.""",
@@ -382,6 +390,10 @@ Section "Behind the ratings"
  
 HOW TO BUILD IT
  
+- Every tab ends with a summary table of the records that tab is about, and
+  that table must show every field the charts above it break records down by.
+  Clicking a chart filters the table to the records behind the part clicked,
+  and it can only do that for a field the table actually shows.
 - Every number tile counts one kind of record only. Do not add two kinds of
   record together, and do not let a record be counted twice.
 - When you count records of one kind, count them on their own. Do not count
@@ -505,6 +517,10 @@ RULES - IBM OpenPages Query Service SQL
   as the colour.
 - Every section ends with a full-width summary table: a plain SELECT of at least 5 fields FROM
   that one object type, [Name] first. No COUNT, no GROUP BY, no JOIN in a summary table.
+- That table must select every field the charts in its own section group by. Clicking a chart
+  filters the tables on this field, so a section whose table leaves it out cannot be drilled
+  into: the selection is made and nothing happens. Include [Location] in every summary table for
+  the same reason.
 - Add a "Business entity" filter on [Location].
 - If a field below does not exist on this connection, drop that one chart or column and say which,
   instead of failing the dashboard.""",
@@ -585,6 +601,10 @@ Section "Controls and evaluations"
  
 HOW TO BUILD IT
  
+- Every tab ends with a summary table of the records that tab is about, and
+  that table must show every field the charts above it break records down by.
+  Clicking a chart filters the table to the records behind the part clicked,
+  and it can only do that for a field the table actually shows.
 - Every number tile counts one kind of record only. Do not add two kinds of
   record together, and do not let a record be counted twice.
 - When you count records of one kind, count them on their own. Do not count
@@ -708,6 +728,10 @@ RULES - IBM OpenPages Query Service SQL
   as the colour.
 - Every section ends with a full-width summary table: a plain SELECT of at least 5 fields FROM
   that one object type, [Name] first. No COUNT, no GROUP BY, no JOIN in a summary table.
+- That table must select every field the charts in its own section group by. Clicking a chart
+  filters the tables on this field, so a section whose table leaves it out cannot be drilled
+  into: the selection is made and nothing happens. Include [Location] in every summary table for
+  the same reason.
 - Add a "Business entity" filter on [Location].
 - If a field below does not exist on this connection, drop that one chart or column and say which,
   instead of failing the dashboard.""",
@@ -789,6 +813,10 @@ Section "Scenario to loss"
  
 HOW TO BUILD IT
  
+- Every tab ends with a summary table of the records that tab is about, and
+  that table must show every field the charts above it break records down by.
+  Clicking a chart filters the table to the records behind the part clicked,
+  and it can only do that for a field the table actually shows.
 - Every number tile counts one kind of record only. Do not add two kinds of
   record together, and do not let a record be counted twice.
 - When you count records of one kind, count them on their own. Do not count
@@ -909,6 +937,10 @@ RULES - IBM OpenPages Query Service SQL
   as the colour.
 - Every section ends with a full-width summary table: a plain SELECT of at least 5 fields FROM
   that one object type, [Name] first. No COUNT, no GROUP BY, no JOIN in a summary table.
+- That table must select every field the charts in its own section group by. Clicking a chart
+  filters the tables on this field, so a section whose table leaves it out cannot be drilled
+  into: the selection is made and nothing happens. Include [Location] in every summary table for
+  the same reason.
 - Add a "Business entity" filter on [Location].
 - If a field below does not exist on this connection, drop that one chart or column and say which,
   instead of failing the dashboard.""",
@@ -989,6 +1021,10 @@ Section "Project risk"
  
 HOW TO BUILD IT
  
+- Every tab ends with a summary table of the records that tab is about, and
+  that table must show every field the charts above it break records down by.
+  Clicking a chart filters the table to the records behind the part clicked,
+  and it can only do that for a field the table actually shows.
 - Every number tile counts one kind of record only. Do not add two kinds of
   record together, and do not let a record be counted twice.
 - When you count records of one kind, count them on their own. Do not count
@@ -1113,6 +1149,10 @@ RULES - IBM OpenPages Query Service SQL
   as the colour.
 - Every section ends with a full-width summary table: a plain SELECT of at least 5 fields FROM
   that one object type, [Name] first. No COUNT, no GROUP BY, no JOIN in a summary table.
+- That table must select every field the charts in its own section group by. Clicking a chart
+  filters the tables on this field, so a section whose table leaves it out cannot be drilled
+  into: the selection is made and nothing happens. Include [Location] in every summary table for
+  the same reason.
 - Add a "Business entity" filter on [Location].
 - If a field below does not exist on this connection, drop that one chart or column and say which,
   instead of failing the dashboard.""",
@@ -1197,6 +1237,10 @@ Section "Where the chain breaks"
  
 HOW TO BUILD IT
  
+- Every tab ends with a summary table of the records that tab is about, and
+  that table must show every field the charts above it break records down by.
+  Clicking a chart filters the table to the records behind the part clicked,
+  and it can only do that for a field the table actually shows.
 - Every number tile counts one kind of record only. Do not add two kinds of
   record together, and do not let a record be counted twice.
 - When you count records of one kind, count them on their own. Do not count
@@ -1326,6 +1370,10 @@ RULES - IBM OpenPages Query Service SQL
   as the colour.
 - Every section ends with a full-width summary table: a plain SELECT of at least 5 fields FROM
   that one object type, [Name] first. No COUNT, no GROUP BY, no JOIN in a summary table.
+- That table must select every field the charts in its own section group by. Clicking a chart
+  filters the tables on this field, so a section whose table leaves it out cannot be drilled
+  into: the selection is made and nothing happens. Include [Location] in every summary table for
+  the same reason.
 - Add a "Business entity" filter on [Location].
 - If a field below does not exist on this connection, drop that one chart or column and say which,
   instead of failing the dashboard.""",
@@ -1413,6 +1461,10 @@ Section "Behind the ratings"
  
 HOW TO BUILD IT
  
+- Every tab ends with a summary table of the records that tab is about, and
+  that table must show every field the charts above it break records down by.
+  Clicking a chart filters the table to the records behind the part clicked,
+  and it can only do that for a field the table actually shows.
 - Every number tile counts one kind of record only. Do not add two kinds of
   record together, and do not let a record be counted twice.
 - When you count records of one kind, count them on their own. Do not count
@@ -1541,6 +1593,10 @@ RULES - IBM OpenPages Query Service SQL
   as the colour.
 - Every section ends with a full-width summary table: a plain SELECT of at least 5 fields FROM
   that one object type, [Name] first. No COUNT, no GROUP BY, no JOIN in a summary table.
+- That table must select every field the charts in its own section group by. Clicking a chart
+  filters the tables on this field, so a section whose table leaves it out cannot be drilled
+  into: the selection is made and nothing happens. Include [Location] in every summary table for
+  the same reason.
 - Add a "Business entity" filter on [Location].
 - If a field below does not exist on this connection, drop that one chart or column and say which,
   instead of failing the dashboard.""",
@@ -1632,6 +1688,10 @@ Section "Certification conclusions"
  
 HOW TO BUILD IT
  
+- Every tab ends with a summary table of the records that tab is about, and
+  that table must show every field the charts above it break records down by.
+  Clicking a chart filters the table to the records behind the part clicked,
+  and it can only do that for a field the table actually shows.
 - Every number tile counts one kind of record only. Do not add two kinds of
   record together, and do not let a record be counted twice.
 - When you count records of one kind, count them on their own. Do not count
@@ -1769,6 +1829,10 @@ RULES - IBM OpenPages Query Service SQL
   as the colour.
 - Every section ends with a full-width summary table: a plain SELECT of at least 5 fields FROM
   that one object type, [Name] first. No COUNT, no GROUP BY, no JOIN in a summary table.
+- That table must select every field the charts in its own section group by. Clicking a chart
+  filters the tables on this field, so a section whose table leaves it out cannot be drilled
+  into: the selection is made and nothing happens. Include [Location] in every summary table for
+  the same reason.
 - Add a "Business entity" filter on [Location].
 - If a field below does not exist on this connection, drop that one chart or column and say which,
   instead of failing the dashboard.""",
@@ -1877,6 +1941,10 @@ Section "Control evidence"
  
 HOW TO BUILD IT
  
+- Every tab ends with a summary table of the records that tab is about, and
+  that table must show every field the charts above it break records down by.
+  Clicking a chart filters the table to the records behind the part clicked,
+  and it can only do that for a field the table actually shows.
 - Every number tile counts one kind of record only. Do not add two kinds of
   record together, and do not let a record be counted twice.
 - When you count records of one kind, count them on their own. Do not count
@@ -2013,6 +2081,10 @@ RULES - IBM OpenPages Query Service SQL
   as the colour.
 - Every section ends with a full-width summary table: a plain SELECT of at least 5 fields FROM
   that one object type, [Name] first. No COUNT, no GROUP BY, no JOIN in a summary table.
+- That table must select every field the charts in its own section group by. Clicking a chart
+  filters the tables on this field, so a section whose table leaves it out cannot be drilled
+  into: the selection is made and nothing happens. Include [Location] in every summary table for
+  the same reason.
 - Add a "Business entity" filter on [Location].
 - If a field below does not exist on this connection, drop that one chart or column and say which,
   instead of failing the dashboard.""",
@@ -2114,6 +2186,10 @@ Section "Action item analysis"
  
 HOW TO BUILD IT
  
+- Every tab ends with a summary table of the records that tab is about, and
+  that table must show every field the charts above it break records down by.
+  Clicking a chart filters the table to the records behind the part clicked,
+  and it can only do that for a field the table actually shows.
 - Every number tile counts one kind of record only. Do not add two kinds of
   record together, and do not let a record be counted twice.
 - When you count records of one kind, count them on their own. Do not count
@@ -2255,6 +2331,10 @@ RULES - IBM OpenPages Query Service SQL
   as the colour.
 - Every section ends with a full-width summary table: a plain SELECT of at least 5 fields FROM
   that one object type, [Name] first. No COUNT, no GROUP BY, no JOIN in a summary table.
+- That table must select every field the charts in its own section group by. Clicking a chart
+  filters the tables on this field, so a section whose table leaves it out cannot be drilled
+  into: the selection is made and nothing happens. Include [Location] in every summary table for
+  the same reason.
 - Add a "Business entity" filter on [Location].
 - If a field below does not exist on this connection, drop that one chart or column and say which,
   instead of failing the dashboard.""",

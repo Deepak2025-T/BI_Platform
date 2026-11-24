@@ -497,6 +497,16 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
     ? pages.flatMap((pg) => [{ heading: pg.name } as Tile, ...onPage(pg.id)])
     : onPage(pageId);
 
+  // Whether the selection actually reaches a table on this page. A click names a column and a
+  // value, and only a table holding that column can show the rows behind it - so a report whose
+  // summary table omits the field its charts group by drills into nothing. Saying so beats a
+  // banner that claims a filter nobody can see.
+  const focusReaches = !focus || tiles.some((t) => {
+    if (!("w" in t) || !showsRecords(t.w)) return false;
+    const d = data[t.w.id];
+    return !!d?.ok && focusIndex(d.columns, focus.column) >= 0;
+  });
+
   const params = config.parameters;
   const paramText = [
     params?.date_from || params?.date_to ? `${params.date_from ?? "start"} to ${params.date_to ?? "today"}` : "",
@@ -692,7 +702,12 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
           <div className="drill-banner no-print" role="status">
             <span className="drill-banner-label">Drilled into</span>
             <code className="drill-banner-value">{focusLabel(focus)}</code>
-            <span className="muted small">the charts show the whole report; the tables show the selection</span>
+            <span className="muted small">
+              {focusReaches
+                ? "the charts show the whole report; the tables show the selection"
+                : "no table on this tab shows this field, so there is nothing here to filter - "
+                  + "add it to the tab's summary table and the selection will reach it"}
+            </span>
             <button className="btn btn-ghost btn-sm" onClick={() => setFocus(null)}>Clear drill-down</button>
           </div>
         )}

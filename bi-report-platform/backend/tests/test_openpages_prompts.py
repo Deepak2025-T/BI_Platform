@@ -155,3 +155,22 @@ def test_the_template_prompts_are_plain_ascii():
     for c in FROM_TEMPLATES:
         bad = [ch for ch in c.plain + c.prompt + c.title if ord(ch) > 126]
         assert not bad, f"{c.title} carries {bad[:3]}"
+
+
+def test_every_prompt_requires_the_table_to_carry_what_its_charts_group_by():
+    """What makes a drill-down work, and the one thing a reader notices when it is missing.
+
+    A click fetches nothing: it names a column and a value, and every table on the report holding
+    that column shows the matching rows. A tab whose summary table leaves the field out therefore
+    drills into nothing - the banner appears and the page does not change."""
+    # Both wordings are wrapped prose, so a line break can fall anywhere in a sentence.
+    def flat(text):
+        return " ".join(text.lower().split())
+
+    for c in ALL:
+        wording = flat(c.prompt)
+        assert "cannot be drilled into" in wording, \
+            f"{c.title} does not tell the builder why the field has to be in the table"
+        assert "group by" in wording, c.title
+        assert "clicking a chart filters" in flat(c.plain), \
+            f"{c.title} does not say it in the wording the person reads"

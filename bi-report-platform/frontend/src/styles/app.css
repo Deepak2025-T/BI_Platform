@@ -205,7 +205,11 @@ textarea { height: auto; padding: 10px; }
 
 /* ===== Home ===== */
 .ask-box { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 1px 2px rgba(13,27,42,.06); }
-.ask-box textarea { border: 0; font-size: 17px; resize: vertical; min-height: 72px; padding: 4px; }
+/* A question is one line; a reference report is pages of them. Three rows of a 40-line request
+   is a slot to peer through, so the box takes as much height as the request needs - to a point,
+   after which it scrolls rather than pushing the Build button off the screen. */
+.ask-box textarea { border: 0; font-size: 17px; resize: vertical; min-height: 72px;
+  max-height: 52vh; padding: 4px; overflow-y: auto; }
 .ask-box textarea:focus-visible { outline: none; }
 .ask-box:focus-within { border-color: var(--accent); }
 .ask-foot { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
@@ -1335,13 +1339,26 @@ body.printing .page-print-head:first-child { break-before: auto; }
 
 /* Long values in a table wrap instead of being held on one line, and line breaks inside a value
    are kept. Only the text columns wrap: a number that folded in half would be unreadable. */
-.result-table.wrap td:not(.r), .result-table.wrap th:not(.r) {
+.result-table.wrap td:not(.r) {
   white-space: pre-wrap;
+  /* A value can be an OpenPages path of 120 characters with no space in it, so it may break
+     anywhere. Without that the column is as wide as the path and the table runs off the page. */
   overflow-wrap: anywhere;
-  word-break: break-word;
 }
+/* A heading is a label of one or two words, and it is never the widest thing in its column -
+   breaking it mid-word costs nothing but readability: "Effect Catego ry", "Inhere nt Risk". So a
+   heading wraps between its words, and breaks inside one only when that word alone cannot fit. */
+.result-table.wrap th:not(.r) {
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
+}
+/* Values may break anywhere, which lets the browser shrink a column to a single character and
+   stack the heading above it one letter per line. This is the floor that stops that. */
+.result-table th { min-width: 7ch; }
 .result-table.wrap td, .result-table.wrap th { vertical-align: top; }
-.result-table.wrap .td-index { white-space: nowrap; }
+.result-table.wrap .td-index { white-space: nowrap; min-width: 0; }
 
 /* Tab colour, symbol and settings (components/PageTabSettings). A tab with no colour of its own
    draws in the report's accent, exactly as the tab bar always did. */

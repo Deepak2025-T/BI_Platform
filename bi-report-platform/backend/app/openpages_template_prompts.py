@@ -70,7 +70,9 @@ FROM_TEMPLATES: tuple[CuratedPrompt, ...] = (
 
 Put each numbered section on its own tab, named as it is above. Every chart on a
 tab shows only that tab's records. Every tab ends with its own summary table of the records behind
-it, so clicking one of its charts filters that table.
+it. That table shows every field the charts above it break records down by, because clicking a
+chart filters the table to the records behind the part clicked - and it can only do that for a
+field the table actually shows.
 
 How to build it: count each kind of record on its own - never two kinds together, and never count
 and link in the same step. Break records down by fields that hold a fixed list of values: status,
@@ -93,7 +95,7 @@ reported, not fail the report. Add a filter for business entity.""",
      Overdue action items         COUNT [ActionItem] WHERE [ActionItem].[OPSS-ActItem:Overdue] = 'Yes'
      Major residual risks         COUNT [SOXRisk] WHERE [SOXRisk].[OPSS-Risk:Residual Risk Rating] = 'Major'
      Red breach KRIs              COUNT [KeyRiskIndicator] WHERE [KeyRiskIndicator].[OPSS-KRI-Shared:Breach Status] = 'Red'
-   Overview summary                   - table  - SELECT [Name], [Description], [Location] and at least three more fields FROM [SOXRisk]
+   Overview summary                   - table  - SELECT [Name], [Description], [Location] and at least three more fields FROM [ActionItem]
 
 2. RISK ANALYSIS  - How the risks are rated and how much of the exposure sits inside tolerance. Minor green, Moderate yellow, Significant orange, Major red.
    Risks by status                    - donut  - [SOXRisk].[OPSS-Risk:Status]
@@ -168,7 +170,10 @@ RULES - IBM OpenPages Query Service SQL
 - Group only by the named field, order largest first unless a sequence is given.
 - Donut = ring with the total in the middle and a legend listing each slice with its count and
   share. Bar = horizontal rows with the count written at the end.
-- Every summary table is a plain SELECT of at least 5 fields FROM one object type, [Name] first.
+- Every summary table is a plain SELECT of at least 5 fields FROM one object type, [Name] first,
+  and it selects every field the charts on its own tab group by, plus [Location]. Clicking a
+  chart filters the tables on that field, so a tab whose table leaves it out cannot be drilled
+  into: the selection is made and nothing happens.
 - Add a "Business entity" filter on [Location].
 - If a field above does not exist on this connection, drop that one chart or column and say which,
   instead of failing the dashboard.""",
@@ -215,7 +220,9 @@ RULES - IBM OpenPages Query Service SQL
 
 Put each numbered section on its own tab, named as it is above. Every chart on a
 tab shows only that tab's records. Every tab ends with its own summary table of the records behind
-it, so clicking one of its charts filters that table.
+it. That table shows every field the charts above it break records down by, because clicking a
+chart filters the table to the records behind the part clicked - and it can only do that for a
+field the table actually shows.
 
 How to build it: count each kind of record on its own - never two kinds together, and never count
 and link in the same step. Break records down by fields that hold a fixed list of values: status,
@@ -302,7 +309,10 @@ RULES - IBM OpenPages Query Service SQL
 - Group only by the named field, order largest first unless a sequence is given.
 - Donut = ring with the total in the middle and a legend listing each slice with its count and
   share. Bar = horizontal rows with the count written at the end.
-- Every summary table is a plain SELECT of at least 5 fields FROM one object type, [Name] first.
+- Every summary table is a plain SELECT of at least 5 fields FROM one object type, [Name] first,
+  and it selects every field the charts on its own tab group by, plus [Location]. Clicking a
+  chart filters the tables on that field, so a tab whose table leaves it out cannot be drilled
+  into: the selection is made and nothing happens.
 - Add a "Business entity" filter on [Location].
 - If a field above does not exist on this connection, drop that one chart or column and say which,
   instead of failing the dashboard.""",
@@ -322,7 +332,9 @@ RULES - IBM OpenPages Query Service SQL
 
 Put each numbered section on its own tab, named as it is above. Every chart on a
 tab shows only that tab's records. Every tab ends with its own summary table of the records behind
-it, so clicking one of its charts filters that table.
+it. That table shows every field the charts above it break records down by, because clicking a
+chart filters the table to the records behind the part clicked - and it can only do that for a
+field the table actually shows.
 
 How to build it: count each kind of record on its own - never two kinds together, and never count
 and link in the same step. Break records down by fields that hold a fixed list of values: status,
@@ -357,7 +369,10 @@ RULES - IBM OpenPages Query Service SQL
 - Group only by the named field, order largest first unless a sequence is given.
 - Donut = ring with the total in the middle and a legend listing each slice with its count and
   share. Bar = horizontal rows with the count written at the end.
-- Every summary table is a plain SELECT of at least 5 fields FROM one object type, [Name] first.
+- Every summary table is a plain SELECT of at least 5 fields FROM one object type, [Name] first,
+  and it selects every field the charts on its own tab group by, plus [Location]. Clicking a
+  chart filters the tables on that field, so a tab whose table leaves it out cannot be drilled
+  into: the selection is made and nothing happens.
 - Add a "Business entity" filter on [Location].
 - If a field above does not exist on this connection, drop that one chart or column and say which,
   instead of failing the dashboard.""",

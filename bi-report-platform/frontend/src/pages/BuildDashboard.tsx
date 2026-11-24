@@ -28,7 +28,7 @@ export default function BuildDashboard() {
     <>
       <div className="question">{headline}</div>
       {detail && (
-        <details className="request-detail">
+        <details className="request-detail" open>
           <summary className="muted small">What this asks for</summary>
           <pre className="request-text">{detail}</pre>
         </details>
