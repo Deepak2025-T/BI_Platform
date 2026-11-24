@@ -17,6 +17,7 @@ from ..deps import get_current_user
 from ..models import AIModel, Report, User
 from ..date_charts import with_rollups
 from ..openpages_detail_reports import expand as expand_detail_report
+from ..report_window import bake as bake_window
 from ..prompt_clarify import clarify
 from ..prompt_ideas import ideas_for
 from ..report_ideas import recommend
@@ -177,13 +178,23 @@ def build_dashboard(body: DashboardIn, db: Session = Depends(get_db), user: User
     # The data model is kept on the report so a refresh, a drill or an added chart later on sees
     # the same object types this dashboard was planned against.
     extra = {"parameters": params, "model": model.name}
+    unbounded: list[str] = []
     if detail is not None:
+        # "Past 3 months" is applied, not asked for. Asked for, the model puts the bound on some
+        # of the twenty queries and not the rest, and the report says "Last 3 Months" over a bar
+        # drawn in July of last year.
+        plan["widgets"], unbounded = _ai_call(bake_window, spec, source, plan["widgets"],
+                                              detail.window.start, detail.window.end)
         # Kept so the page can say which report this was read as and over which dates - a person
         # who typed three words should be able to see what was built from them.
         extra["detail_report"] = {"id": detail.report.id, "title": detail.report.title,
                                   "from": detail.window.start.isoformat(),
                                   "to": detail.window.end.isoformat(),
-                                  "window": detail.window.label}
+                                  "window": detail.window.label,
+                                  # Named rather than hidden: a chart whose records carry no date
+                                  # of their own covers everything, and the reader should know
+                                  # which ones those are.
+                                  "unbounded": unbounded}
     if body.data_model:
         extra["data_model"] = body.data_model
     # A request that asked for tabs was planned with the charts already on them.

@@ -852,6 +852,13 @@ export interface DashboardConfig {
   pages?: DashboardPage[];
   /** The font and text size the whole report is set in. Missing is the app's own. */
   typography?: ReportTypography;
+  /**
+   * Set when the report was built from a one-line request for a written-out detail report. The
+   * window is already in every chart's saved query; this is here so the page can say so, and can
+   * name the charts whose records carry no date of their own and so cover everything.
+   */
+  detail_report?: { id: string; title: string; from: string; to: string; window: string;
+                    unbounded?: string[] };
 }
 
 /** A dashboard-wide filter. The AI model picks each chart's column once, when the filter is added. */

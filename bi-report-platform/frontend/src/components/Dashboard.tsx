@@ -9,7 +9,7 @@ import type {
 } from "../api/types";
 import { rememberedModel } from "../lib/aiModels";
 
-import { columnLabel, shortDate } from "../lib/format";
+import { columnLabel, displayText, shortDate } from "../lib/format";
 import { COMPARE_OPTIONS, type CompareWith, type HistoryPoint, compareAt, timeLabels } from "../lib/history";
 import { printReport } from "../lib/print";
 import { prefersReducedMotion } from "../lib/motion";
@@ -647,6 +647,18 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
               title="Run every query again now and show the latest data">Refresh</button>
           )}
         </div>
+        {config.detail_report && (
+          // A report that says "Last 3 Months" at the top should say which three. The window is
+          // written into every chart's query when the report is built, so this is a statement
+          // about the page rather than a control on it - and where a chart's records carry no
+          // date of their own, saying so is the difference between a gap and a mistake.
+          <p className="muted small report-window">
+            Covers {displayText(config.detail_report.from)} to {displayText(config.detail_report.to)}.
+            {config.detail_report.unbounded?.length
+              ? ` Not limited by date: ${config.detail_report.unbounded.join(", ")} — those records carry no date of their own.`
+              : ""}
+          </p>
+        )}
         {(pages.length > 1 || editable) && (
           <div className="page-tabs no-print" role="tablist" aria-label="Report pages">
             {pages.map((pg, at) => {

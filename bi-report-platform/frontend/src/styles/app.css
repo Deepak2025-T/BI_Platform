@@ -1614,3 +1614,7 @@ body.printing .page-print-head:first-child { break-before: auto; }
 .request-text { margin: 8px 0 0; padding: 12px 14px; max-height: 42vh; overflow: auto;
   background: var(--accent-soft); border-radius: 8px; font-size: 12.5px; line-height: 1.5;
   white-space: pre-wrap; font-family: inherit; color: var(--fg2); }
+
+/* The dates a detail report covers, under the filter row. A statement about the page, not a
+   control on it, so it sits quietly and prints with the report. */
+.report-window { margin: 0 0 4px; }

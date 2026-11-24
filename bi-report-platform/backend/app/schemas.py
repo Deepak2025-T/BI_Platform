@@ -560,6 +560,9 @@ class Widget(BaseModel):
     # Dates folded to a period after the query has run, for connections whose SQL can't group them
     # itself: {"column": "...", "to": "month", "format": "mm/yyyy"}.
     rollup: dict | None = None
+    # A number tile the Query Service could not reduce to one number itself: {"column", "to"},
+    # applied to the result the same way. See kpi_total.
+    total: dict | None = None
 
 
 class AddWidgetsIn(BaseModel):

@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ..config import settings
 from ..connections import openpages
-from .. import dashboard_pages
+from .. import dashboard_pages, kpi_total
 from ..prompt_clarify import apply_style
 from ..schemas import MAX_WIDGETS
 from ..datasources import DataSource, QueryFailed, describe, run_sql
@@ -195,8 +195,16 @@ Always use action "query". {_CHART_RULES}"""
     answer, data, attempts = _query_with_retries(spec, source, system, f"Chart request: {question}")
     if answer["action"] != "query":
         raise AssistantError(answer["reply"] or "The model couldn't write a query for that.")
+    # A tile that asked to be one number and came back as seven hundred rows is added up before
+    # the chart is fitted. Left alone, fit_chart would see the rows and make it a table - which is
+    # how "Total Gross Loss" ends up a list of event names. See kpi_total.
+    total = kpi_total.total_spec(answer.get("chart"), data["columns"], data["rows"])
+    folded = kpi_total.apply(data["columns"], data["rows"], total) if total else None
+    if folded:
+        data = {**data, **folded}
     widget = new_widget(answer["title"] or question, question, data["sql"],
-                        fit_chart(answer.get("chart"), data["columns"], data["rows"]))
+                        fit_chart(answer.get("chart"), data["columns"], data["rows"]),
+                        {"total": total} if folded else None)
     return {"widget": widget, "data": data, "attempts": attempts}
 
 
