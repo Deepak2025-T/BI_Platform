@@ -17,9 +17,10 @@ that quietly bounds nineteen charts and not the twentieth is the thing this exis
 
 And a bound only stays if it answers. A date field can be spelled differently on this
 installation, hold nothing, or not compare the way the Query Service wants, and none of those
-fails: the query runs and matches no row. A bound that empties a chart which had records is
-therefore dropped - the window cannot be the reason, since the chart was built from the same
-records - and the chart is named like any other that could not be bounded.
+fails: the query runs and matches no row. Nor does an empty window - three quiet months read
+exactly the same. So any bound that leaves a chart with nothing is dropped and the chart named:
+an empty tile says nothing about either case, and the records outside the window are the only
+thing worth putting in front of a reader.
 """
 
 from __future__ import annotations
@@ -55,7 +56,7 @@ def bake(spec: ModelSpec, source: DataSource, widgets: list[dict], start: dt.dat
                                                           values, widget["id"])
         # Bound values only exist for a database connection, and there the bound SQL cannot be
         # saved without them. OpenPages writes its conditions as literals, which can.
-        if applied and not params and _bound_still_answers(source, widget["sql"], sql):
+        if applied and not params and _bound_still_answers(source, sql):
             out.append({**widget, "sql": sql})
         else:
             out.append(widget)
@@ -72,7 +73,7 @@ def _rows(source: DataSource, sql: str) -> int | None:
         return None
 
 
-def _bound_still_answers(source: DataSource, before: str, after: str) -> bool:
+def _bound_still_answers(source: DataSource, after: str) -> bool:
     """Whether the bound is one worth keeping.
 
     A date field can be spelled differently here, hold nothing, or not compare the way the Query
@@ -80,16 +81,11 @@ def _bound_still_answers(source: DataSource, before: str, after: str) -> bool:
     zeros is the result, which is the worst thing this could do: a chart that read 207 now reads 0
     and nothing says why.
 
-    So the bound has to earn its place. A bounded query that answers is kept. One that empties a
-    chart which had records is dropped, because the window cannot be the reason - it was built
-    from the same records. One where there was nothing to begin with keeps the bound, since
-    "nothing happened in these three months" is a true answer and widening it would hide that.
+    So the bound has to earn its place: it is kept only where the bounded query still answers.
+    A bound that empties a chart is dropped and the chart named, whether the window is the reason
+    or a misread field is. An empty tile tells a reader nothing either way, and a page of them
+    tells them nothing twenty times over - where there is nothing in the window, the records
+    outside it are the only thing worth putting in front of someone.
     """
     bounded = _rows(source, after)
-    if bounded is None:
-        return False
-    if bounded > 0:
-        return True
-    # Nothing came back. Keep the bound only where there was nothing to begin with; if the chart
-    # had records, or we cannot tell, the bound is not what emptied it and goes.
-    return _rows(source, before) == 0
+    return bool(bounded)

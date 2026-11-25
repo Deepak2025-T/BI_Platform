@@ -55,7 +55,7 @@ def test_weeks_and_year_to_date_are_understood():
 
 def test_real_dates_reach_the_prompt_not_a_relative_phrase():
     prompt = expand("Get me controls test report for past 3 months", TODAY).prompt
-    assert "26 August 2026 and 24 November 2026 (the last 3 months)" in prompt
+    assert "26 August 2026 to 24 November 2026 (the last 3 months)" in prompt
     assert "Control Testing - Last 3 Months" in prompt
     # The relative phrase the person typed never survives into the prompt on its own.
     assert "past 3 months" not in prompt

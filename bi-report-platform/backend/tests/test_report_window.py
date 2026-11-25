@@ -126,7 +126,7 @@ def _answering(monkeypatch, rows_by_sql):
     monkeypatch.setattr(report_window, "run_sql", fake)
 
 
-def test_a_bound_that_empties_a_chart_which_had_records_is_dropped(source, mapped, monkeypatch):
+def test_a_bound_that_empties_a_chart_is_dropped(source, mapped, monkeypatch):
     """The failure that made a whole report read nought. A date field spelled differently here,
     or holding nothing, does not fail - the query runs and matches no row. The window cannot be
     why a chart built from these records now has none, so the bound goes and the chart is named."""
@@ -136,12 +136,14 @@ def test_a_bound_that_empties_a_chart_which_had_records_is_dropped(source, mappe
     assert unbounded == ["By status"]
 
 
-def test_a_window_with_genuinely_nothing_in_it_keeps_its_bound(source, mapped, monkeypatch):
-    """No tests were run in these three months. That is an answer, and widening the report to all
-    time to avoid showing it would be the lie."""
+def test_an_empty_window_falls_back_to_every_record(source, mapped, monkeypatch):
+    """Nothing in these three months. The bound still goes, because an empty tile says nothing
+    about why it is empty and a page of them says nothing twenty times over - the records outside
+    the window are the only thing worth putting in front of a reader. The chart is named, so the
+    page can say which ones are not limited by date."""
     _answering(monkeypatch, {True: 0, False: 0})
     [w], unbounded = report_window.bake(None, source, [widget("w1", DATED, "By status")], START, END)
-    assert w["sql"] != DATED and not unbounded
+    assert w["sql"] == DATED and unbounded == ["By status"]
 
 
 def test_a_bound_the_query_service_refuses_is_dropped(source, mapped, monkeypatch):

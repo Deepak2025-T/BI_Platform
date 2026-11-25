@@ -52,7 +52,7 @@ class Window:
 
     @property
     def sentence(self) -> str:
-        return (f"{self.start.strftime('%d %B %Y')} and {self.end.strftime('%d %B %Y')} "
+        return (f"{self.start.strftime('%d %B %Y')} to {self.end.strftime('%d %B %Y')} "
                 f"({self.label})")
 
 
@@ -83,8 +83,9 @@ def _window(text: str, default_months: int, today: date) -> Window:
 # The three blocks every detail report carries. They are appended rather than written into each
 # body so that a change to the house layout reaches all four, and so the bodies stay readable.
 LAYOUT = """LAYOUT
-- Put 3 to 4 KPI cards across the top. Each card counts one kind of record only - never add two
-  kinds together and never count a record twice.
+- Put the KPI cards this report asks for across the top, 3 to 6 of them. A card that counts
+  counts one kind of record only - never add two kinds together and never count a record twice.
+  A card that is an amount adds up that one field over that one record type.
 - Below the cards, build 12 to 15 charts, laid out three per row.
 - After every six charts, place one detail summary table across the full width, with at least
   eight columns, showing the records those six charts were built from.
@@ -351,48 +352,58 @@ LOSS_EVENTS = DetailReport(
 
 This report covers {window}. Do not write that window into any query - it is applied to every
 one of them afterwards, on each record type's own date field. Ask for the loss events over all
-time,
-together with their impacts and recoveries.
+time, together with their impacts and recoveries.
 
-Records to use: loss events, loss impacts, loss recoveries, risks, processes and business entities.
-A loss event sits under a business entity or under a risk, and a loss event holds its impacts and
-its recoveries.
+Records to use: loss events, loss impacts, loss recoveries, risks and business entities. A loss
+event sits under a business entity, and a loss event holds its impacts and its recoveries.
 
-KPI CARDS
+THE MONEY ON A LOSS EVENT
+This report is mostly about amounts, so read these fields before writing anything and use the
+names this connection really has. On a loss event they are usually called Gross Loss, Net Loss
+and Recovery Amount; on a recovery record, Actual Recovery Amount; on an impact record, the
+impact amount. They are currency fields, so each has a currency beside it.
+
+If an amount on the loss event comes back empty for every row, that field is a rolled-up one this
+connection does not expose, and the figures are on the records underneath: read the amounts from
+the loss recoveries and loss impacts instead, and say in the chart's title which you used. An
+amount column of blanks is not a report - it is worse than the chart not being there.
+
+KPI CARDS - five of them, two counting and three about money
 - Loss events.
-- Total gross loss amount.
-- Total amount recovered.
 - Loss events still open.
+- Total gross loss.
+- Total recovered.
+- Total net loss.
 
 CHARTS - first six
 1. Loss events by month of occurrence across the window.
-2. Loss events by loss category.
+2. Loss events by loss category - the Basel risk category where there is one.
 3. Loss events by status.
-4. Loss events by severity.
-5. Total gross loss amount by business entity, biggest first.
-6. Loss events by business line or process, most first.
+4. Loss events by owner, most first.
+5. Total gross loss by business entity, biggest first.
+6. Loss events by business line, most first.
 
 DETAIL TABLE - loss events
-Columns: event name, business entity, process, date of occurrence, date discovered, loss category,
-gross amount, recovered amount, net amount, status.
+Columns: event name, business entity, business line, date of occurrence, date discovered, loss
+category, gross loss, recovery amount, net loss, owner, status. Every amount column must hold
+figures; if one comes back empty, replace it with the amount from the records underneath.
 
-CHARTS - next six
-7. Gross loss against recovered amount by business entity.
-8. Loss impacts by impact type, such as financial, reputational or regulatory.
-9. Total impact amount by impact type.
-10. Recoveries by recovery type, such as insurance or third party.
-11. Loss events grouped by how long they took to discover: 1 to 10 days, 11 to 30 days, 31 to 60
-    days, and above 60 days.
-12. Loss events by the risk they were raised against, most first.
+CHARTS - next six, the money
+7. Total gross loss by month of occurrence across the window.
+8. Total net loss by month of occurrence across the window.
+9. Total gross loss against total recovered, by business entity.
+10. Total recovered by recovery category - insurance, legal settlement, other.
+11. Total gross loss by loss category, biggest first.
+12. Total net loss by status.
 
-DETAIL TABLE - impacts and recoveries
-Columns: record name, the loss event it belongs to, impact or recovery, type, amount, currency,
-date recorded, business entity, status.
+DETAIL TABLE - recoveries
+Columns: recovery name, the loss event it belongs to, recovery category, actual recovery amount,
+currency, business entity, status.
 
 CHARTS - closing row
-13. Total gross loss by month across the window.
-14. Loss events above the reporting threshold against those below it.
-15. Loss events by owner, most first.""",
+13. Loss impacts by impact category.
+14. Total impact amount by impact category.
+15. Loss events by the risk they were raised against, most first."""
 )
 
 # 3 to 4 KPI cards, 12 to 15 charts and 2 detail tables: what every one of these builds, give or
