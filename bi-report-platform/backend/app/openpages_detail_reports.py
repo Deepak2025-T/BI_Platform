@@ -147,6 +147,10 @@ class DetailReport:
     # every one of them gets. Named in the words people read, not as field names: the column is
     # chosen per chart from the fields that chart's object types really have. See report_filters.
     filters: tuple[str, ...] = ()
+    # The fields this report is built around, asked about before it is planned. Written as
+    # (object type, field label); see field_probe. A report whose subject is money is worth
+    # nothing if the money cannot be read, and nothing in a field list says whether it can.
+    amount_fields: tuple[tuple[str, str], ...] = ()
 
     def matches(self, words: set[str], text: str) -> bool:
         if any(bad in text for bad in self.never):
@@ -346,6 +350,9 @@ LOSS_EVENTS = DetailReport(
     ask='Loss events report for past 3 months',
     why='What was lost and what came back: events by month, category and entity, with their impacts, their recoveries and how long each took to discover.',
     filters=('Loss category', 'Loss event status'),
+    amount_fields=(("LossEvent", "Gross Loss"), ("LossEvent", "Net Loss"),
+                   ("LossEvent", "Recovery Amount"), ("LossEvent", "Estimated Gross Loss"),
+                   ("LossImpact", "Actual Loss"), ("LossRecovery", "Actual Recovery Amount")),
     extra_drill="- From a loss event, the drill path runs event to its impacts and recoveries, "
                 "and upwards event\n  to risk to process to business entity.",
     body="""Build a detail report called "{title}" from my IBM OpenPages data.
@@ -403,7 +410,7 @@ currency, business entity, status.
 CHARTS - closing row
 13. Loss impacts by impact category.
 14. Total impact amount by impact category.
-15. Loss events by the risk they were raised against, most first."""
+15. Loss events by causal category, most first."""
 )
 
 # 3 to 4 KPI cards, 12 to 15 charts and 2 detail tables: what every one of these builds, give or

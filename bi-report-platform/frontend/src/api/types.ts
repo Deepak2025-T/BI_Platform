@@ -858,7 +858,7 @@ export interface DashboardConfig {
    * name the charts whose records carry no date of their own and so cover everything.
    */
   detail_report?: { id: string; title: string; from: string; to: string; window: string;
-                    unbounded?: string[] };
+                    unbounded?: string[]; unreadable?: string[] };
 }
 
 /** A dashboard-wide filter. The AI model picks each chart's column once, when the filter is added. */

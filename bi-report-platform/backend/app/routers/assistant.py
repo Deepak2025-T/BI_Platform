@@ -17,7 +17,7 @@ from ..deps import get_current_user
 from ..models import AIModel, Report, User
 from ..date_charts import with_rollups
 from ..openpages_detail_reports import expand as expand_detail_report
-from .. import report_filters
+from .. import field_probe, report_filters
 from ..report_window import bake as bake_window
 from ..prompt_clarify import clarify
 from ..prompt_ideas import ideas_for
@@ -173,8 +173,16 @@ def build_dashboard(body: DashboardIn, db: Session = Depends(get_db), user: User
     # with the window resolved to real dates; everything else is sent exactly as typed.
     prompt = body.prompt
     detail = expand_detail_report(body.prompt) if source.is_openpages else None
+    unreadable: list[str] = []
     if detail is not None:
         prompt = detail.prompt
+        # The fields this report rests on, asked about before it is planned. A loss report is
+        # mostly about money, and an amount that cannot be read is eight charts that cannot be
+        # drawn - better to know before planning them than to report eight failures afterwards.
+        note, unreadable = (field_probe.advice(source, detail.report.amount_fields)
+                            if detail.report.amount_fields else ("", []))
+        if note:
+            prompt = prompt + "\n\n" + note
     plan = _ai_call(plan_dashboard, spec, source, prompt, params)
     # The data model is kept on the report so a refresh, a drill or an added chart later on sees
     # the same object types this dashboard was planned against.
@@ -195,7 +203,11 @@ def build_dashboard(body: DashboardIn, db: Session = Depends(get_db), user: User
                                   # Named rather than hidden: a chart whose records carry no date
                                   # of their own covers everything, and the reader should know
                                   # which ones those are.
-                                  "unbounded": unbounded}
+                                  "unbounded": unbounded,
+                                  # Named on the page: a field that exists, has a type and holds
+                                  # nothing is a thing only the connection's owner can fix, and
+                                  # they can only fix it if someone tells them which field.
+                                  "unreadable": unreadable}
         # Every detail report opens with at least the business entity and the window, plus the
         # two fields its own subject is read by. The first question anyone asks of a page of
         # counts is "yes, but for my part of the business", and without a filter the answer is

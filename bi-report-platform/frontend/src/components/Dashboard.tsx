@@ -659,6 +659,17 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
               : ""}
           </p>
         )}
+        {config.detail_report?.unreadable?.length ? (
+          // A field that exists, has a type and holds nothing is something only the connection's
+          // owner can fix, and they can only fix it if someone tells them which field. Said once,
+          // here, rather than as one failure per chart that needed it.
+          <p className="muted small report-window">
+            These fields came back empty from this connection, so nothing could be built on them:{" "}
+            {config.detail_report.unreadable.join(", ")}. They exist and hold values in OpenPages;
+            the query service returns nothing for them, which is a setting on the connection
+            rather than something this report can work around.
+          </p>
+        ) : null}
         {(pages.length > 1 || editable) && (
           <div className="page-tabs no-print" role="tablist" aria-label="Report pages">
             {pages.map((pg, at) => {
