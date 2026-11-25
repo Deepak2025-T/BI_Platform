@@ -65,8 +65,15 @@ def _holds_values(source: DataSource, type_name: str, column: str) -> bool:
 def readable(source: DataSource, fields: tuple[Field, ...]):
     """(the fields that hold values, the ones that do not). A field the type does not have at all
     counts as one that cannot be read, which is what it is as far as a chart is concerned."""
+    # Only types this connection shares. Asking about one it does not is not a slower answer, it
+    # is a different kind of failure - the field list of a type OpenPages will not describe - and
+    # a report must not be lost to a question it did not have to ask.
+    shared = {t.split(".", 1)[-1].lower() for t in source.tables}
     found, empty = [], []
     for field in fields:
+        if field.type_name.lower() not in shared:
+            empty.append(field)
+            continue
         column = real_column(source, field.type_name, field.label)
         (found if column and _holds_values(source, field.type_name, column) else empty).append(field)
     return found, empty

@@ -497,8 +497,11 @@ def table_columns(source: DataSource, qualified: str) -> list[tuple[str, str]]:
     """(name, type) for each column of one allowed table, or [] when it can't be read."""
     if source.is_openpages:
         try:
-            return [(f["name"], f["type"]) for f in source.client.type_fields(source.op_type(qualified))]
-        except openpages.OpenPagesError:
+            return [(f["name"], f.get("type", "")) for f in source.client.type_fields(source.op_type(qualified))]
+        except Exception:
+            # A type this connection will not describe, a field list in a shape we did not expect,
+            # a server that would not answer. Every caller of this treats "no columns" as "nothing
+            # to offer here", which is the right answer to all three and loses nobody their report.
             return []
     schema, _, name = qualified.rpartition(".")
     try:

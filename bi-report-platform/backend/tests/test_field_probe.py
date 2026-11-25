@@ -89,3 +89,13 @@ def test_a_connection_that_will_not_answer_costs_the_report_nothing(source, monk
     monkeypatch.setattr(field_probe, "run_sql", refuse)
     found, empty = field_probe.readable(source, (GROSS, LINE))
     assert not found and empty == [GROSS, LINE]
+
+
+def test_a_type_this_connection_does_not_share_is_never_asked_about(source, monkeypatch):
+    """LossImpact and LossRecovery are not on every connection. Asking OpenPages to describe a
+    type it does not have is not a slower answer, it is a different kind of failure - and a
+    report must not be lost to a question it did not have to ask."""
+    monkeypatch.setattr(field_probe, "table_columns",
+                        lambda *a: pytest.fail("asked about a type the connection does not share"))
+    found, empty = field_probe.readable(source, (Field("LossImpact", "Actual Loss"),))
+    assert not found and empty == [Field("LossImpact", "Actual Loss")]

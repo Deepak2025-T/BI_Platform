@@ -59,6 +59,22 @@ def _source(db: Session, source_id: int | None, data_model: str | None = None):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(err))
 
 
+def _optional(what: str, fallback, fn, *args):
+    """One of the steps that make a report better but that no report needs.
+
+    Reading which fields hold values, bounding every query to the window, choosing the filters:
+    each is worth having and none is worth losing the report over. A build that has already spent
+    a minute writing twenty queries must not end in "Something went wrong" because the fourth
+    filter could not be mapped. The failure is logged with its traceback, named in the result so
+    the page can say which step was skipped, and the report is saved regardless.
+    """
+    try:
+        return fn(*args), ""
+    except Exception as err:
+        log.exception("a dashboard was built without %s", what)
+        return fallback, f"{what}: {str(err)[:200]}"
+
+
 def _ai_call(fn, *args):
     """Runs an AI step, turning its failures into readable HTTP errors."""
     try:
@@ -174,13 +190,16 @@ def build_dashboard(body: DashboardIn, db: Session = Depends(get_db), user: User
     prompt = body.prompt
     detail = expand_detail_report(body.prompt) if source.is_openpages else None
     unreadable: list[str] = []
+    skipped: list[str] = []
     if detail is not None:
         prompt = detail.prompt
         # The fields this report rests on, asked about before it is planned. A loss report is
         # mostly about money, and an amount that cannot be read is eight charts that cannot be
         # drawn - better to know before planning them than to report eight failures afterwards.
-        note, unreadable = (field_probe.advice(source, detail.report.amount_fields)
-                            if detail.report.amount_fields else ("", []))
+        (note, unreadable), problem = _optional(
+            "a check of which fields hold values", ("", []),
+            field_probe.advice, source, detail.report.amount_fields)
+        skipped += [problem] if problem else []
         if note:
             prompt = prompt + "\n\n" + note
     plan = _ai_call(plan_dashboard, spec, source, prompt, params)
@@ -192,8 +211,10 @@ def build_dashboard(body: DashboardIn, db: Session = Depends(get_db), user: User
         # "Past 3 months" is applied, not asked for. Asked for, the model puts the bound on some
         # of the twenty queries and not the rest, and the report says "Last 3 Months" over a bar
         # drawn in July of last year.
-        plan["widgets"], unbounded = _ai_call(bake_window, spec, source, plan["widgets"],
-                                              detail.window.start, detail.window.end)
+        (plan["widgets"], unbounded), problem = _optional(
+            "the window applied to every query", (plan["widgets"], []),
+            bake_window, spec, source, plan["widgets"], detail.window.start, detail.window.end)
+        skipped += [problem] if problem else []
         # Kept so the page can say which report this was read as and over which dates - a person
         # who typed three words should be able to see what was built from them.
         extra["detail_report"] = {"id": detail.report.id, "title": detail.report.title,
@@ -214,7 +235,13 @@ def build_dashboard(body: DashboardIn, db: Session = Depends(get_db), user: User
         # "build another report".
         wanted = (report_filters.ENTITY, report_filters.WINDOW,
                   *[report_filters.Wanted(label) for label in detail.report.filters])
-        extra["filters"] = report_filters.build(spec, source, plan["widgets"], wanted)
+        extra["filters"], problem = _optional("the report's filters", [], report_filters.build,
+                                              spec, source, plan["widgets"], wanted)
+        skipped += [problem] if problem else []
+        if skipped:
+            # Named rather than silent. A report missing its filters, with nothing saying so,
+            # looks like a report that was never meant to have any.
+            extra["detail_report"]["skipped"] = skipped
     if body.data_model:
         extra["data_model"] = body.data_model
     # A request that asked for tabs was planned with the charts already on them.

@@ -2,9 +2,9 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
@@ -36,6 +36,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def unhandled(request: Request, err: Exception):
+    """Anything that got past a route, said in a way the page can show.
+
+    FastAPI's own answer to an unhandled error is the plain text "Internal Server Error", which
+    carries no "detail" - so the browser falls back to "Something went wrong. Try again.", and the
+    person is left with nothing to act on and nothing to tell anyone. The traceback is logged
+    where it belongs, and what comes back names the kind of failure and where it happened.
+    """
+    logging.getLogger("uvicorn.error").exception("unhandled error on %s %s",
+                                                 request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail":
+        f"The server hit an error it did not expect: {type(err).__name__}: {str(err)[:300]} "
+        f"(on {request.method} {request.url.path}). The full trace is in the server log."})
+
 
 # Tables come from Alembic migrations (alembic upgrade head), not from the app.
 if (_problem := schema_missing_message()):

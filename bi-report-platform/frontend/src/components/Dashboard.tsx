@@ -659,6 +659,14 @@ export default function Dashboard({ report, editable, canEdit, shareToken, bare 
               : ""}
           </p>
         )}
+        {config.detail_report?.skipped?.length ? (
+          // A step that was meant to improve the report and could not. Named rather than silent:
+          // a report missing its filters, with nothing saying so, looks like one that was never
+          // meant to have any.
+          <p className="muted small report-window">
+            Built without {config.detail_report.skipped.join("; ")}.
+          </p>
+        ) : null}
         {config.detail_report?.unreadable?.length ? (
           // A field that exists, has a type and holds nothing is something only the connection's
           // owner can fix, and they can only fix it if someone tells them which field. Said once,
