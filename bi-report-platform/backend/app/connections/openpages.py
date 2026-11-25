@@ -74,6 +74,12 @@ SQL_GUIDE = """OpenPages Query Service SQL (not database SQL). It is much smalle
 - COUNT and JOIN can never appear in the same query. There is no way to write "how many X per Y".
   Select the rows with a PARENT join and show them as a table instead, or count X on its own by one
   of X's own fields.
+- There is no SUM, so "total <amount> by <field>" cannot be totalled in the query. Write it with no
+  grouping at all - SELECT [T].[Field], [T].[Amount] FROM [T] - which comes back as one row per
+  record. The rows are added up per value of [Field] after the query runs and the chart draws the
+  totals, so never try to write the total yourself and never leave the amount column out.
+- A total as one number is written the same way: SELECT [T].[Amount] FROM [T], with a WHERE when
+  the tile is about some of them. One row per record; it is added up afterwards.
 - Columns keep their field names: never use AS. When two types share a field name (both [Name]),
   the columns come back as "AuditProgram Name" and "Finding Name".
 - Not supported: AS, DISTINCT, SUM, AVG, MIN, MAX, date or text functions (no YEAR, MONTH), CASE,

@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ..config import settings
 from ..connections import openpages
-from .. import chart_check, dashboard_pages, kpi_total
+from .. import chart_check, dashboard_pages, group_total, kpi_total
 from ..prompt_clarify import apply_style
 from ..schemas import MAX_WIDGETS
 from ..datasources import DataSource, QueryFailed, describe, run_sql
@@ -198,6 +198,12 @@ Always use action "query". {_CHART_RULES}"""
     # A tile that asked to be one number and came back as seven hundred rows is added up before
     # the chart is fitted. Left alone, fit_chart would see the rows and make it a table - which is
     # how "Total Gross Loss" ends up a list of event names. See kpi_total.
+    # "Total gross loss by business entity" has no SUM to write it with, so the query comes back
+    # as one row per record and the totalling happens here. See group_total.
+    group = group_total.group_spec(answer.get("chart"), data["columns"], data["rows"])
+    grouped = group_total.apply(data["columns"], data["rows"], group) if group else None
+    if grouped:
+        data = {**data, **grouped}
     total = kpi_total.total_spec(answer.get("chart"), data["columns"], data["rows"])
     folded = kpi_total.apply(data["columns"], data["rows"], total) if total else None
     if folded:
@@ -210,7 +216,8 @@ Always use action "query". {_CHART_RULES}"""
         raise AssistantError(problem)
     widget = new_widget(answer["title"] or question, question, data["sql"],
                         fit_chart(answer.get("chart"), data["columns"], data["rows"]),
-                        {"total": total} if folded else None)
+                        {**({"group": group} if grouped else {}),
+                         **({"total": total} if folded else {})} or None)
     return {"widget": widget, "data": data, "attempts": attempts}
 
 

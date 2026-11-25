@@ -1,6 +1,6 @@
 """Runs a dashboard's charts. Shared by the viewer, Excel export and scheduled refreshes."""
 
-from . import dashboard_filters, dashboard_pages, date_rollup, kpi_total
+from . import dashboard_filters, dashboard_pages, date_rollup, group_total, kpi_total
 from .connections import openpages
 from .datasources import DataSource, QueryFailed, run_sql
 from .sql_guard import UnsafeSQL
@@ -52,6 +52,12 @@ def run_widgets(config: dict, source: DataSource, values: dict, refresh: bool = 
                 folded = date_rollup.apply(result["columns"], result["rows"], w["rollup"])
                 if folded:
                     result = {**result, **folded}
+            # A chart asked for as a total by something: the Query Service has no SUM, so the
+            # rows came back one per record and are added up by category here.
+            if w.get("group"):
+                totalled = group_total.apply(result["columns"], result["rows"], w["group"])
+                if totalled:
+                    result = {**result, **totalled}
             # A number tile whose number the Query Service could not work out - a sum, or a count
             # that needed a join - is added up here, as it was when the tile was built.
             if w.get("total"):
